@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:equatable/equatable.dart';
 import 'package:rbnotes/data/database/database.dart';
 
@@ -28,6 +30,50 @@ class NoteDetail extends Equatable {
   List<Object?> get props => [note, segments, tags];
 }
 
+/// Uma palavra transcrita com tempo e confiança (0..1).
+class TranscriptWord extends Equatable {
+  const TranscriptWord({
+    required this.text,
+    required this.startMs,
+    required this.endMs,
+    required this.probability,
+  });
+
+  factory TranscriptWord.fromJson(Map<String, dynamic> j) => TranscriptWord(
+    text: j['text'] as String,
+    startMs: (j['startMs'] as num).toInt(),
+    endMs: (j['endMs'] as num).toInt(),
+    probability: (j['prob'] as num).toDouble(),
+  );
+
+  final String text;
+  final int startMs;
+  final int endMs;
+  final double probability;
+
+  Map<String, dynamic> toJson() => {
+    'text': text,
+    'startMs': startMs,
+    'endMs': endMs,
+    'prob': probability,
+  };
+
+  @override
+  List<Object?> get props => [text, startMs, endMs, probability];
+
+  static String? encode(List<TranscriptWord>? words) =>
+      (words == null || words.isEmpty)
+      ? null
+      : jsonEncode(words.map((w) => w.toJson()).toList());
+
+  static List<TranscriptWord> decode(String? raw) {
+    if (raw == null || raw.isEmpty) return const [];
+    return (jsonDecode(raw) as List)
+        .map((e) => TranscriptWord.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+}
+
 /// Segmento a persistir (ainda sem id), vindo da transcrição.
 class DraftSegment extends Equatable {
   const DraftSegment({
@@ -35,6 +81,7 @@ class DraftSegment extends Equatable {
     required this.startMs,
     required this.endMs,
     required this.content,
+    this.wordsJson,
   });
 
   final SegmentSpeaker speaker;
@@ -42,8 +89,11 @@ class DraftSegment extends Equatable {
   final int endMs;
   final String content;
 
+  /// Palavras com confiança, serializadas (ver [TranscriptWord]).
+  final String? wordsJson;
+
   @override
-  List<Object?> get props => [speaker, startMs, endMs, content];
+  List<Object?> get props => [speaker, startMs, endMs, content, wordsJson];
 }
 
 /// Rótulo de exibição da tag (emoji + nome).

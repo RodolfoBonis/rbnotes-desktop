@@ -230,6 +230,7 @@ class NoteRepository {
               startMs: s.startMs,
               endMs: s.endMs,
               content: s.content,
+              wordsJson: Value(s.wordsJson),
             ),
           ),
         );

@@ -20,6 +20,21 @@ class NoteAiRepository {
     );
   }
 
+  /// Todos os `note_ai` (noteId → NoteAi), para enriquecer a lista.
+  Stream<Map<String, NoteAi>> watchAllNoteAi() {
+    return _db.select(_db.noteAiTable).watch().map((rows) {
+      final map = <String, NoteAi>{};
+      for (final r in rows) {
+        try {
+          map[r.noteId] = NoteAi.decode(r.json);
+        } on Object catch (_) {
+          // JSON corrompido: ignora esta nota.
+        }
+      }
+      return map;
+    });
+  }
+
   Future<NoteAi?> getNoteAi(String noteId) async {
     final row = await (_db.select(
       _db.noteAiTable,

@@ -2,6 +2,19 @@ import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/notes/domain/note_models.dart';
 import 'package:rbnotes/native/rb_native.dart';
 
+String? _encodeWords(List<Word>? words) => TranscriptWord.encode(
+  words
+      ?.map(
+        (w) => TranscriptWord(
+          text: w.text,
+          startMs: w.start.inMilliseconds,
+          endMs: w.end.inMilliseconds,
+          probability: w.probability,
+        ),
+      )
+      .toList(),
+);
+
 /// Junta os segmentos do mic ("eu") e do sistema ("outros") num único roteiro
 /// ordenado por tempo de início. Empate: o falante do mic vem primeiro.
 List<DraftSegment> mergeSpeakerSegments({
@@ -16,6 +29,7 @@ List<DraftSegment> mergeSpeakerSegments({
               startMs: s.start.inMilliseconds,
               endMs: s.end.inMilliseconds,
               content: s.text.trim(),
+              wordsJson: _encodeWords(s.words),
             ),
           for (final s in system)
             DraftSegment(
@@ -23,6 +37,7 @@ List<DraftSegment> mergeSpeakerSegments({
               startMs: s.start.inMilliseconds,
               endMs: s.end.inMilliseconds,
               content: s.text.trim(),
+              wordsJson: _encodeWords(s.words),
             ),
         ]
         ..removeWhere((d) => d.content.isEmpty)

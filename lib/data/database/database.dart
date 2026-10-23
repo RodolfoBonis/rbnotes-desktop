@@ -70,6 +70,11 @@ class TranscriptSegments extends Table {
   IntColumn get startMs => integer()();
   IntColumn get endMs => integer()();
   TextColumn get content => text()();
+
+  /// Palavras com tempo e confiança (JSON `[{text,startMs,endMs,prob}]`), ou
+  /// null quando o nativo não computou timestamps por palavra. Usado para
+  /// sublinhar palavras de baixa confiança (fluxo "Corrigir palavra").
+  TextColumn get wordsJson => text().nullable()();
 }
 
 @DataClassName('TagRow')

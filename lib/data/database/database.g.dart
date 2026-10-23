@@ -1114,6 +1114,17 @@ class $TranscriptSegmentsTable extends TranscriptSegments
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _wordsJsonMeta = const VerificationMeta(
+    'wordsJson',
+  );
+  @override
+  late final GeneratedColumn<String> wordsJson = GeneratedColumn<String>(
+    'words_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1122,6 +1133,7 @@ class $TranscriptSegmentsTable extends TranscriptSegments
     startMs,
     endMs,
     content,
+    wordsJson,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1170,6 +1182,12 @@ class $TranscriptSegmentsTable extends TranscriptSegments
     } else if (isInserting) {
       context.missing(_contentMeta);
     }
+    if (data.containsKey('words_json')) {
+      context.handle(
+        _wordsJsonMeta,
+        wordsJson.isAcceptableOrUnknown(data['words_json']!, _wordsJsonMeta),
+      );
+    }
     return context;
   }
 
@@ -1205,6 +1223,10 @@ class $TranscriptSegmentsTable extends TranscriptSegments
         DriftSqlType.string,
         data['${effectivePrefix}content'],
       )!,
+      wordsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}words_json'],
+      ),
     );
   }
 
@@ -1224,6 +1246,11 @@ class SegmentRow extends DataClass implements Insertable<SegmentRow> {
   final int startMs;
   final int endMs;
   final String content;
+
+  /// Palavras com tempo e confiança (JSON `[{text,startMs,endMs,prob}]`), ou
+  /// null quando o nativo não computou timestamps por palavra. Usado para
+  /// sublinhar palavras de baixa confiança (fluxo "Corrigir palavra").
+  final String? wordsJson;
   const SegmentRow({
     required this.id,
     required this.noteId,
@@ -1231,6 +1258,7 @@ class SegmentRow extends DataClass implements Insertable<SegmentRow> {
     required this.startMs,
     required this.endMs,
     required this.content,
+    this.wordsJson,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1245,6 +1273,9 @@ class SegmentRow extends DataClass implements Insertable<SegmentRow> {
     map['start_ms'] = Variable<int>(startMs);
     map['end_ms'] = Variable<int>(endMs);
     map['content'] = Variable<String>(content);
+    if (!nullToAbsent || wordsJson != null) {
+      map['words_json'] = Variable<String>(wordsJson);
+    }
     return map;
   }
 
@@ -1256,6 +1287,9 @@ class SegmentRow extends DataClass implements Insertable<SegmentRow> {
       startMs: Value(startMs),
       endMs: Value(endMs),
       content: Value(content),
+      wordsJson: wordsJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(wordsJson),
     );
   }
 
@@ -1273,6 +1307,7 @@ class SegmentRow extends DataClass implements Insertable<SegmentRow> {
       startMs: serializer.fromJson<int>(json['startMs']),
       endMs: serializer.fromJson<int>(json['endMs']),
       content: serializer.fromJson<String>(json['content']),
+      wordsJson: serializer.fromJson<String?>(json['wordsJson']),
     );
   }
   @override
@@ -1287,6 +1322,7 @@ class SegmentRow extends DataClass implements Insertable<SegmentRow> {
       'startMs': serializer.toJson<int>(startMs),
       'endMs': serializer.toJson<int>(endMs),
       'content': serializer.toJson<String>(content),
+      'wordsJson': serializer.toJson<String?>(wordsJson),
     };
   }
 
@@ -1297,6 +1333,7 @@ class SegmentRow extends DataClass implements Insertable<SegmentRow> {
     int? startMs,
     int? endMs,
     String? content,
+    Value<String?> wordsJson = const Value.absent(),
   }) => SegmentRow(
     id: id ?? this.id,
     noteId: noteId ?? this.noteId,
@@ -1304,6 +1341,7 @@ class SegmentRow extends DataClass implements Insertable<SegmentRow> {
     startMs: startMs ?? this.startMs,
     endMs: endMs ?? this.endMs,
     content: content ?? this.content,
+    wordsJson: wordsJson.present ? wordsJson.value : this.wordsJson,
   );
   SegmentRow copyWithCompanion(TranscriptSegmentsCompanion data) {
     return SegmentRow(
@@ -1313,6 +1351,7 @@ class SegmentRow extends DataClass implements Insertable<SegmentRow> {
       startMs: data.startMs.present ? data.startMs.value : this.startMs,
       endMs: data.endMs.present ? data.endMs.value : this.endMs,
       content: data.content.present ? data.content.value : this.content,
+      wordsJson: data.wordsJson.present ? data.wordsJson.value : this.wordsJson,
     );
   }
 
@@ -1324,13 +1363,15 @@ class SegmentRow extends DataClass implements Insertable<SegmentRow> {
           ..write('speaker: $speaker, ')
           ..write('startMs: $startMs, ')
           ..write('endMs: $endMs, ')
-          ..write('content: $content')
+          ..write('content: $content, ')
+          ..write('wordsJson: $wordsJson')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, noteId, speaker, startMs, endMs, content);
+  int get hashCode =>
+      Object.hash(id, noteId, speaker, startMs, endMs, content, wordsJson);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1340,7 +1381,8 @@ class SegmentRow extends DataClass implements Insertable<SegmentRow> {
           other.speaker == this.speaker &&
           other.startMs == this.startMs &&
           other.endMs == this.endMs &&
-          other.content == this.content);
+          other.content == this.content &&
+          other.wordsJson == this.wordsJson);
 }
 
 class TranscriptSegmentsCompanion extends UpdateCompanion<SegmentRow> {
@@ -1350,6 +1392,7 @@ class TranscriptSegmentsCompanion extends UpdateCompanion<SegmentRow> {
   final Value<int> startMs;
   final Value<int> endMs;
   final Value<String> content;
+  final Value<String?> wordsJson;
   const TranscriptSegmentsCompanion({
     this.id = const Value.absent(),
     this.noteId = const Value.absent(),
@@ -1357,6 +1400,7 @@ class TranscriptSegmentsCompanion extends UpdateCompanion<SegmentRow> {
     this.startMs = const Value.absent(),
     this.endMs = const Value.absent(),
     this.content = const Value.absent(),
+    this.wordsJson = const Value.absent(),
   });
   TranscriptSegmentsCompanion.insert({
     this.id = const Value.absent(),
@@ -1365,6 +1409,7 @@ class TranscriptSegmentsCompanion extends UpdateCompanion<SegmentRow> {
     required int startMs,
     required int endMs,
     required String content,
+    this.wordsJson = const Value.absent(),
   }) : noteId = Value(noteId),
        speaker = Value(speaker),
        startMs = Value(startMs),
@@ -1377,6 +1422,7 @@ class TranscriptSegmentsCompanion extends UpdateCompanion<SegmentRow> {
     Expression<int>? startMs,
     Expression<int>? endMs,
     Expression<String>? content,
+    Expression<String>? wordsJson,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1385,6 +1431,7 @@ class TranscriptSegmentsCompanion extends UpdateCompanion<SegmentRow> {
       if (startMs != null) 'start_ms': startMs,
       if (endMs != null) 'end_ms': endMs,
       if (content != null) 'content': content,
+      if (wordsJson != null) 'words_json': wordsJson,
     });
   }
 
@@ -1395,6 +1442,7 @@ class TranscriptSegmentsCompanion extends UpdateCompanion<SegmentRow> {
     Value<int>? startMs,
     Value<int>? endMs,
     Value<String>? content,
+    Value<String?>? wordsJson,
   }) {
     return TranscriptSegmentsCompanion(
       id: id ?? this.id,
@@ -1403,6 +1451,7 @@ class TranscriptSegmentsCompanion extends UpdateCompanion<SegmentRow> {
       startMs: startMs ?? this.startMs,
       endMs: endMs ?? this.endMs,
       content: content ?? this.content,
+      wordsJson: wordsJson ?? this.wordsJson,
     );
   }
 
@@ -1429,6 +1478,9 @@ class TranscriptSegmentsCompanion extends UpdateCompanion<SegmentRow> {
     if (content.present) {
       map['content'] = Variable<String>(content.value);
     }
+    if (wordsJson.present) {
+      map['words_json'] = Variable<String>(wordsJson.value);
+    }
     return map;
   }
 
@@ -1440,7 +1492,8 @@ class TranscriptSegmentsCompanion extends UpdateCompanion<SegmentRow> {
           ..write('speaker: $speaker, ')
           ..write('startMs: $startMs, ')
           ..write('endMs: $endMs, ')
-          ..write('content: $content')
+          ..write('content: $content, ')
+          ..write('wordsJson: $wordsJson')
           ..write(')'))
         .toString();
   }
@@ -6810,6 +6863,7 @@ typedef $$TranscriptSegmentsTableCreateCompanionBuilder =
       required int startMs,
       required int endMs,
       required String content,
+      Value<String?> wordsJson,
     });
 typedef $$TranscriptSegmentsTableUpdateCompanionBuilder =
     TranscriptSegmentsCompanion Function({
@@ -6819,6 +6873,7 @@ typedef $$TranscriptSegmentsTableUpdateCompanionBuilder =
       Value<int> startMs,
       Value<int> endMs,
       Value<String> content,
+      Value<String?> wordsJson,
     });
 
 final class $$TranscriptSegmentsTableReferences
@@ -6883,6 +6938,11 @@ class $$TranscriptSegmentsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get wordsJson => $composableBuilder(
+    column: $table.wordsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$NotesTableFilterComposer get noteId {
     final $$NotesTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -6941,6 +7001,11 @@ class $$TranscriptSegmentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get wordsJson => $composableBuilder(
+    column: $table.wordsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$NotesTableOrderingComposer get noteId {
     final $$NotesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -6988,6 +7053,9 @@ class $$TranscriptSegmentsTableAnnotationComposer
 
   GeneratedColumn<String> get content =>
       $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<String> get wordsJson =>
+      $composableBuilder(column: $table.wordsJson, builder: (column) => column);
 
   $$NotesTableAnnotationComposer get noteId {
     final $$NotesTableAnnotationComposer composer = $composerBuilder(
@@ -7052,6 +7120,7 @@ class $$TranscriptSegmentsTableTableManager
                 Value<int> startMs = const Value.absent(),
                 Value<int> endMs = const Value.absent(),
                 Value<String> content = const Value.absent(),
+                Value<String?> wordsJson = const Value.absent(),
               }) => TranscriptSegmentsCompanion(
                 id: id,
                 noteId: noteId,
@@ -7059,6 +7128,7 @@ class $$TranscriptSegmentsTableTableManager
                 startMs: startMs,
                 endMs: endMs,
                 content: content,
+                wordsJson: wordsJson,
               ),
           createCompanionCallback:
               ({
@@ -7068,6 +7138,7 @@ class $$TranscriptSegmentsTableTableManager
                 required int startMs,
                 required int endMs,
                 required String content,
+                Value<String?> wordsJson = const Value.absent(),
               }) => TranscriptSegmentsCompanion.insert(
                 id: id,
                 noteId: noteId,
@@ -7075,6 +7146,7 @@ class $$TranscriptSegmentsTableTableManager
                 startMs: startMs,
                 endMs: endMs,
                 content: content,
+                wordsJson: wordsJson,
               ),
           withReferenceMapper: (p0) => p0
               .map(
