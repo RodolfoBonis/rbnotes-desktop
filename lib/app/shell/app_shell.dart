@@ -38,6 +38,7 @@ import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/settings/presentation/settings_modal.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
+import 'package:rbnotes/notifications/notification_service.dart';
 import 'package:uuid/uuid.dart';
 
 /// Casca de 3 colunas (sidebar, lista, detalhe) com overlays, HUDs e atalhos.
@@ -269,19 +270,32 @@ class _MainColumn extends StatelessWidget {
     _TaskOp op,
   ) async {
     final noteAi = di<NoteAiRepository>();
+    final notifications = di<NotificationService>();
     final overlay = context.read<ShellOverlayCubit>();
     switch (op) {
       case _TaskOp.done:
         await noteAi.setActionDone(task.actionId, done: true);
+        await notifications.cancelReminder(task.actionId);
         overlay.showToast('Tarefa concluída');
       case _TaskOp.snooze:
-        await noteAi.snoozeAction(
-          task.actionId,
-          DateTime.now().add(const Duration(days: 1)),
+        final now = DateTime.now();
+        final tomorrow9 = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          9,
+        ).add(const Duration(days: 1));
+        await noteAi.snoozeAction(task.actionId, tomorrow9);
+        await notifications.scheduleReminder(
+          key: task.actionId,
+          title: 'Lembrete de tarefa',
+          body: task.text,
+          when: tomorrow9,
         );
         overlay.showToast('Vou te lembrar amanhã às 9h');
       case _TaskOp.dismiss:
         await noteAi.dismissAction(task.actionId);
+        await notifications.cancelReminder(task.actionId);
         overlay.showToast('Removida das tarefas esquecidas');
     }
   }

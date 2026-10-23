@@ -38,6 +38,7 @@ dependencies:
   sentry_flutter: ^9.0.0
   shared_preferences: ^2.5.3
   sqlite3_flutter_libs: ^0.5.26
+  timezone: '>=0.9.4 <0.11.0'
   tray_manager: ^0.5.0
   url_launcher: ^6.3.2
   uuid: ^4.5.1
