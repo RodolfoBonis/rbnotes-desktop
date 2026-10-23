@@ -101,63 +101,68 @@ class ShellHarness {
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   }
 
-  Widget app({bool dark = false}) => MultiBlocProvider(
-    providers: [
-      BlocProvider(create: (_) => ThemeModeCubit(di())),
-      BlocProvider(
-        create: (_) => SessionCubit(auth: di(), prefs: di()),
-      ),
-      BlocProvider(
-        create: (_) => RecordingCubit(
-          native: di(),
-          repository: di(),
-          queue: di(),
-          settings: di(),
-          paths: di(),
-          diagnostics: native.diagnostics(),
+  Widget app({bool dark = false, RecordingCubit? recording}) =>
+      MultiBlocProvider(
+        providers: [
+          BlocProvider(create: (_) => ThemeModeCubit(di())),
+          BlocProvider(
+            create: (_) => SessionCubit(auth: di(), prefs: di()),
+          ),
+          if (recording != null)
+            BlocProvider<RecordingCubit>.value(value: recording)
+          else
+            BlocProvider(
+              create: (_) => RecordingCubit(
+                native: di(),
+                repository: di(),
+                queue: di(),
+                settings: di(),
+                paths: di(),
+                diagnostics: native.diagnostics(),
+              ),
+            ),
+          BlocProvider(
+            create: (_) =>
+                LibraryCubit(notes: di(), noteAi: di(), library: di()),
+          ),
+          BlocProvider(
+            create: (_) => NoteViewCubit(
+              notes: di(),
+              noteAi: di(),
+              ai: di(),
+              native: di(),
+              player: di(),
+            ),
+          ),
+          BlocProvider(
+            create: (_) => AskCubit(ai: di(), notes: di(), noteAi: di()),
+          ),
+          BlocProvider(create: (_) => ShellOverlayCubit()),
+          BlocProvider(
+            create: (_) => DiaryCubit(
+              diary: di(),
+              notes: di(),
+              noteAi: di(),
+              ai: di(),
+              settings: di(),
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: RbNotesTheme.light,
+          darkTheme: RbNotesTheme.dark,
+          themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+          locale: const Locale('pt', 'BR'),
+          supportedLocales: const [Locale('pt', 'BR')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          home: const AppShell(),
         ),
-      ),
-      BlocProvider(
-        create: (_) => LibraryCubit(notes: di(), noteAi: di(), library: di()),
-      ),
-      BlocProvider(
-        create: (_) => NoteViewCubit(
-          notes: di(),
-          noteAi: di(),
-          ai: di(),
-          native: di(),
-          player: di(),
-        ),
-      ),
-      BlocProvider(
-        create: (_) => AskCubit(ai: di(), notes: di(), noteAi: di()),
-      ),
-      BlocProvider(create: (_) => ShellOverlayCubit()),
-      BlocProvider(
-        create: (_) => DiaryCubit(
-          diary: di(),
-          notes: di(),
-          noteAi: di(),
-          ai: di(),
-          settings: di(),
-        ),
-      ),
-    ],
-    child: MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: RbNotesTheme.light,
-      darkTheme: RbNotesTheme.dark,
-      themeMode: dark ? ThemeMode.dark : ThemeMode.light,
-      locale: const Locale('pt', 'BR'),
-      supportedLocales: const [Locale('pt', 'BR')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      home: const AppShell(),
-    ),
-  );
+      );
 
   /// Avança o loop para os streams drift emitirem (dentro de `runAsync`).
   Future<void> settle(WidgetTester tester, {int frames = 8}) async {
