@@ -1,30 +1,52 @@
 #
-# To learn more about a Podspec see http://guides.cocoapods.org/syntax/podspec.html.
+# rbnotes_native — native macOS plugin for RbNotes.
 # Run `pod lib lint rbnotes_native.podspec` to validate before publishing.
 #
 Pod::Spec.new do |s|
   s.name             = 'rbnotes_native'
   s.version          = '0.0.1'
-  s.summary          = 'A new Flutter plugin project.'
+  s.summary          = 'Native macOS plugin for RbNotes (recording, whisper.cpp, dictation).'
   s.description      = <<-DESC
-A new Flutter plugin project.
+Permissions, dual-source audio recording (AVAudioEngine + ScreenCaptureKit),
+local whisper.cpp (Metal) transcription and global dictation for RbNotes.
                        DESC
-  s.homepage         = 'http://example.com'
+  s.homepage         = 'https://github.com/rodolfodebonis/rbnotes-desktop'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'Your Company' => 'email@example.com' }
+  s.author           = { 'Rodolfo de Bonis' => 'nicolyejady@gmail.com' }
 
   s.source           = { :path => '.' }
-  s.source_files = 'rbnotes_native/Sources/rbnotes_native/**/*'
-
-  # If your plugin requires a privacy manifest, for example if it collects user
-  # data, update the PrivacyInfo.xcprivacy file to describe your plugin's
-  # privacy impact, and then uncomment this line. For more information,
-  # see https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
-  # s.resource_bundles = {'rbnotes_native_privacy' => ['rbnotes_native/Sources/rbnotes_native/PrivacyInfo.xcprivacy']}
+  s.source_files = 'rbnotes_native/Sources/rbnotes_native/**/*.swift'
 
   s.dependency 'FlutterMacOS'
 
-  s.platform = :osx, '10.11'
-  s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
-  s.swift_version = '5.0'
+  s.platform = :osx, '13.0'
+  s.swift_version = '5.9'
+
+  # whisper.cpp (Metal, shaders embedded) built from source by
+  # scripts/build_whisper.sh. Not committed to git; see README.
+  s.vendored_frameworks = 'Frameworks/whisper.xcframework'
+
+  # System frameworks used by the Swift sources.
+  s.frameworks = [
+    'AVFoundation', 'ScreenCaptureKit', 'CoreGraphics', 'CoreMedia',
+    'Carbon', 'AppKit', 'Accelerate', 'Metal'
+  ]
+
+  s.pod_target_xcconfig = {
+    'DEFINES_MODULE' => 'YES',
+    'CLANG_ENABLE_MODULES' => 'YES',
+    # Link the vendored whisper framework (CocoaPods copies the matching slice
+    # into PODS_XCFRAMEWORKS_BUILD_DIR, already on FRAMEWORK_SEARCH_PATHS).
+    'OTHER_LDFLAGS' => '-framework whisper',
+  }
+
+  # Self-healing: build the whisper framework before compiling if it is
+  # missing (e.g. a fresh checkout). The Podfile also runs this at evaluation
+  # time so vendored_frameworks resolves; this phase is a fallback for IDE
+  # builds. No-op when the framework already exists.
+  s.script_phase = {
+    :name => 'Build whisper.cpp framework',
+    :script => 'bash "${PODS_TARGET_SRCROOT}/../scripts/build_whisper.sh"',
+    :execution_position => :before_compile
+  }
 end
