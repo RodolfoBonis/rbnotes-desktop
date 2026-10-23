@@ -30,10 +30,12 @@ import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/sync/data/api_sync_client.dart';
 import 'package:rbnotes/features/sync/data/audio_sync.dart';
+import 'package:rbnotes/features/sync/data/audio_upload_coordinator.dart';
 import 'package:rbnotes/features/sync/data/audio_upload_queue.dart';
 import 'package:rbnotes/features/sync/data/sync_client.dart';
 import 'package:rbnotes/features/sync/data/sync_local_store.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
+import 'package:rbnotes/features/sync/data/sync_trigger.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:rbnotes/native/rb_native.dart';
 import 'package:rbnotes/notifications/notification_service.dart';
@@ -60,7 +62,6 @@ Future<void> configureDependencies(AppConfig config) async {
   final library = LibraryRepository(database);
   final diary = DiaryRepository(database);
   final vocabulary = VocabularyRepository(database);
-  final retention = RetentionService(settings: settings, notes: repository);
   final queue = TranscriptionQueue(
     native: native,
     repository: repository,
@@ -84,8 +85,10 @@ Future<void> configureDependencies(AppConfig config) async {
   ApiClient? apiClient;
   SessionEvents? sessionEvents;
   SyncService? syncService;
+  SyncTrigger? syncTrigger;
   AudioSync? audioSync;
   AudioUploadQueue? audioQueue;
+  AudioUploadCoordinator? audioCoordinator;
 
   if (config.useBackend) {
     final tokenStore = SecureTokenStore();
@@ -129,7 +132,14 @@ Future<void> configureDependencies(AppConfig config) async {
       audio: audioSync,
       settings: settings,
       prefs: prefs,
+      notes: repository,
     );
+    audioCoordinator = AudioUploadCoordinator(
+      queue: audioQueue,
+      notes: repository,
+      settings: settings,
+    )..attachTo(queue);
+    syncTrigger = SyncTrigger(db: database, sync: syncService);
     await keycloak.restore();
   } else {
     ai = FakeAiClient();
@@ -144,6 +154,14 @@ Future<void> configureDependencies(AppConfig config) async {
     vocabulary: vocabulary,
     settings: settings,
   )..attachTo(queue);
+
+  // Retenção conhece a fila de upload (quando há backend) para subir o áudio
+  // antes de apagá-lo com "apagar áudio após transcrever".
+  final retention = RetentionService(
+    settings: settings,
+    notes: repository,
+    audioQueue: audioQueue,
+  );
 
   di
     ..registerSingleton<AppConfig>(config)
@@ -172,8 +190,12 @@ Future<void> configureDependencies(AppConfig config) async {
   if (sessionEvents != null) di.registerSingleton<SessionEvents>(sessionEvents);
   if (apiClient != null) di.registerSingleton<ApiClient>(apiClient);
   if (syncService != null) di.registerSingleton<SyncService>(syncService);
+  if (syncTrigger != null) di.registerSingleton<SyncTrigger>(syncTrigger);
   if (audioSync != null) di.registerSingleton<AudioSync>(audioSync);
   if (audioQueue != null) di.registerSingleton<AudioUploadQueue>(audioQueue);
+  if (audioCoordinator != null) {
+    di.registerSingleton<AudioUploadCoordinator>(audioCoordinator);
+  }
 
   // Semeia os dados do design na primeira execução (só local-first; com backend
   // as notas reais chegam pelo sync).

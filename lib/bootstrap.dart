@@ -14,6 +14,7 @@ import 'package:rbnotes/features/dictation/data/dictation_service.dart';
 import 'package:rbnotes/features/settings/data/retention_service.dart';
 import 'package:rbnotes/features/sync/data/audio_upload_queue.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
+import 'package:rbnotes/features/sync/data/sync_trigger.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:window_manager/window_manager.dart';
@@ -65,6 +66,9 @@ Future<void> bootstrap(
   // Sync real (quando o backend está ligado): dispara ao abrir + a cada 2 min,
   // e retoma uploads de áudio pendentes.
   if (di.isRegistered<SyncService>()) di<SyncService>().start();
+  // Dispara sync (debounced) em qualquer mutação local relevante, sem depender
+  // só da cadência de 2 min.
+  if (di.isRegistered<SyncTrigger>()) di<SyncTrigger>().start();
   if (di.isRegistered<AudioUploadQueue>()) {
     unawaited(di<AudioUploadQueue>().process());
   }
