@@ -62,7 +62,17 @@ jobs:
           find packages/rbnotes_native/macos/Frameworks -maxdepth 3 | sort
           lipo -info packages/rbnotes_native/macos/Frameworks/whisper.xcframework/*/whisper.framework/whisper
       - name: Build macOS (debug)
-        run: flutter build macos --debug -t lib/main_production.dart
+        run: |
+          set -o pipefail
+          if ! flutter build macos --debug -t lib/main_production.dart -v > build-debug.log 2>&1; then
+            echo "::group::xcodebuild diagnostics (rbnotes_native / whisper)"
+            grep -nE "SwiftExplicit|scan-dependencies|ScanDependencies|SwiftDriver.*rbnotes_native|CompileSwiftSources.*rbnotes_native|Copy XCFrameworks|XCFrameworkIntermediates|whisper" build-debug.log | head -80
+            grep -oE "(-F|-Fsystem) [^ ]+" build-debug.log | sort -u | head -40
+            echo "::endgroup::"
+            tail -60 build-debug.log
+            exit 1
+          fi
+          tail -5 build-debug.log
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
       - name: Build macOS (release)
