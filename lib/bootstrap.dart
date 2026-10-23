@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,7 +10,10 @@ import 'package:intl/intl.dart';
 import 'package:rbnotes/core/config/app_config.dart';
 import 'package:rbnotes/core/di/injector.dart';
 import 'package:rbnotes/core/observability/app_bloc_observer.dart';
+import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/core/observability/diagnostics_monitor.dart';
+import 'package:rbnotes/core/observability/file_log_sink.dart';
+import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/features/dictation/data/dictation_service.dart';
 import 'package:rbnotes/features/settings/data/retention_service.dart';
 import 'package:rbnotes/features/sync/data/audio_upload_queue.dart';
@@ -17,6 +21,7 @@ import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/sync/data/sync_trigger.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 Future<void> bootstrap(
@@ -25,6 +30,16 @@ Future<void> bootstrap(
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
   final config = AppConfig.forFlavor(flavor);
+
+  // Observabilidade em release: log em arquivo rotativo
+  // (~/Library/Logs/RbNotes/rbnotes.log). O Sentry segue opcional (só com DSN).
+  AppLogger.attachFileSink(
+    await FileLogSink.open(Directory(AppPaths.logsDirPath)),
+  );
+  AppLogger.info(
+    'app boot',
+    data: {'env': config.environment},
+  );
 
   // Inter vem empacotada em assets/fonts — sem download em runtime.
   GoogleFonts.config.allowRuntimeFetching = false;
@@ -59,6 +74,11 @@ Future<void> bootstrap(
   unawaited(di<DictationService>().start());
   // Retoma transcrições presas em `transcribing` de uma sessão anterior.
   unawaited(di<TranscriptionQueue>().requeueInterrupted());
+  // Recupera (uma vez) as notas que falharam pelo bug de migração: `failed`
+  // com áudio em disco e 0 segmentos voltam para a fila.
+  unawaited(
+    di<TranscriptionQueue>().recoverFailedNotes(di<SharedPreferences>()),
+  );
   // Aplica retenção e "apagar áudio após transcrever" (boot + a cada 24h).
   di<RetentionService>().start();
   // Diagnósticos assíncronos do nativo → Sentry com contexto.

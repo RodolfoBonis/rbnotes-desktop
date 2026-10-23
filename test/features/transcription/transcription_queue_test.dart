@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
+import 'package:rbnotes/features/notes/domain/note_models.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
@@ -252,6 +253,71 @@ void main() {
       await queue.dispose();
     });
   });
+  group('recoverFailedNotes (bug 2)', () {
+    test(
+      'reenfileira failed com mic em disco e 0 segmentos, uma unica vez',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final prefs = await SharedPreferences.getInstance();
+        final h2 = NoteRepositoryQueueHarness(
+          db,
+          prefs,
+          fileExists: (_) => true,
+        );
+        await seedRecording('f1', status: NoteStatus.failed);
+
+        await h2.queue.recoverFailedNotes(prefs);
+        final result = await h2.queue.progress.firstWhere((p) => p.isTerminal);
+        expect(result.noteId, 'f1');
+        expect(result.failed, isFalse);
+        expect((await h2.repo.getNote('f1'))!.status, NoteStatus.ready);
+        expect(
+          prefs.getStringList(TranscriptionQueue.recoveredFailedKey),
+          contains('f1'),
+        );
+        await h2.queue.dispose();
+      },
+    );
+
+    test('nao reenfileira failed sem mic em disco', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final h2 = NoteRepositoryQueueHarness(
+        db,
+        prefs,
+        fileExists: (_) => false,
+      );
+      await seedRecording('f2', status: NoteStatus.failed);
+      await h2.queue.recoverFailedNotes(prefs);
+      expect(
+        prefs.getStringList(TranscriptionQueue.recoveredFailedKey),
+        isNull,
+      );
+      expect((await h2.repo.getNote('f2'))!.status, NoteStatus.failed);
+      await h2.queue.dispose();
+    });
+
+    test('nao reenfileira failed que ja tem segmentos', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final h2 = NoteRepositoryQueueHarness(db, prefs, fileExists: (_) => true);
+      await seedRecording('f3', status: NoteStatus.failed);
+      await h2.repo.replaceSegments('f3', const [
+        DraftSegment(
+          speaker: SegmentSpeaker.me,
+          startMs: 0,
+          endMs: 100,
+          content: 'ja tem',
+        ),
+      ]);
+      await h2.queue.recoverFailedNotes(prefs);
+      expect(
+        prefs.getStringList(TranscriptionQueue.recoveredFailedKey),
+        isNull,
+      );
+      await h2.queue.dispose();
+    });
+  });
 }
 
 /// FakeRbNative com `transcribe` roteirizado por `wavPath`.
@@ -277,15 +343,19 @@ class _ScriptedNative extends FakeRbNative {
 }
 
 class NoteRepositoryQueueHarness {
-  NoteRepositoryQueueHarness(AppDatabase db, SharedPreferences prefs)
-    : repo = memoryRepo(db),
-      native = FakeRbNative(),
-      settings = SettingsStore(prefs) {
+  NoteRepositoryQueueHarness(
+    AppDatabase db,
+    SharedPreferences prefs, {
+    bool Function(String path)? fileExists,
+  }) : repo = memoryRepo(db),
+       native = FakeRbNative(),
+       settings = SettingsStore(prefs) {
     queue = TranscriptionQueue(
       native: native,
       repository: repo,
       settings: settings,
       vocabulary: VocabularyRepository(db),
+      fileExists: fileExists,
     );
   }
 

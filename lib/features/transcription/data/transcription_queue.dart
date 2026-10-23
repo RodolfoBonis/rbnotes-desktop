@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:io';
 
 import 'package:equatable/equatable.dart';
 import 'package:rbnotes/core/observability/app_logger.dart';
@@ -9,6 +10,7 @@ import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/transcription/domain/transcription_logic.dart';
 import 'package:rbnotes/native/rb_native.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Progresso de transcrição de uma nota (0..1), ou estado terminal.
 ///
@@ -60,15 +62,26 @@ class TranscriptionQueue {
     required NoteRepository repository,
     required SettingsStore settings,
     required VocabularyRepository vocabulary,
+    bool Function(String path)? fileExists,
   }) : _native = native,
        _repository = repository,
        _settings = settings,
-       _vocabulary = vocabulary;
+       _vocabulary = vocabulary,
+       _fileExists = fileExists ?? _defaultFileExists;
+
+  static bool _defaultFileExists(String path) => File(path).existsSync();
 
   final RbNative _native;
   final NoteRepository _repository;
   final SettingsStore _settings;
   final VocabularyRepository _vocabulary;
+
+  /// Checagem de existência de arquivo (injetável para teste).
+  final bool Function(String path) _fileExists;
+
+  /// Chave em [SharedPreferences] com os ids já reenfileirados pela recuperação
+  /// pós-migração (bug 2) — para nunca reprocessar a mesma nota em loop.
+  static const recoveredFailedKey = 'transcription.recovered_failed';
 
   final _queue = Queue<String>();
   final _controller = StreamController<TranscriptionProgress>.broadcast();
@@ -105,6 +118,45 @@ class TranscriptionQueue {
         e,
         st,
         reason: 'requeue_interrupted',
+        category: 'transcription',
+      );
+    }
+  }
+
+  /// No boot (depois da migração de schema), reenfileira **uma única vez** cada
+  /// nota `failed` que ainda tem `mic_wav_path` existente em disco e 0
+  /// segmentos — exatamente as vítimas do bug de migração que fazia
+  /// `replaceSegments` falhar. Marca cada id em [prefs] para nunca entrar em
+  /// loop, mesmo que volte a falhar.
+  Future<void> recoverFailedNotes(SharedPreferences prefs) async {
+    try {
+      final already =
+          prefs.getStringList(recoveredFailedKey)?.toSet() ?? <String>{};
+      final failed = await _repository.notesWithStatus(NoteStatus.failed);
+      var changed = false;
+      for (final note in failed) {
+        if (already.contains(note.id)) continue;
+        final mic = note.micWavPath;
+        if (mic == null || !_fileExists(mic)) continue;
+        final segments = await _repository.getSegments(note.id);
+        if (segments.isNotEmpty) continue;
+        already.add(note.id);
+        changed = true;
+        enqueue(note.id);
+      }
+      if (changed) {
+        await prefs.setStringList(recoveredFailedKey, already.toList());
+        AppLogger.info(
+          'recovered failed notes after migration',
+          category: 'transcription',
+          data: {'count': already.length},
+        );
+      }
+    } on Object catch (e, st) {
+      await AppLogger.error(
+        e,
+        st,
+        reason: 'recover_failed_notes',
         category: 'transcription',
       );
     }
