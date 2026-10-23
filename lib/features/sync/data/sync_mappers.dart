@@ -1,29 +1,9 @@
 import 'package:drift/drift.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/sync/data/sync_client.dart';
+import 'package:rbnotes/features/sync/data/sync_entities.dart';
 
-/// Nomes das entidades sincronizáveis (iguais ao contrato/backend).
-abstract final class SyncEntities {
-  static const note = 'note';
-  static const segmentSet = 'segment_set';
-  static const folder = 'folder';
-  static const action = 'action';
-  static const collection = 'collection';
-  static const vocabulary = 'vocabulary';
-  static const chatMessage = 'chat_message';
-  static const noteAi = 'note_ai';
-
-  static const List<String> all = [
-    note,
-    segmentSet,
-    folder,
-    action,
-    collection,
-    vocabulary,
-    chatMessage,
-    noteAi,
-  ];
-}
+export 'package:rbnotes/features/sync/data/sync_entities.dart';
 
 /// Conversão drift ↔ `SyncChange.data` (camelCase), nos dois sentidos.
 ///

@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/notes/domain/note_models.dart';
+import 'package:rbnotes/features/sync/data/sync_entities.dart';
 
 const _tagSep = '\u001f'; // unit separator (campos)
 const _tagRec = '\u001e'; // record separator (tags)
@@ -249,6 +250,7 @@ class NoteRepository {
         );
       });
       await _db.recomposeSearchBody(noteId);
+      await _touchSegmentSet(noteId, DateTime.now());
     });
   }
 
@@ -308,12 +310,32 @@ class NoteRepository {
           ),
         );
       }
+      final now = DateTime.now();
       for (final noteId in touchedNotes) {
         await _db.recomposeSearchBody(noteId);
+        await _touchSegmentSet(noteId, now);
       }
       notesChanged = touchedNotes.length;
     });
     return WordFixResult(notes: notesChanged, occurrences: occurrences);
+  }
+
+  /// Marca o `segment_set` da nota como alterado para o sync. O conjunto de
+  /// segmentos tem `updatedAt` próprio no `sync_meta` (independente de
+  /// `note.updatedAt`), para que uma edição de segmentos convirja por LWW mesmo
+  /// quando a nota em si não é tocada, e para que uma edição de nota em outro
+  /// dispositivo não sobrescreva segmentos mais novos com os seus (stale).
+  Future<void> _touchSegmentSet(String noteId, DateTime at) {
+    return _db
+        .into(_db.syncMeta)
+        .insertOnConflictUpdate(
+          SyncMetaCompanion.insert(
+            entity: SyncEntities.segmentSet,
+            entityId: noteId,
+            updatedAt: at,
+            deleted: const Value(false),
+          ),
+        );
   }
 
   // ---------- Tags ----------

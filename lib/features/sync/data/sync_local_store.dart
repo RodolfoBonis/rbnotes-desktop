@@ -10,6 +10,11 @@ import 'package:rbnotes/features/sync/data/sync_mappers.dart';
 /// `updatedAt` posterior entra. Reenviar uma linha já conhecida é idempotente
 /// no servidor (mesmo `updatedAt` + mesmo `data`), então um eventual eco de
 /// uma mudança recém-aplicada no pull não causa problema.
+///
+/// O `segment_set` tem **marca d'água própria** no `sync_meta` (não herda a da
+/// nota): assim uma edição só de segmentos sincroniza mesmo sem tocar a nota, e
+/// uma edição da nota em outro dispositivo não arrasta segmentos stale por cima
+/// de uma versão mais nova (convergência LWW correta).
 class SyncLocalStore {
   SyncLocalStore(this._db);
 
@@ -26,8 +31,11 @@ class SyncLocalStore {
 
     final notes = await _db.select(_db.notes).get();
     for (final n in notes) {
-      if (!fresh(n.updatedAt)) continue;
-      changes.add(SyncMappers.noteToChange(n));
+      if (fresh(n.updatedAt)) changes.add(SyncMappers.noteToChange(n));
+      // segment_set tem timestamp próprio; na ausência de registro (notas
+      // legadas) cai para o da nota.
+      final segAt = await _segmentSetUpdatedAt(n.id) ?? n.updatedAt;
+      if (!fresh(segAt)) continue;
       final segs =
           await (_db.select(_db.transcriptSegments)
                 ..where((s) => s.noteId.equals(n.id))
@@ -36,7 +44,7 @@ class SyncLocalStore {
       changes.add(
         SyncMappers.segmentSetToChange(
           n.id,
-          n.updatedAt,
+          segAt,
           deleted: n.deleted,
           segments: segs,
         ),
@@ -95,6 +103,8 @@ class SyncLocalStore {
             .insertOnConflictUpdate(SyncMappers.noteCompanion(c));
       case SyncEntities.segmentSet:
         await _applySegmentSet(c);
+        // Persiste o timestamp próprio do conjunto para o próximo LWW/push.
+        await _writeSegmentSetMeta(c.id, c.updatedAt, deleted: c.deleted);
       case SyncEntities.folder:
         await _db
             .into(_db.folders)
@@ -163,11 +173,13 @@ class SyncLocalStore {
   Future<DateTime?> _localUpdatedAt(String entity, String id) async {
     switch (entity) {
       case SyncEntities.note:
-      case SyncEntities.segmentSet:
         final r = await (_db.select(
           _db.notes,
         )..where((n) => n.id.equals(id))).getSingleOrNull();
         return r?.updatedAt;
+      case SyncEntities.segmentSet:
+        // segment_set compara contra sua própria marca d'água, não a da nota.
+        return _segmentSetUpdatedAt(id);
       case SyncEntities.folder:
         final r = await (_db.select(
           _db.folders,
@@ -200,6 +212,35 @@ class SyncLocalStore {
         return r?.updatedAt;
     }
     return null;
+  }
+
+  /// Marca d'água própria do `segment_set` da nota (`null` se nunca gravada).
+  Future<DateTime?> _segmentSetUpdatedAt(String noteId) async {
+    final r =
+        await (_db.select(_db.syncMeta)..where(
+              (m) =>
+                  m.entity.equals(SyncEntities.segmentSet) &
+                  m.entityId.equals(noteId),
+            ))
+            .getSingleOrNull();
+    return r?.updatedAt;
+  }
+
+  Future<void> _writeSegmentSetMeta(
+    String noteId,
+    DateTime at, {
+    required bool deleted,
+  }) {
+    return _db
+        .into(_db.syncMeta)
+        .insertOnConflictUpdate(
+          SyncMetaCompanion.insert(
+            entity: SyncEntities.segmentSet,
+            entityId: noteId,
+            updatedAt: at,
+            deleted: Value(deleted),
+          ),
+        );
   }
 
   static int _priority(String entity) => switch (entity) {
