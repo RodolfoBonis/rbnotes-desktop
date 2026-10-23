@@ -17,6 +17,7 @@ import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/presentation/audio_player_controller.dart';
 import 'package:rbnotes/features/notes/presentation/just_audio_player.dart';
+import 'package:rbnotes/features/settings/data/retention_service.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/sync/data/sync_client.dart';
@@ -43,6 +44,7 @@ Future<void> configureDependencies(AppConfig config) async {
   final library = LibraryRepository(database);
   final diary = DiaryRepository(database);
   final vocabulary = VocabularyRepository(database);
+  final retention = RetentionService(settings: settings, notes: repository);
   final queue = TranscriptionQueue(
     native: native,
     repository: repository,
@@ -83,6 +85,7 @@ Future<void> configureDependencies(AppConfig config) async {
     ..registerSingleton<LibraryRepository>(library)
     ..registerSingleton<DiaryRepository>(diary)
     ..registerSingleton<VocabularyRepository>(vocabulary)
+    ..registerSingleton<RetentionService>(retention)
     ..registerSingleton<TranscriptionQueue>(queue)
     ..registerSingleton<DictationService>(dictation)
     ..registerSingleton<DiagnosticsMonitor>(diagnostics)

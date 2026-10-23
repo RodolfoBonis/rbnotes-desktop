@@ -210,6 +210,19 @@ class NoteRepository {
   Future<void> deleteNote(String id) =>
       (_db.delete(_db.notes)..where((n) => n.id.equals(id))).go();
 
+  /// Zera os caminhos de áudio da nota (mantém o texto). Usado quando "apagar
+  /// áudio após transcrever" ou a retenção removem os arquivos mas preservam a
+  /// transcrição/resumo.
+  Future<void> clearAudioPaths(String id) {
+    return (_db.update(_db.notes)..where((n) => n.id.equals(id))).write(
+      const NotesCompanion(
+        playbackPath: Value(null),
+        micWavPath: Value(null),
+        systemWavPath: Value(null),
+      ),
+    );
+  }
+
   // ---------- Segmentos ----------
 
   Future<void> replaceSegments(

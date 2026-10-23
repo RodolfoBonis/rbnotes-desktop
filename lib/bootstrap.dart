@@ -11,6 +11,7 @@ import 'package:rbnotes/core/di/injector.dart';
 import 'package:rbnotes/core/observability/app_bloc_observer.dart';
 import 'package:rbnotes/core/observability/diagnostics_monitor.dart';
 import 'package:rbnotes/features/dictation/data/dictation_service.dart';
+import 'package:rbnotes/features/settings/data/retention_service.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:window_manager/window_manager.dart';
@@ -55,6 +56,8 @@ Future<void> bootstrap(
   unawaited(di<DictationService>().start());
   // Retoma transcrições presas em `transcribing` de uma sessão anterior.
   unawaited(di<TranscriptionQueue>().requeueInterrupted());
+  // Aplica retenção e "apagar áudio após transcrever" (boot + a cada 24h).
+  di<RetentionService>().start();
   // Diagnósticos assíncronos do nativo → Sentry com contexto.
   di<DiagnosticsMonitor>().start();
 
