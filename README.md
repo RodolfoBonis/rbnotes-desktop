@@ -30,11 +30,48 @@ Construído em Flutter (bloc + get_it + forma_ui + sentry), com o plugin nativo
 
 ## IA, sync e privacidade
 
-A IA e o sync são **interfaces** (`AiClient`, `SyncClient`) com fakes
-local-first (`FakeAiClient` gera respostas plausíveis e streaming simulado a
-partir da transcrição). A integração com a `rbnotes-api` (Keycloak/PKCE, SSE)
-entra depois. Antes de enviar texto à IA: a pasta Pessoal pode ser omitida e
-CPF/telefone/cartão são mascarados (`PrivacyMasker`).
+Auth, sync e IA são **interfaces** (`AuthService`, `SyncClient`, `AiClient`) com
+duas implementações, escolhidas por flavor/`--dart-define`:
+
+- **Local-first (fakes)** — padrão em `development`. `FakeAiClient` gera
+  respostas plausíveis e streaming simulado; `FakeSyncClient`/`FakeAuthService`
+  não tocam rede. Bom para desenvolver a UI sem backend.
+- **Integrado (`rbnotes-api`)** — padrão em `production` (ou
+  `--dart-define=RBNOTES_USE_BACKEND=true`):
+  - **Auth**: OIDC Authorization Code + **PKCE S256** contra o realm Keycloak
+    `rbnotes` (client público `rbnotes-desktop`), via navegador do sistema e um
+    servidor **loopback** em `127.0.0.1:53682` só durante o login (state +
+    nonce verificados, timeout 5 min). Google = `kc_idp_hint=google`;
+    e-mail/senha abre o Keycloak com `login_hint`; cadastro abre a página de
+    `registrations`. Tokens no **Keychain**; o refresh **rotaciona**
+    (single-flight). Logout via `end_session`. `403 not_allowed` → aviso e
+    logout.
+  - **Sync** (`/sync/push|pull`): offline-first LWW por `updatedAt`, cursor
+    persistido, mapeamento completo das 8 entidades do contrato (note,
+    segment_set, folder, action, collection, vocabulary, chat_message, note_ai),
+    backoff exponencial e status ao vivo na aba Conta. Dispara ao abrir, a cada
+    2 min, após criar nota (debounce) e no "Sincronizar agora".
+  - **Áudio** (`/notes/{id}/audio`): upload em partes de 16 MiB (não-final ≥ 5
+    MiB, parte 1 primeiro) com fila e retomada; download sob demanda com `Range`.
+  - **IA** (`/ai/*`): `202 + id` e resultado por **SSE** (`GET /ai/streams/{id}`)
+    com reconexão por `Last-Event-ID`; `429 ai_daily_limit` reflete no card
+    "Claude".
+
+Antes de enviar texto à IA: a pasta Pessoal pode ser omitida e CPF/telefone/
+cartão são mascarados (`PrivacyMasker`).
+
+### Backend / configuração
+
+```sh
+# dev apontando para o backend local (precisa do rbnotes-api em :8080):
+fvm flutter run -d macos -t lib/main_development.dart \
+  --dart-define=RBNOTES_USE_BACKEND=true \
+  --dart-define=RBNOTES_API_BASE_URL=http://localhost:8080/v1
+```
+
+`--dart-define` disponíveis: `RBNOTES_USE_BACKEND`, `RBNOTES_API_BASE_URL`,
+`RBNOTES_AUTH_ISSUER`, `RBNOTES_AUTH_CLIENT_ID`, `RBNOTES_AUTH_REDIRECT_URI`,
+`SENTRY_DSN`. Divergências/limitações de contrato: `docs/INTEGRATION_NOTES.md`.
 
 ## Pré-requisitos
 
