@@ -1,0 +1,1 @@
+../../../rbnotes_native/Sources/rbnotes_native/Core/PasteboardManager.swift

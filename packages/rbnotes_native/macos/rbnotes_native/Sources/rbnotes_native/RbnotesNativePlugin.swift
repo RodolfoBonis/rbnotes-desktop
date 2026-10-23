@@ -1,20 +1,25 @@
 import FlutterMacOS
 import Foundation
 
-/// Entry point: wires the `rbnotes_native` MethodChannel and the four named
+/// Entry point: wires the `rbnotes_native` MethodChannel and the named
 /// EventChannels to the feature managers. Every thrown error is converted to a
 /// `FlutterError` carrying a contract error code.
+///
+/// All `FlutterEventSink`s are confined to the main (platform) thread: they are
+/// only ever read/written inside `onMain`, and Flutter's `onListen`/`onCancel`
+/// already run there.
 public class RbnotesNativePlugin: NSObject, FlutterPlugin {
   private let recordingManager = RecordingManager()
   private let transcriber = Transcriber()
   private let dictation = DictationManager()
 
-  // Active event sinks.
+  // Active event sinks — MAIN-THREAD ONLY.
   private var levelsSink: FlutterEventSink?
   private var levelsId: String?
   private var dictationSink: FlutterEventSink?
-  private var progressSinks: [String: FlutterEventSink] = [:]
-  private let progressLock = NSLock()
+  private var diagnosticsSink: FlutterEventSink?
+  // Single, permanent transcription-progress stream: emits {wavPath, progress}.
+  private var progressSink: FlutterEventSink?
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let messenger = registrar.messenger
@@ -23,7 +28,13 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     let methodChannel = FlutterMethodChannel(name: "rbnotes_native", binaryMessenger: messenger)
     registrar.addMethodCallDelegate(instance, channel: methodChannel)
 
+    instance.wireDiagnostics()
     instance.setupEventChannels(messenger: messenger)
+  }
+
+  private func wireDiagnostics() {
+    recordingManager.onDiagnostic = { [weak self] diag in self?.emitDiagnostic(diag) }
+    dictation.onDiagnostic = { [weak self] diag in self?.emitDiagnostic(diag) }
   }
 
   private func setupEventChannels(messenger: FlutterBinaryMessenger) {
@@ -58,7 +69,20 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
             return nil
           }))
 
-    // Model download (onListen triggers the download).
+    // Diagnostics: a single permanent stream of async native failures.
+    FlutterEventChannel(name: "rbnotes_native/diagnostics", binaryMessenger: messenger)
+      .setStreamHandler(
+        ClosureStreamHandler(
+          onListen: { [weak self] _, sink in
+            self?.diagnosticsSink = sink
+            return nil
+          },
+          onCancel: { [weak self] _ in
+            self?.diagnosticsSink = nil
+            return nil
+          }))
+
+    // Model download (onListen triggers the download; onCancel cancels it).
     FlutterEventChannel(name: "rbnotes_native/model_download", binaryMessenger: messenger)
       .setStreamHandler(
         ClosureStreamHandler(
@@ -66,25 +90,23 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
             self?.startDownload(args: args, sink: sink)
             return nil
           },
-          onCancel: { _ in nil }))
+          onCancel: { args in
+            if let raw = args as? String, let model = try? WhisperModelKind(wire: raw) {
+              ModelManager.shared.cancelDownload(model)
+            }
+            return nil
+          }))
 
-    // Transcription progress (keyed by wavPath).
+    // Transcription progress: single permanent stream, emits {wavPath, progress}.
     FlutterEventChannel(name: "rbnotes_native/transcription_progress", binaryMessenger: messenger)
       .setStreamHandler(
         ClosureStreamHandler(
-          onListen: { [weak self] args, sink in
-            guard let wavPath = args as? String else { return nil }
-            self?.progressLock.lock()
-            self?.progressSinks[wavPath] = sink
-            self?.progressLock.unlock()
+          onListen: { [weak self] _, sink in
+            self?.progressSink = sink
             return nil
           },
-          onCancel: { [weak self] args in
-            if let wavPath = args as? String {
-              self?.progressLock.lock()
-              self?.progressSinks[wavPath] = nil
-              self?.progressLock.unlock()
-            }
+          onCancel: { [weak self] _ in
+            self?.progressSink = nil
             return nil
           }))
   }
@@ -107,15 +129,18 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     case "resumeRecording":
       runSync(result) { try self.recordingManager.resume(id: self.requireString(args, "id")) }
     case "findRecoverableRecordings":
-      let directory = (args["directory"] as? String) ?? ""
-      reply(result, recordingManager.findRecoverable(directory: directory))
+      do {
+        let directory = try requireString(args, "directory")
+        reply(result, recordingManager.findRecoverable(directory: directory))
+      } catch {
+        reply(result, FlutterError.from(error))
+      }
     case "modelState":
       handleModelState(args, result)
     case "transcribe":
       handleTranscribe(args, result)
     case "cancelTranscription":
-      if let wavPath = args["wavPath"] as? String { transcriber.cancel(wavPath: wavPath) }
-      reply(result, nil)
+      runSync(result) { self.transcriber.cancel(wavPath: try self.requireString(args, "wavPath")) }
     case "registerDictationHotkey":
       handleRegisterHotkey(args, result)
     case "unregisterDictationHotkey":
@@ -124,9 +149,7 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     case "pasteText":
       runSync(result) { try self.dictation.pasteText(self.requireString(args, "text")) }
     case "playDictationSound":
-      let sound = DictationSoundKind(rawValue: (args["sound"] as? String) ?? "start") ?? .start
-      dictation.playSound(sound)
-      reply(result, nil)
+      handlePlayDictationSound(args, result)
     default:
       reply(result, FlutterMethodNotImplemented)
     }
@@ -136,14 +159,14 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
 
   private func handlePermissionStatus(_ args: [String: Any], _ result: @escaping FlutterResult) {
     guard let raw = args["permission"] as? String, let permission = Permission(rawValue: raw) else {
-      return reply(result, FlutterError(code: "unknown", message: "bad permission", details: nil))
+      return reply(result, RbNativeError.invalidArgument("unknown permission").flutterError)
     }
     reply(result, Permissions.status(permission).rawValue)
   }
 
   private func handleRequestPermission(_ args: [String: Any], _ result: @escaping FlutterResult) {
     guard let raw = args["permission"] as? String, let permission = Permission(rawValue: raw) else {
-      return reply(result, FlutterError(code: "unknown", message: "bad permission", details: nil))
+      return reply(result, RbNativeError.invalidArgument("unknown permission").flutterError)
     }
     Permissions.request(permission) { [weak self] status in
       self?.reply(result, status.rawValue)
@@ -152,17 +175,18 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
 
   private func handleStartRecording(_ args: [String: Any], _ result: @escaping FlutterResult) {
     guard let id = args["id"] as? String, let directory = args["directory"] as? String else {
-      return reply(result, FlutterError(code: "unknown", message: "missing args", details: nil))
+      return reply(result, RbNativeError.invalidArgument("startRecording requires id, directory").flutterError)
     }
-    let captureSystemAudio = (args["captureSystemAudio"] as? Bool) ?? false
+    guard let captureSystemAudio = args["captureSystemAudio"] as? Bool else {
+      return reply(result, RbNativeError.invalidArgument("captureSystemAudio must be a bool").flutterError)
+    }
     Task {
       do {
         let map = try await recordingManager.start(
           id: id, directory: directory, captureSystemAudio: captureSystemAudio)
-        // Wire levels forwarding for this session.
+        // Wire levels forwarding for this session (read sinks on main only).
         recordingManager.session(for: id)?.onLevels = { [weak self] payload in
-          guard let self, self.levelsId == id, let sink = self.levelsSink else { return }
-          emit(sink, payload)
+          self?.forwardLevels(id: id, payload: payload)
         }
         reply(result, map)
       } catch {
@@ -173,7 +197,7 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
 
   private func handleStopRecording(_ args: [String: Any], _ result: @escaping FlutterResult) {
     guard let id = args["id"] as? String else {
-      return reply(result, FlutterError(code: "unknown", message: "missing id", details: nil))
+      return reply(result, RbNativeError.invalidArgument("stopRecording requires id").flutterError)
     }
     Task {
       do {
@@ -196,14 +220,15 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
 
   private func handleTranscribe(_ args: [String: Any], _ result: @escaping FlutterResult) {
     guard let wavPath = args["wavPath"] as? String, let modelRaw = args["model"] as? String else {
-      return reply(result, FlutterError(code: "unknown", message: "missing args", details: nil))
+      return reply(result, RbNativeError.invalidArgument("transcribe requires wavPath, model").flutterError)
     }
     let language = (args["language"] as? String) ?? "pt"
     Task {
       do {
         let model = try WhisperModelKind(wire: modelRaw)
+        let priority = try TranscriptionPriority(wire: args["priority"] as? String)
         let segments = try await transcriber.transcribe(
-          wavPath: wavPath, model: model, language: language,
+          wavPath: wavPath, model: model, language: language, priority: priority,
           onProgress: { [weak self] progress in
             self?.emitProgress(wavPath: wavPath, progress: progress)
           })
@@ -220,7 +245,7 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
       let modeRaw = args["mode"] as? String,
       let mode = DictationModeKind(rawValue: modeRaw)
     else {
-      return reply(result, FlutterError(code: "unknown", message: "bad hotkey args", details: nil))
+      return reply(result, RbNativeError.invalidArgument("bad hotkey args").flutterError)
     }
     let modifiers = (hotkey["modifiers"] as? [String]) ?? []
     // Carbon/event-tap APIs must be touched on the main thread.
@@ -234,30 +259,55 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     }
   }
 
-  // MARK: - Emit helpers
+  private func handlePlayDictationSound(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    guard let raw = args["sound"] as? String, let sound = DictationSoundKind(rawValue: raw) else {
+      return reply(result, RbNativeError.invalidArgument("unknown dictation sound").flutterError)
+    }
+    dictation.playSound(sound)
+    reply(result, nil)
+  }
+
+  // MARK: - Emit helpers (main-thread confined)
+
+  private func onMain(_ block: @escaping () -> Void) {
+    if Thread.isMainThread { block() } else { DispatchQueue.main.async(execute: block) }
+  }
+
+  private func forwardLevels(id: String, payload: [String: Any]) {
+    onMain { [weak self] in
+      guard let self, self.levelsId == id, let sink = self.levelsSink else { return }
+      sink(payload)
+    }
+  }
 
   private func emitDictation(_ event: DictationEventKind) {
-    guard let sink = dictationSink else { return }
-    switch event {
-    case .started:
-      emit(sink, ["type": "started"])
-    case .stopped(let path):
-      emit(sink, ["type": "stopped", "wavPath": path])
-    case .cancelled:
-      emit(sink, ["type": "cancelled"])
+    onMain { [weak self] in
+      guard let self, let sink = self.dictationSink else { return }
+      switch event {
+      case .started: sink(["type": "started"])
+      case .stopped(let path): sink(["type": "stopped", "wavPath": path])
+      case .cancelled: sink(["type": "cancelled"])
+      }
     }
   }
 
   private func emitProgress(wavPath: String, progress: Double) {
-    progressLock.lock()
-    let sink = progressSinks[wavPath]
-    progressLock.unlock()
-    if let sink { emit(sink, progress) }
+    onMain { [weak self] in
+      guard let self, let sink = self.progressSink else { return }
+      sink(["wavPath": wavPath, "progress": progress])
+    }
+  }
+
+  private func emitDiagnostic(_ diagnostic: NativeDiagnostic) {
+    onMain { [weak self] in
+      guard let self, let sink = self.diagnosticsSink else { return }
+      sink(diagnostic.map)
+    }
   }
 
   private func startDownload(args: Any?, sink: @escaping FlutterEventSink) {
     guard let raw = args as? String, let model = try? WhisperModelKind(wire: raw) else {
-      emit(sink, FlutterError(code: "model_download_failed", message: "bad model", details: nil))
+      emit(sink, RbNativeError.invalidArgument("bad model").flutterError)
       emit(sink, FlutterEndOfEventStream)
       return
     }
@@ -286,6 +336,8 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     }
   }
 
+  /// Runs [work]; on throw, replies a mapped `FlutterError`. [work] either
+  /// replies itself or leaves the default `nil` reply to this method.
   private func runSync(_ result: @escaping FlutterResult, _ work: () throws -> Void) {
     do {
       try work()
@@ -295,7 +347,11 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     }
   }
 
-  private func requireString(_ args: [String: Any], _ key: String) -> String {
-    (args[key] as? String) ?? ""
+  /// Returns the string at [key] or throws `invalid_argument`.
+  private func requireString(_ args: [String: Any], _ key: String) throws -> String {
+    guard let value = args[key] as? String else {
+      throw RbNativeError.invalidArgument("missing or invalid '\(key)'")
+    }
+    return value
   }
 }

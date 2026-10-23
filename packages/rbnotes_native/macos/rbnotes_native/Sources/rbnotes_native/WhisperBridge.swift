@@ -15,33 +15,56 @@ private final class WhisperCallbackBox {
   var isCancelled: () -> Bool = { false }
 }
 
-/// Thin Swift wrapper over the whisper.cpp C API (Metal-backed).
-///
-/// Loads a model, runs `whisper_full` with a progress callback and an abort
-/// callback wired to a cancellation flag, and extracts timestamped segments.
-/// All work happens on the calling (background) thread.
-enum WhisperBridge {
-  /// Transcribes 16 kHz mono float samples. Throws `RbNativeError` on failure
-  /// or cancellation.
-  static func transcribe(
+/// Minimum RMS energy (0..1) for audio to be considered speech. Below this the
+/// clip is treated as silence and transcription returns an empty list instead
+/// of risking a hallucinated segment.
+private let kSilenceRMSThreshold = 0.004
+
+/// A loaded, reusable whisper.cpp context for one model file. Not thread-safe:
+/// the owner must serialize `run` calls. `lastUsed` supports idle eviction.
+final class WhisperContext {
+  let modelPath: String
+  private let ctx: OpaquePointer
+  private(set) var lastUsed = Date()
+
+  init(modelPath: String) throws {
+    guard FileManager.default.fileExists(atPath: modelPath) else {
+      throw RbNativeError.modelMissing("model file not found: \(modelPath)")
+    }
+    var cparams = whisper_context_default_params()
+    cparams.use_gpu = true  // Metal
+    cparams.flash_attn = false
+    guard let ctx = whisper_init_from_file_with_params(modelPath, cparams) else {
+      throw RbNativeError.transcriptionFailed("failed to load whisper model")
+    }
+    self.ctx = ctx
+    self.modelPath = modelPath
+    let name = (modelPath as NSString).lastPathComponent
+    RbLog.whisper.info("loaded whisper context for \(name, privacy: .public)")
+  }
+
+  deinit {
+    let name = (modelPath as NSString).lastPathComponent
+    whisper_free(ctx)
+    RbLog.whisper.info("freed whisper context for \(name, privacy: .public)")
+  }
+
+  /// Runs `whisper_full` on 16 kHz mono float samples. Treats near-silence as
+  /// an empty result. Throws `transcription_cancelled`/`transcription_failed`.
+  func run(
     samples: [Float],
-    modelPath: String,
     language: String,
     onProgress: @escaping (Double) -> Void,
     isCancelled: @escaping () -> Bool
   ) throws -> [WhisperSegment] {
-    guard FileManager.default.fileExists(atPath: modelPath) else {
-      throw RbNativeError.modelMissing("model file not found: \(modelPath)")
-    }
+    lastUsed = Date()
+    guard !samples.isEmpty else { return [] }
 
-    var cparams = whisper_context_default_params()
-    cparams.use_gpu = true  // Metal
-    cparams.flash_attn = false
-
-    guard let ctx = whisper_init_from_file_with_params(modelPath, cparams) else {
-      throw RbNativeError.transcriptionFailed("failed to load whisper model")
+    // Silence / blank guard: avoid whisper hallucinating on near-silent clips.
+    if Self.rms(samples) < kSilenceRMSThreshold {
+      RbLog.whisper.info("audio below silence threshold; returning empty transcript")
+      return []
     }
-    defer { whisper_free(ctx) }
 
     let box = WhisperCallbackBox()
     box.onProgress = onProgress
@@ -58,6 +81,7 @@ enum WhisperBridge {
     params.no_context = true
     params.single_segment = false
     params.suppress_blank = true
+    params.no_speech_thold = 0.6  // skip segments whisper flags as non-speech
 
     params.progress_callback = { _, _, progress, userData in
       guard let userData else { return }
@@ -105,6 +129,17 @@ enum WhisperBridge {
     return segments
   }
 
+  private static func rms(_ samples: [Float]) -> Double {
+    guard !samples.isEmpty else { return 0 }
+    var sum = 0.0
+    for s in samples { sum += Double(s) * Double(s) }
+    return (sum / Double(samples.count)).squareRoot()
+  }
+}
+
+/// Thin Swift wrapper over the whisper.cpp C API (Metal-backed) for reading
+/// audio. Context loading/execution lives in `WhisperContext`.
+enum WhisperBridge {
   /// Reads a 16 kHz mono wav into float samples suitable for whisper.
   static func readSamples(wavPath: String) throws -> [Float] {
     let url = URL(fileURLWithPath: wavPath)

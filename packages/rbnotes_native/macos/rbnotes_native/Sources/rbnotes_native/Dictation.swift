@@ -17,7 +17,48 @@ enum DictationEventKind {
 }
 
 private let kEscKeyCode: Int64 = 53
-private let kVKeyCode: UInt16 = 9
+private let kFallbackVKeyCode: UInt16 = 9
+
+/// Max dictation duration before the watchdog force-stops it (safety against a
+/// stuck key / missed keyUp).
+private let kMaxDictationSeconds: TimeInterval = 300
+
+/// `NSPasteboard` adapter for the pure `PasteboardManager` logic.
+private final class SystemPasteboard: PasteboardLike {
+  private let pb = NSPasteboard.general
+  var changeCount: Int { pb.changeCount }
+
+  func readItems() -> [[String: Data]] {
+    guard let items = pb.pasteboardItems else { return [] }
+    return items.map { item in
+      var dict: [String: Data] = [:]
+      for type in item.types {
+        if let data = item.data(forType: type) { dict[type.rawValue] = data }
+      }
+      return dict
+    }
+  }
+
+  @discardableResult func clear() -> Int { pb.clearContents() }
+
+  func writeTemporaryString(_ text: String, transientTypes: [String]) {
+    let item = NSPasteboardItem()
+    item.setString(text, forType: .string)
+    for type in transientTypes {
+      item.setData(Data(), forType: NSPasteboard.PasteboardType(type))
+    }
+    pb.writeObjects([item])
+  }
+
+  func writeItems(_ items: [[String: Data]]) {
+    let objects = items.map { dict -> NSPasteboardItem in
+      let item = NSPasteboardItem()
+      for (type, data) in dict { item.setData(data, forType: NSPasteboard.PasteboardType(type)) }
+      return item
+    }
+    pb.writeObjects(objects)
+  }
+}
 
 /// Global dictation: a Carbon hotkey (toggle) or a CGEventTap (hold-to-talk),
 /// an Esc-to-cancel tap, temporary mic recording, text pasting and sounds.
@@ -36,9 +77,12 @@ final class DictationManager {
   private let recorder = DictationRecorder()
   private var isRecording = false
   private let stateLock = NSLock()
+  private var watchdog: DispatchSourceTimer?
 
   /// Set by the plugin to forward events to the EventChannel.
   var onEvent: ((DictationEventKind) -> Void)?
+  /// Set by the plugin to forward diagnostics (tap disabled, watchdog, …).
+  var onDiagnostic: ((NativeDiagnostic) -> Void)?
 
   // MARK: - Registration
 
@@ -50,12 +94,27 @@ final class DictationManager {
 
     switch mode {
     case .toggle:
+      // Carbon owns the shortcut; the tap is optional (Esc-to-cancel only).
       try registerCarbonHotKey(keyCode: keyCode, modifiers: modifiers)
+      do {
+        try installEventTap(consumesShortcut: false)
+      } catch {
+        RbLog.dictation.error(
+          "Esc-cancel tap unavailable (toggle mode continues): \(error.localizedDescription)")
+      }
     case .holdToTalk:
-      break  // handled entirely by the event tap
+      // The tap is mandatory: it both detects the key and consumes it so the
+      // shortcut does not type into the focused app.
+      do {
+        try installEventTap(consumesShortcut: true)
+      } catch {
+        // Nothing to undo (no Carbon hotkey in hold-to-talk); surface as a
+        // permission problem, not a hotkey conflict.
+        if let hotKeyRef { UnregisterEventHotKey(hotKeyRef); self.hotKeyRef = nil }
+        throw RbNativeError.permissionDenied(
+          "Accessibility permission required for hold-to-talk dictation")
+      }
     }
-    // Event tap: hold-to-talk key transitions and Esc-to-cancel in both modes.
-    try installEventTap()
     RbLog.dictation.info("dictation registered (mode=\(mode.rawValue, privacy: .public))")
   }
 
@@ -67,6 +126,7 @@ final class DictationManager {
       if let runLoopSource {
         CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
       }
+      CFMachPortInvalidate(eventTap)
       self.eventTap = nil
       self.runLoopSource = nil
     }
@@ -97,6 +157,7 @@ final class DictationManager {
       UInt32(keyCode), Self.carbonModifiers(modifiers), hotKeyID,
       GetApplicationEventTarget(), 0, &hotKeyRef)
     guard status == noErr else {
+      if let eventHandlerRef { RemoveEventHandler(eventHandlerRef); self.eventHandlerRef = nil }
       throw RbNativeError.hotkeyConflict("RegisterEventHotKey failed (\(status))")
     }
   }
@@ -107,24 +168,24 @@ final class DictationManager {
 
   // MARK: - Event tap
 
-  private func installEventTap() throws {
+  private func installEventTap(consumesShortcut: Bool) throws {
     let mask =
       (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
     let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+    // `.defaultTap` so we can consume the shortcut's key events in
+    // hold-to-talk (and Esc while recording); listen-only cannot drop events.
     guard
       let tap = CGEvent.tapCreate(
-        tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
+        tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
         eventsOfInterest: CGEventMask(mask),
         callback: { _, type, event, userData -> Unmanaged<CGEvent>? in
-          if let userData {
-            let manager = Unmanaged<DictationManager>.fromOpaque(userData).takeUnretainedValue()
-            manager.handleTap(type: type, event: event)
-          }
-          return Unmanaged.passUnretained(event)
+          guard let userData else { return Unmanaged.passUnretained(event) }
+          let manager = Unmanaged<DictationManager>.fromOpaque(userData).takeUnretainedValue()
+          return manager.handleTap(type: type, event: event)
         },
         userInfo: selfPtr)
     else {
-      throw RbNativeError.hotkeyConflict(
+      throw RbNativeError.permissionDenied(
         "CGEventTapCreate failed — Accessibility permission required")
     }
     let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
@@ -134,26 +195,53 @@ final class DictationManager {
     self.runLoopSource = source
   }
 
-  private func handleTap(type: CGEventType, event: CGEvent) {
-    let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-
-    // Esc cancels an in-flight dictation, in any mode.
-    if type == .keyDown && keyCode == kEscKeyCode && recordingState {
-      cancelRecording()
-      return
+  /// Returns the event to pass through, or nil to consume it.
+  private func handleTap(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+    // Re-enable the tap if the system disabled it (timeout / user input).
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+      RbLog.dictation.notice("event tap disabled (\(type.rawValue)); re-enabling")
+      if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }
+      // If a hold-to-talk dictation was in flight we may have missed the keyUp;
+      // stop it safely so the mic does not stay open.
+      if recordingState {
+        onDiagnostic?(
+          NativeDiagnostic(
+            DiagnosticCode.tapDisabled,
+            "event tap was disabled mid-dictation; stopping safely"))
+        stopRecording()
+      }
+      return Unmanaged.passUnretained(event)
     }
 
-    guard mode == .holdToTalk, UInt16(keyCode) == targetKeyCode else { return }
+    let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+
+    // Esc cancels an in-flight dictation, in any mode (consume it so it does
+    // not also trigger Esc behaviour in the focused app).
+    if type == .keyDown && keyCode == kEscKeyCode && recordingState {
+      cancelRecording()
+      return nil
+    }
+
+    guard mode == .holdToTalk, UInt16(keyCode) == targetKeyCode else {
+      return Unmanaged.passUnretained(event)
+    }
 
     switch type {
     case .keyDown:
       if !recordingState && event.flags.contains(requiredFlags) {
         startRecording()
+        return nil  // consume so ⌥Space etc. does not type into the app
       }
+      // If we are recording this is a key-repeat of the held shortcut; consume.
+      return recordingState ? nil : Unmanaged.passUnretained(event)
     case .keyUp:
-      if recordingState { stopRecording() }
+      if recordingState {
+        stopRecording()
+        return nil
+      }
+      return Unmanaged.passUnretained(event)
     default:
-      break
+      return Unmanaged.passUnretained(event)
     }
   }
 
@@ -171,7 +259,7 @@ final class DictationManager {
     stateLock.unlock()
     do {
       _ = try recorder.start()
-      playSound(.start)
+      startWatchdog()
       onEvent?(.started)
     } catch {
       stateLock.lock(); isRecording = false; stateLock.unlock()
@@ -184,8 +272,8 @@ final class DictationManager {
     guard isRecording else { stateLock.unlock(); return }
     isRecording = false
     stateLock.unlock()
+    stopWatchdog()
     let url = recorder.stop()
-    playSound(.end)
     if let url { onEvent?(.stopped(url.path)) }
   }
 
@@ -194,74 +282,126 @@ final class DictationManager {
     guard isRecording else { stateLock.unlock(); return }
     isRecording = false
     stateLock.unlock()
+    stopWatchdog()
     recorder.cancel()
     onEvent?(.cancelled)
   }
 
+  private func startWatchdog() {
+    let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
+    timer.schedule(deadline: .now() + kMaxDictationSeconds)
+    timer.setEventHandler { [weak self] in
+      guard let self, self.recordingState else { return }
+      RbLog.dictation.notice("dictation watchdog fired; force-stopping")
+      self.onDiagnostic?(
+        NativeDiagnostic(
+          DiagnosticCode.dictationWatchdog,
+          "dictation exceeded \(Int(kMaxDictationSeconds))s; stopped automatically"))
+      self.stopRecording()
+    }
+    timer.resume()
+    watchdog = timer
+  }
+
+  private func stopWatchdog() {
+    watchdog?.cancel()
+    watchdog = nil
+  }
+
   // MARK: - Paste
 
-  /// Pastes [text] by saving the pasteboard, writing the string, synthesizing
-  /// ⌘V and restoring the pasteboard after ~300 ms.
+  /// Pastes [text] into the frontmost app. The key events are built *before*
+  /// the pasteboard is touched; the original pasteboard is restored after
+  /// ~500 ms, but only if it was not changed in the meantime. The staged item
+  /// is marked transient/concealed so clipboard managers ignore it. The paste
+  /// is delayed until the shortcut modifiers are released and uses a private
+  /// event source so it does not combine with physically-held keys.
   func pasteText(_ text: String) throws {
     guard AXIsProcessTrusted() else {
       throw RbNativeError.pasteFailed("Accessibility permission required to paste")
     }
-    let pasteboard = NSPasteboard.general
-    let saved = Self.snapshot(pasteboard)
 
-    pasteboard.clearContents()
-    pasteboard.setString(text, forType: .string)
-
-    guard let source = CGEventSource(stateID: .combinedSessionState) else {
+    // 1. Build the key events first — fail before mutating the pasteboard.
+    guard let source = CGEventSource(stateID: .privateState) else {
       throw RbNativeError.pasteFailed("cannot create event source")
     }
+    let vKey = Self.resolveVKeyCode()
     guard
-      let down = CGEvent(keyboardEventSource: source, virtualKey: kVKeyCode, keyDown: true),
-      let up = CGEvent(keyboardEventSource: source, virtualKey: kVKeyCode, keyDown: false)
+      let down = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
+      let up = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false)
     else {
       throw RbNativeError.pasteFailed("cannot create key events")
     }
     down.flags = .maskCommand
     up.flags = .maskCommand
-    down.post(tap: .cghidEventTap)
-    up.post(tap: .cghidEventTap)
 
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-      Self.restore(saved, to: pasteboard)
+    // 2. Snapshot + stage the text (marked transient/concealed).
+    let pasteboard = SystemPasteboard()
+    let snapshot = PasteboardManager.snapshot(pasteboard)
+    let changeCountAfterWrite = PasteboardManager.writeTransient(text, into: pasteboard)
+
+    // 3. Paste once the shortcut modifiers are released; always restore.
+    Self.whenModifiersReleased {
+      down.post(tap: .cghidEventTap)
+      up.post(tap: .cghidEventTap)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        PasteboardManager.restoreIfUnchanged(
+          snapshot, into: pasteboard, expectedChangeCount: changeCountAfterWrite)
+      }
+    }
+  }
+
+  /// Invokes [action] on the main thread once the common shortcut modifiers are
+  /// no longer physically held (or after a ~1s timeout), so a synthetic ⌘V is
+  /// not polluted by a still-held Option/Control/Shift.
+  private static func whenModifiersReleased(
+    deadline: Date = Date().addingTimeInterval(1.0), _ action: @escaping () -> Void
+  ) {
+    let held: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift, .maskSecondaryFn]
+    let current = CGEventSource.flagsState(.combinedSessionState)
+    if current.intersection(held).isEmpty || Date() >= deadline {
+      DispatchQueue.main.async(execute: action)
+      return
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+      whenModifiersReleased(deadline: deadline, action)
+    }
+  }
+
+  /// Resolves the virtual key code that produces "v" on the current keyboard
+  /// layout (for ⌘V), falling back to the ANSI code 9.
+  static func resolveVKeyCode() -> UInt16 {
+    guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+      let layoutPtr = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
+    else { return kFallbackVKeyCode }
+    let layoutData = Unmanaged<CFData>.fromOpaque(layoutPtr).takeUnretainedValue() as Data
+
+    return layoutData.withUnsafeBytes { raw -> UInt16 in
+      guard let keyLayout = raw.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self)
+      else { return kFallbackVKeyCode }
+      var deadKeyState: UInt32 = 0
+      var chars = [UniChar](repeating: 0, count: 4)
+      var length = 0
+      for code in 0..<UInt16(128) {
+        let status = UCKeyTranslate(
+          keyLayout, code, UInt16(kUCKeyActionDown), 0,
+          UInt32(LMGetKbdType()), OptionBits(kUCKeyTranslateNoDeadKeysBit),
+          &deadKeyState, chars.count, &length, &chars)
+        if status == noErr, length == 1, chars[0] == UniChar(UnicodeScalar("v").value) {
+          return code
+        }
+      }
+      return kFallbackVKeyCode
     }
   }
 
   // MARK: - Sounds
 
+  /// Plays a start/end cue. Called by the app via `playDictationSound`; the
+  /// plugin no longer plays sounds automatically on dictation start/stop.
   func playSound(_ sound: DictationSoundKind) {
     let name = sound == .start ? "Tink" : "Pop"
     NSSound(named: NSSound.Name(name))?.play()
-  }
-
-  // MARK: - Pasteboard snapshot
-
-  private static func snapshot(_ pasteboard: NSPasteboard) -> [[NSPasteboard.PasteboardType: Data]] {
-    guard let items = pasteboard.pasteboardItems else { return [] }
-    return items.map { item in
-      var dict: [NSPasteboard.PasteboardType: Data] = [:]
-      for type in item.types {
-        if let data = item.data(forType: type) { dict[type] = data }
-      }
-      return dict
-    }
-  }
-
-  private static func restore(
-    _ snapshot: [[NSPasteboard.PasteboardType: Data]], to pasteboard: NSPasteboard
-  ) {
-    pasteboard.clearContents()
-    guard !snapshot.isEmpty else { return }
-    let items = snapshot.map { dict -> NSPasteboardItem in
-      let item = NSPasteboardItem()
-      for (type, data) in dict { item.setData(data, forType: type) }
-      return item
-    }
-    pasteboard.writeObjects(items)
   }
 
   // MARK: - Modifier mapping

@@ -1,14 +1,17 @@
+import CryptoKit
 import Foundation
 
 /// Whisper models supported by the plugin, matching the Dart `WhisperModel`
-/// enum wire names.
+/// enum wire names. Each carries the official Hugging Face file size and
+/// SHA-256 (git-LFS oid) so downloads can be verified and `modelState` can
+/// require an exact size match.
 enum WhisperModelKind: String {
   case largeV3TurboQ5
   case smallQ5
 
   init(wire: String) throws {
     guard let value = WhisperModelKind(rawValue: wire) else {
-      throw RbNativeError.modelMissing("unknown model: \(wire)")
+      throw RbNativeError.invalidArgument("unknown model: \(wire)")
     }
     self = value
   }
@@ -20,14 +23,34 @@ enum WhisperModelKind: String {
     }
   }
 
+  /// Exact file size in bytes (Hugging Face `x-linked-size`).
+  var expectedSize: Int64 {
+    switch self {
+    case .largeV3TurboQ5: return 574_041_195
+    case .smallQ5: return 190_085_487
+    }
+  }
+
+  /// SHA-256 of the file (Hugging Face `x-linked-etag` / git-LFS oid).
+  var expectedSHA256: String {
+    switch self {
+    case .largeV3TurboQ5:
+      return "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
+    case .smallQ5:
+      return "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb"
+    }
+  }
+
   var downloadURL: URL {
     URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(fileName)")!
   }
 }
 
 /// Manages on-disk whisper models under
-/// `~/Library/Application Support/RbNotes/models/` with atomic, resumable-safe
-/// downloads (`.part` → rename) and progress reporting.
+/// `~/Library/Application Support/RbNotes/models/` with atomic, verified
+/// downloads (`.part` → SHA-256 check → rename) and progress reporting.
+/// Supports concurrent downloads of *different* models, rejects a second
+/// concurrent download of the *same* model, and cancels on stream teardown.
 final class ModelManager: NSObject, URLSessionDownloadDelegate {
   static let shared = ModelManager()
 
@@ -40,24 +63,47 @@ final class ModelManager: NSObject, URLSessionDownloadDelegate {
     Self.modelsDirectory.appendingPathComponent(model.fileName)
   }
 
+  /// A model counts as downloaded only if its on-disk size matches the
+  /// expected size exactly.
   func state(_ model: WhisperModelKind) -> [String: Any] {
     let url = modelURL(model)
     let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-    let size = attrs?[.size] as? Int
-    let downloaded = FileManager.default.fileExists(atPath: url.path) && (size ?? 0) > 0
-    return ["downloaded": downloaded, "sizeBytes": downloaded ? (size as Any?) : nil as Any?]
+    let size = (attrs?[.size] as? NSNumber)?.int64Value
+    let downloaded = size == model.expectedSize
+    return [
+      "downloaded": downloaded,
+      "sizeBytes": downloaded ? (Int(size ?? 0) as Any?) : nil as Any?,
+    ]
   }
 
-  // MARK: - Download
+  // MARK: - Download bookkeeping
 
-  private var onProgress: ((Double) -> Void)?
-  private var onComplete: ((Result<Void, Error>) -> Void)?
-  private var destination: URL?
-  private var expectedBytes: Int64 = 0
-  private var session: URLSession?
+  private final class DownloadJob {
+    let model: WhisperModelKind
+    let destination: URL
+    let progress: (Double) -> Void
+    let completion: (Result<Void, Error>) -> Void
+    var expectedBytes: Int64 = 0
+    init(
+      model: WhisperModelKind, destination: URL,
+      progress: @escaping (Double) -> Void,
+      completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+      self.model = model
+      self.destination = destination
+      self.progress = progress
+      self.completion = completion
+    }
+  }
+
+  private let lock = NSLock()
+  private var jobs: [Int: DownloadJob] = [:]  // keyed by task identifier
+  private var activeModels: [String: URLSessionDownloadTask] = [:]  // fileName → task
+  private lazy var session: URLSession = URLSession(
+    configuration: .default, delegate: self, delegateQueue: nil)
 
   /// Downloads [model]. Emits progress 0..1 via [progress]; calls [completion]
-  /// when finished. Only one download at a time (sufficient for the app).
+  /// when finished. Rejects a concurrent download of the same model.
   func download(
     _ model: WhisperModelKind,
     progress: @escaping (Double) -> Void,
@@ -73,92 +119,145 @@ final class ModelManager: NSObject, URLSessionDownloadDelegate {
     }
 
     let finalURL = modelURL(model)
-    if FileManager.default.fileExists(atPath: finalURL.path),
-      let size = (try? FileManager.default.attributesOfItem(atPath: finalURL.path))?[.size]
-        as? Int, size > 0
+    if let size = (try? FileManager.default.attributesOfItem(atPath: finalURL.path)[.size]
+      as? NSNumber)?.int64Value, size == model.expectedSize
     {
       progress(1.0)
       completion(.success(()))
       return
     }
 
-    self.onProgress = progress
-    self.onComplete = completion
-    self.destination = finalURL
+    lock.lock()
+    if activeModels[model.fileName] != nil {
+      lock.unlock()
+      completion(.failure(RbNativeError.modelDownloadFailed(
+        "download already in progress for \(model.fileName)")))
+      return
+    }
+    let task = session.downloadTask(with: model.downloadURL)
+    let job = DownloadJob(
+      model: model, destination: finalURL, progress: progress, completion: completion)
+    jobs[task.taskIdentifier] = job
+    activeModels[model.fileName] = task
+    lock.unlock()
 
-    let config = URLSessionConfiguration.default
-    let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-    self.session = session
     RbLog.whisper.info("downloading model \(model.fileName, privacy: .public)")
-    session.downloadTask(with: model.downloadURL).resume()
+    task.resume()
   }
+
+  /// Cancels an in-flight download of [model] (wired to the stream `onCancel`).
+  func cancelDownload(_ model: WhisperModelKind) {
+    lock.lock()
+    let task = activeModels[model.fileName]
+    lock.unlock()
+    task?.cancel()
+  }
+
+  // MARK: - URLSessionDownloadDelegate
 
   func urlSession(
     _ session: URLSession, downloadTask: URLSessionDownloadTask,
     didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
     totalBytesExpectedToWrite: Int64
   ) {
-    expectedBytes = totalBytesExpectedToWrite
-    guard totalBytesExpectedToWrite > 0 else { return }
-    let fraction = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-    onProgress?(min(0.999, fraction))
+    lock.lock()
+    let job = jobs[downloadTask.taskIdentifier]
+    job?.expectedBytes = totalBytesExpectedToWrite
+    lock.unlock()
+    guard let job, totalBytesExpectedToWrite > 0 else { return }
+    job.progress(min(0.999, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)))
   }
 
   func urlSession(
     _ session: URLSession, downloadTask: URLSessionDownloadTask,
     didFinishDownloadingTo location: URL
   ) {
-    guard let destination else { return }
+    lock.lock()
+    let job = jobs[downloadTask.taskIdentifier]
+    lock.unlock()
+    guard let job else { return }
+
     let fm = FileManager.default
-    let partURL = destination.appendingPathExtension("part")
+    let partURL = job.destination.appendingPathExtension("part")
     do {
-      // Validate HTTP status and size.
       if let http = downloadTask.response as? HTTPURLResponse, http.statusCode != 200 {
         throw RbNativeError.modelDownloadFailed("HTTP \(http.statusCode)")
       }
-      let downloadedSize = (try fm.attributesOfItem(atPath: location.path)[.size] as? Int) ?? 0
-      if expectedBytes > 0 && Int64(downloadedSize) < expectedBytes {
+      let downloadedSize = ((try fm.attributesOfItem(atPath: location.path)[.size])
+        as? NSNumber)?.int64Value ?? 0
+      guard downloadedSize == job.model.expectedSize else {
         throw RbNativeError.modelDownloadFailed(
-          "incomplete download (\(downloadedSize)/\(expectedBytes) bytes)")
+          "size mismatch (\(downloadedSize)/\(job.model.expectedSize) bytes)")
       }
-      if downloadedSize < 1_000_000 {
-        throw RbNativeError.modelDownloadFailed("file too small (\(downloadedSize) bytes)")
+      let digest = try Self.sha256(ofFileAt: location)
+      guard digest == job.model.expectedSHA256 else {
+        throw RbNativeError.modelDownloadFailed("checksum mismatch for \(job.model.fileName)")
       }
 
       try? fm.removeItem(at: partURL)
       try fm.moveItem(at: location, to: partURL)  // atomic staging
-      try? fm.removeItem(at: destination)
-      try fm.moveItem(at: partURL, to: destination)  // atomic publish
+      try? fm.removeItem(at: job.destination)
+      try fm.moveItem(at: partURL, to: job.destination)  // atomic publish
 
-      onProgress?(1.0)
-      finish(.success(()))
+      job.progress(1.0)
+      finish(task: downloadTask, model: job.model, .success(()))
     } catch {
       try? fm.removeItem(at: partURL)
-      finish(.failure(FlutterSafe(error)))
+      finish(task: downloadTask, model: job.model, .failure(Self.wrap(error)))
     }
   }
 
   func urlSession(
     _ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?
   ) {
-    if let error {
-      finish(.failure(RbNativeError.modelDownloadFailed(error.localizedDescription)))
+    guard let error else { return }
+    let nsError = error as NSError
+    lock.lock()
+    let job = jobs[task.taskIdentifier]
+    lock.unlock()
+
+    RbLog.whisper.error(
+      "download didCompleteWithError: \(error.localizedDescription, privacy: .public)")
+
+    // A cancellation is a user action, not a failure to log loudly.
+    let wrapped: Error =
+      nsError.code == NSURLErrorCancelled
+      ? RbNativeError.transcriptionCancelled("download cancelled")
+      : RbNativeError.modelDownloadFailed(error.localizedDescription)
+
+    if let job {
+      finish(task: task, model: job.model, .failure(wrapped))
     }
   }
 
-  private func finish(_ result: Result<Void, Error>) {
-    let completion = onComplete
-    onComplete = nil
-    onProgress = nil
-    destination = nil
-    expectedBytes = 0
-    session?.finishTasksAndInvalidate()
-    session = nil
-    completion?(result)
+  // MARK: - Helpers
+
+  private func finish(task: URLSessionTask, model: WhisperModelKind, _ result: Result<Void, Error>) {
+    lock.lock()
+    let job = jobs.removeValue(forKey: task.taskIdentifier)
+    if activeModels[model.fileName]?.taskIdentifier == task.taskIdentifier {
+      activeModels[model.fileName] = nil
+    }
+    lock.unlock()
+    job?.completion(result)
   }
 
-  private func FlutterSafe(_ error: Error) -> Error {
+  private static func wrap(_ error: Error) -> Error {
     if error is RbNativeError { return error }
     return RbNativeError.modelDownloadFailed(error.localizedDescription)
+  }
+
+  /// Streams the file through SHA-256 so large models are not loaded whole.
+  private static func sha256(ofFileAt url: URL) throws -> String {
+    let handle = try FileHandle(forReadingFrom: url)
+    defer { try? handle.close() }
+    var hasher = SHA256()
+    while autoreleasepool(invoking: {
+      let chunk = handle.readData(ofLength: 1 << 20)  // 1 MiB
+      guard !chunk.isEmpty else { return false }
+      hasher.update(data: chunk)
+      return true
+    }) {}
+    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
   }
 }

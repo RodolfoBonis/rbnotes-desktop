@@ -60,22 +60,3 @@ final class PCMConverter {
     return Data(bytes: channel[0], count: count * MemoryLayout<Int16>.size)
   }
 }
-
-enum RMS {
-  /// Root-mean-square level (0..1) of interleaved s16le bytes.
-  static func level(of data: Data) -> Double {
-    guard !data.isEmpty else { return 0 }
-    return data.withUnsafeBytes { raw -> Double in
-      let samples = raw.bindMemory(to: Int16.self)
-      guard !samples.isEmpty else { return 0 }
-      var sum = 0.0
-      for sample in samples {
-        let normalized = Double(sample) / 32768.0
-        sum += normalized * normalized
-      }
-      let rms = (sum / Double(samples.count)).squareRoot()
-      // Light perceptual boost so quiet speech still shows on a meter.
-      return min(1.0, rms * 1.8)
-    }
-  }
-}

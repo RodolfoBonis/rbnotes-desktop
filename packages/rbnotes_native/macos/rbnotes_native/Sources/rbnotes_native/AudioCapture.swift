@@ -1,23 +1,47 @@
 import AVFoundation
 import Foundation
+import QuartzCore
 
 /// Captures the microphone via `AVAudioEngine`, converts to 16 kHz mono s16le
 /// and forwards the bytes + an RMS level to the owner. Supports pause/resume
-/// (buffers are dropped while paused, the engine keeps running).
+/// (buffers are dropped while paused, the engine keeps running) and recovers
+/// from `AVAudioEngineConfigurationChange` (e.g. default device swap) by
+/// reinstalling the tap and restarting the engine while keeping the same
+/// `onData` sink (and therefore the same wav writer).
 final class AudioCapture {
   private let engine = AVAudioEngine()
   private var converter: PCMConverter?
   private let lock = NSLock()
   private var paused = false
+  private var _isRunning = false
+  private var _firstBufferHostTime: Double?
+  private var configObserver: NSObjectProtocol?
 
   /// Called on the audio thread with converted s16le bytes to persist.
   var onData: ((Data) -> Void)?
   /// Called with the latest RMS level (0..1).
   var onLevel: ((Double) -> Void)?
+  /// Called with a diagnostic when an asynchronous failure/recovery occurs.
+  var onError: ((NativeDiagnostic) -> Void)?
 
-  private(set) var isRunning = false
+  var isRunning: Bool {
+    lock.lock(); defer { lock.unlock() }
+    return _isRunning
+  }
+
+  /// Monotonic host time (`CACurrentMediaTime`) of the first captured buffer,
+  /// for mic/system alignment. Nil until the first buffer arrives.
+  var firstBufferHostTime: Double? {
+    lock.lock(); defer { lock.unlock() }
+    return _firstBufferHostTime
+  }
 
   func start() throws {
+    try startEngine()
+    observeConfigurationChanges()
+  }
+
+  private func startEngine() throws {
     let input = engine.inputNode
     let inputFormat = input.inputFormat(forBus: 0)
     guard inputFormat.sampleRate > 0 else {
@@ -38,10 +62,47 @@ final class AudioCapture {
       try engine.start()
     } catch {
       input.removeTap(onBus: 0)
-      throw RbNativeError.notRecording("AVAudioEngine failed to start: \(error.localizedDescription)")
+      throw RbNativeError.notRecording(
+        "AVAudioEngine failed to start: \(error.localizedDescription)")
     }
-    isRunning = true
+    lock.lock(); _isRunning = true; lock.unlock()
     RbLog.recording.info("mic capture started @ \(inputFormat.sampleRate, privacy: .public) Hz")
+  }
+
+  /// Reinstalls the tap and restarts the engine after a device/route change.
+  private func observeConfigurationChanges() {
+    configObserver = NotificationCenter.default.addObserver(
+      forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+    ) { [weak self] _ in
+      self?.handleConfigurationChange()
+    }
+  }
+
+  private func handleConfigurationChange() {
+    lock.lock()
+    let running = _isRunning
+    lock.unlock()
+    guard running else { return }
+
+    RbLog.recording.notice("AVAudioEngine configuration changed — restarting mic engine")
+    onError?(
+      NativeDiagnostic(
+        DiagnosticCode.audioConfigChanged,
+        "microphone audio configuration changed; restarting capture"))
+
+    let input = engine.inputNode
+    input.removeTap(onBus: 0)
+    engine.stop()
+    do {
+      try startEngine()
+    } catch {
+      lock.lock(); _isRunning = false; lock.unlock()
+      RbLog.recording.error("mic engine restart failed: \(error.localizedDescription)")
+      onError?(
+        NativeDiagnostic(
+          DiagnosticCode.audioEngineRestartFailed,
+          "microphone capture could not be restarted: \(error.localizedDescription)"))
+    }
   }
 
   private func process(_ buffer: AVAudioPCMBuffer) {
@@ -51,6 +112,9 @@ final class AudioCapture {
     if isPaused { return }
 
     guard let data = converter?.convert(buffer) else { return }
+    lock.lock()
+    if _firstBufferHostTime == nil { _firstBufferHostTime = CACurrentMediaTime() }
+    lock.unlock()
     onData?(data)
     onLevel?(RMS.level(of: data))
   }
@@ -68,10 +132,17 @@ final class AudioCapture {
   }
 
   func stop() {
-    guard isRunning else { return }
+    lock.lock()
+    guard _isRunning else { lock.unlock(); return }
+    _isRunning = false
+    lock.unlock()
+
+    if let configObserver {
+      NotificationCenter.default.removeObserver(configObserver)
+      self.configObserver = nil
+    }
     engine.inputNode.removeTap(onBus: 0)
     engine.stop()
-    isRunning = false
     RbLog.recording.info("mic capture stopped")
   }
 }

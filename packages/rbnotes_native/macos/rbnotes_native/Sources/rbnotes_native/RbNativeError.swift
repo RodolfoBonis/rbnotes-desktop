@@ -16,6 +16,7 @@ enum RbNativeError: Error {
   case transcriptionCancelled(String)
   case hotkeyConflict(String)
   case pasteFailed(String)
+  case invalidArgument(String)
 
   var code: String {
     switch self {
@@ -29,6 +30,7 @@ enum RbNativeError: Error {
     case .transcriptionCancelled: return "transcription_cancelled"
     case .hotkeyConflict: return "hotkey_conflict"
     case .pasteFailed: return "paste_failed"
+    case .invalidArgument: return "invalid_argument"
     }
   }
 
@@ -37,7 +39,7 @@ enum RbNativeError: Error {
     case .permissionDenied(let m), .alreadyRecording(let m), .notRecording(let m),
       .systemAudioUnavailable(let m), .modelMissing(let m), .modelDownloadFailed(let m),
       .transcriptionFailed(let m), .transcriptionCancelled(let m), .hotkeyConflict(let m),
-      .pasteFailed(let m):
+      .pasteFailed(let m), .invalidArgument(let m):
       return m
     }
   }
@@ -49,8 +51,7 @@ enum RbNativeError: Error {
 
 extension FlutterError {
   /// Builds a `FlutterError` from any thrown error, preserving `RbNativeError`
-  /// codes and falling back to `transcription_failed`-style generic mapping is
-  /// avoided: unknown errors use a neutral `unknown` code so the Dart side can
+  /// codes. Unknown errors use a neutral `unknown` code so the Dart side can
   /// still surface them as `RbNativeException`.
   static func from(_ error: Error) -> FlutterError {
     if let rb = error as? RbNativeError {

@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreMedia
 import Foundation
+import QuartzCore
 import ScreenCaptureKit
 
 /// Captures system audio via ScreenCaptureKit (`SCStream`, audio only).
@@ -8,7 +9,8 @@ import ScreenCaptureKit
 /// A tiny video stream is configured because `SCStream` requires one, but its
 /// frames are discarded. Audio is converted to 16 kHz mono s16le. If the
 /// stream cannot be created/started the caller treats the recording as
-/// mic-only (`systemWavPath == null`).
+/// mic-only (`systemWavPath == null`). Asynchronous stops (`didStopWithError`)
+/// are surfaced via [onError].
 @available(macOS 13.0, *)
 final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
   private var stream: SCStream?
@@ -16,9 +18,19 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
   private let audioQueue = DispatchQueue(label: "br.com.rodolfodebonis.rbnotes.scaudio")
   private let lock = NSLock()
   private var paused = false
+  private var _firstBufferHostTime: Double?
 
   var onData: ((Data) -> Void)?
   var onLevel: ((Double) -> Void)?
+  /// Called when the stream stops asynchronously with an error.
+  var onError: ((NativeDiagnostic) -> Void)?
+
+  /// Monotonic host time (`CACurrentMediaTime`) of the first audio buffer, for
+  /// mic/system alignment. Nil until the first buffer arrives.
+  var firstBufferHostTime: Double? {
+    lock.lock(); defer { lock.unlock() }
+    return _firstBufferHostTime
+  }
 
   func start() async throws {
     let content: SCShareableContent
@@ -75,7 +87,8 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
   // MARK: - SCStreamOutput
 
   func stream(
-    _ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType
+    _ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+    of type: SCStreamOutputType
   ) {
     guard type == .audio else { return }
     lock.lock(); let isPaused = paused; lock.unlock()
@@ -88,6 +101,9 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
       converter = PCMConverter(inputFormat: pcm.format)
     }
     guard let data = converter?.convert(pcm) else { return }
+    lock.lock()
+    if _firstBufferHostTime == nil { _firstBufferHostTime = CACurrentMediaTime() }
+    lock.unlock()
     onData?(data)
     onLevel?(RMS.level(of: data))
   }
@@ -96,6 +112,10 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
 
   func stream(_ stream: SCStream, didStopWithError error: Error) {
     RbLog.systemAudio.error("SCStream stopped with error: \(error.localizedDescription)")
+    onError?(
+      NativeDiagnostic(
+        DiagnosticCode.systemAudioStopped,
+        "system audio capture stopped: \(error.localizedDescription)"))
   }
 
   // MARK: - Helpers

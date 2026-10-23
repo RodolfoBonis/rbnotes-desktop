@@ -2,12 +2,36 @@ import AVFoundation
 import Foundation
 
 /// Builds the stereo `.m4a` playback file from the two mono 16 kHz wavs:
-/// left channel = mic, right channel = system. When there is no system file
-/// the mic is duplicated to both channels so playback stays centered.
+/// left channel = mic, right channel = system. When there is no usable system
+/// file the mic is duplicated to both channels so playback stays centered.
 enum Mixer {
-  static func mixToM4A(micWav: URL, systemWav: URL?, output: URL) throws {
+  /// Mixes [micWav] (+ optional [systemWav]) into a stereo `.m4a` at [output].
+  ///
+  /// Returns whether the system channel actually contains system audio. If
+  /// [systemWav] is provided but cannot be read (or is empty), the error is
+  /// swallowed into a mic-only mix and `false` is returned so the caller can
+  /// report `systemWavPath == null`.
+  @discardableResult
+  static func mixToM4A(micWav: URL, systemWav: URL?, output: URL) throws -> Bool {
     let mic = try readSamples(micWav)
-    let system = systemWav.flatMap { try? readSamples($0) }
+
+    var system: [Float]?
+    var systemIncluded = false
+    if let systemWav {
+      do {
+        let samples = try readSamples(systemWav)
+        if samples.isEmpty {
+          RbLog.recording.error("system wav empty; falling back to mic-only mix")
+        } else {
+          system = samples
+          systemIncluded = true
+        }
+      } catch {
+        RbLog.recording.error(
+          "system wav unreadable, mic-only mix: \(error.localizedDescription)")
+      }
+    }
+
     let frameCount = max(mic.count, system?.count ?? 0)
     guard frameCount > 0 else {
       throw RbNativeError.notRecording("nothing to mix into \(output.lastPathComponent)")
@@ -48,6 +72,7 @@ enum Mixer {
       offset += n
     }
     RbLog.recording.info("wrote playback mix \(output.lastPathComponent, privacy: .public)")
+    return systemIncluded
   }
 
   private static func readSamples(_ url: URL) throws -> [Float] {

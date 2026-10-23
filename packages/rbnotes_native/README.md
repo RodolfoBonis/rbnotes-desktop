@@ -138,7 +138,20 @@ fvm flutter test          # Dart: channel serialization + error mapping
 fvm flutter analyze       # very_good_analysis, clean
 ```
 
-The channel plumbing (serialization, error-code mapping, event decoding) is
-covered by Dart tests with a mocked `MethodChannel`/`EventChannel`. The native
-audio/whisper/dictation paths require a real machine with granted permissions
-and are verified manually via the example app.
+The channel plumbing (serialization, error-code mapping, event decoding,
+multiplexed transcription progress, diagnostics, transcription priority) is
+covered by Dart tests with a mocked `MethodChannel`/`EventChannel`.
+
+The pure, Flutter-independent Swift logic (WAV header build/repair incl. odd
+sizes, RMS, and the pasteboard snapshot/restore decision) lives under
+`macos/rbnotes_native/Sources/rbnotes_native/Core/` and is unit-tested with the
+auxiliary Swift package in `macos/RbNativeCore` (its sources are symlinks to the
+same files CocoaPods compiles, so there is no duplication):
+
+```bash
+cd packages/rbnotes_native/macos/RbNativeCore
+swift test
+```
+
+The native audio/whisper/dictation paths require a real machine with granted
+permissions and are verified manually via the example app.

@@ -3,7 +3,15 @@ import Foundation
 /// Owns active [RecordingSession]s keyed by id and implements crash recovery.
 final class RecordingManager {
   private var sessions: [String: RecordingSession] = [:]
+  /// Ids that passed the uniqueness check and are mid-start (async). Reserved
+  /// under the same lock so two concurrent `start(id:)` calls cannot both
+  /// proceed (check-then-insert is atomic).
+  private var reserving: Set<String> = []
   private let lock = NSLock()
+
+  /// Forwards session diagnostics (write errors, device changes, system-audio
+  /// drops) to the plugin's diagnostics channel.
+  var onDiagnostic: ((NativeDiagnostic) -> Void)?
 
   func session(for id: String) -> RecordingSession? {
     lock.lock(); defer { lock.unlock() }
@@ -13,20 +21,34 @@ final class RecordingManager {
   func start(id: String, directory: String, captureSystemAudio: Bool) async throws
     -> [String: Any]
   {
+    // Atomic check-then-reserve.
     lock.lock()
-    if sessions[id] != nil {
+    if sessions[id] != nil || reserving.contains(id) {
       lock.unlock()
       throw RbNativeError.alreadyRecording("recording already in progress: \(id)")
     }
+    reserving.insert(id)
     lock.unlock()
 
+    func unreserve() {
+      lock.lock(); reserving.remove(id); lock.unlock()
+    }
+
     let dirURL = URL(fileURLWithPath: directory, isDirectory: true)
-    let session = try RecordingSession(
-      id: id, directory: dirURL, captureSystemAudio: captureSystemAudio)
-    try await session.start()
+    let session: RecordingSession
+    do {
+      session = try RecordingSession(
+        id: id, directory: dirURL, captureSystemAudio: captureSystemAudio)
+      session.onDiagnostic = { [weak self] diag in self?.onDiagnostic?(diag) }
+      try await session.start()
+    } catch {
+      unreserve()
+      throw error
+    }
 
     lock.lock()
     sessions[id] = session
+    reserving.remove(id)
     lock.unlock()
 
     return [
