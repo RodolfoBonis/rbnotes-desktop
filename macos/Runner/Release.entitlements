@@ -10,5 +10,8 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Servidor loopback (127.0.0.1:53682) só durante o login OIDC/PKCE. -->
+	<key>com.apple.security.network.server</key>
+	<true/>
 </dict>
 </plist>
