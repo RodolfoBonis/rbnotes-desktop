@@ -128,6 +128,22 @@ void main() {
     expect(cubit.state.error, isNotNull);
     await cubit.close();
   });
+
+  test('falha de transcricao mostra erro no HUD e nao encerra (bug/pedido 7)',
+      () async {
+    native.modelDownloaded = false; // transcribe lanca model_missing
+    final cubit = build();
+    await cubit.start();
+    await cubit.stop();
+    await cubit.stream.firstWhere((s) => s.processingFailed);
+    expect(cubit.state.failedStep, 0);
+    expect(cubit.state.hudVisible, isTrue);
+    expect(cubit.state.isProcessing, isTrue);
+
+    cubit.closeHud(); // "Fechar" encerra o HUD
+    expect(cubit.state.isActive, isFalse);
+    await cubit.close();
+  });
 }
 
 /// Fake que nega o microfone mesmo após requestPermission.

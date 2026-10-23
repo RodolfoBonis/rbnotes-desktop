@@ -6,6 +6,8 @@ import 'package:equatable/equatable.dart';
 import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/data/database/database.dart';
+import 'package:rbnotes/features/ai/data/ai_activity.dart';
+import 'package:rbnotes/features/ai/data/enrichment_service.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
@@ -37,6 +39,9 @@ class RecordingState extends Equatable {
     this.step = 0,
     this.stepProgress = 0,
     this.error,
+    this.claudeStatus,
+    this.failedStep,
+    this.hudDismissed = false,
   });
 
   final RecordingStatus status;
@@ -56,10 +61,28 @@ class RecordingState extends Equatable {
   final double stepProgress;
   final String? error;
 
+  /// Texto do status real do resumo (SSE): fila/gerando/limite. Null fora da
+  /// etapa do Claude.
+  final String? claudeStatus;
+
+  /// Etapa que falhou no processamento (0 = transcrição, 2 = resumo). Null se
+  /// não houve falha. Dirige o card de erro do HUD (Tentar de novo / Fechar).
+  final int? failedStep;
+
+  /// O usuário fechou o HUD; o processamento continua em background e o
+  /// progresso aparece no item da lista.
+  final bool hudDismissed;
+
   bool get isRecording =>
       status == RecordingStatus.recording || status == RecordingStatus.paused;
   bool get isProcessing => status == RecordingStatus.processing;
   bool get isActive => status != RecordingStatus.idle;
+
+  /// Falhou alguma etapa do processamento (mostra o card de erro no HUD).
+  bool get processingFailed => failedStep != null;
+
+  /// O HUD deve aparecer? (não, se o usuário o fechou durante o processamento).
+  bool get hudVisible => isActive && !(isProcessing && hudDismissed);
 
   RecordingState copyWith({
     RecordingStatus? status,
@@ -76,6 +99,11 @@ class RecordingState extends Equatable {
     double? stepProgress,
     String? error,
     bool clearError = false,
+    String? claudeStatus,
+    bool clearClaudeStatus = false,
+    int? failedStep,
+    bool clearFailedStep = false,
+    bool? hudDismissed,
   }) => RecordingState(
     status: status ?? this.status,
     noteId: clearNoteId ? null : (noteId ?? this.noteId),
@@ -89,6 +117,11 @@ class RecordingState extends Equatable {
     step: step ?? this.step,
     stepProgress: stepProgress ?? this.stepProgress,
     error: clearError ? null : (error ?? this.error),
+    claudeStatus: clearClaudeStatus
+        ? null
+        : (claudeStatus ?? this.claudeStatus),
+    failedStep: clearFailedStep ? null : (failedStep ?? this.failedStep),
+    hudDismissed: hudDismissed ?? this.hudDismissed,
   );
 
   @override
@@ -105,6 +138,9 @@ class RecordingState extends Equatable {
     step,
     stepProgress,
     error,
+    claudeStatus,
+    failedStep,
+    hudDismissed,
   ];
 }
 
@@ -118,12 +154,16 @@ class RecordingCubit extends Cubit<RecordingState> {
     required SettingsStore settings,
     required AppPaths paths,
     required Stream<NativeDiagnostic> diagnostics,
+    AiActivity? aiActivity,
+    EnrichmentService? enrichment,
     Uuid? uuid,
   }) : _native = native,
        _repository = repository,
        _queue = queue,
        _settings = settings,
        _paths = paths,
+       _aiActivity = aiActivity,
+       _enrichment = enrichment,
        _uuid = uuid ?? const Uuid(),
        super(RecordingState(captureSystemAudio: settings.captureSystemAudio)) {
     _diagSub = diagnostics.listen(_onDiagnostic);
@@ -134,6 +174,8 @@ class RecordingCubit extends Cubit<RecordingState> {
   final TranscriptionQueue _queue;
   final SettingsStore _settings;
   final AppPaths _paths;
+  final AiActivity? _aiActivity;
+  final EnrichmentService? _enrichment;
   final Uuid _uuid;
 
   StreamSubscription<AudioLevels>? _levelsSub;
@@ -141,6 +183,7 @@ class RecordingCubit extends Cubit<RecordingState> {
   StreamSubscription<LiveTranscript>? _liveSub;
   StreamSubscription<TranscriptionProgress>? _procSub;
   StreamSubscription<NoteRow?>? _aiSub;
+  StreamSubscription<AiPhase>? _aiPhaseSub;
   Timer? _ticker;
   Timer? _stepTicker;
   DateTime? _startedAt;
@@ -325,8 +368,18 @@ class RecordingCubit extends Cubit<RecordingState> {
         _advanceToClaude(noteId);
       } else if (!p.isTerminal) {
         emit(state.copyWith(step: 0, stepProgress: p.progress));
+      } else if (p.failed) {
+        // Falha de transcrição: mostra o estado de erro no HUD (não encerra),
+        // com "Tentar de novo" e "Fechar".
+        emit(
+          state.copyWith(
+            step: 0,
+            failedStep: 0,
+            error: 'Não foi possível transcrever.',
+          ),
+        );
       } else {
-        // falha/cancelamento: encerra o HUD.
+        // Cancelamento: encerra o HUD silenciosamente.
         _finishProcessing(noteId);
       }
     });
@@ -341,15 +394,73 @@ class RecordingCubit extends Cubit<RecordingState> {
       emit(state.copyWith(step: 2, stepProgress: 0.05));
       _tickClaude();
       unawaited(_aiSub?.cancel());
+      _listenClaudePhase();
       _aiSub = _repository.watchNote(noteId).listen((note) {
         if (note == null) return;
-        if (note.aiStatus == AiStatus.ready ||
-            note.aiStatus == AiStatus.failed ||
+        if (note.aiStatus == AiStatus.failed) {
+          _stepTicker?.cancel();
+          emit(
+            state.copyWith(
+              step: 2,
+              failedStep: 2,
+              error: 'Não foi possível gerar o resumo.',
+            ),
+          );
+        } else if (note.aiStatus == AiStatus.ready ||
             note.aiStatus == AiStatus.none) {
           _finishProcessing(noteId);
         }
       });
     });
+  }
+
+  /// Reflete a fase real do resumo (SSE) no texto da etapa do Claude.
+  void _listenClaudePhase() {
+    final activity = _aiActivity;
+    if (activity == null) return;
+    unawaited(_aiPhaseSub?.cancel());
+    _aiPhaseSub = activity.stream.listen((phase) {
+      final text = switch (phase) {
+        AiPhase.queued => 'Na fila…',
+        AiPhase.streaming => 'Gerando…',
+        AiPhase.dailyLimit => 'Limite diário atingido',
+        AiPhase.error => 'Erro no resumo',
+        AiPhase.idle => null,
+      };
+      emit(state.copyWith(claudeStatus: text, clearClaudeStatus: text == null));
+    });
+  }
+
+  /// "Tentar de novo" no HUD de erro: reexecuta a etapa que falhou.
+  Future<void> retryProcessing() async {
+    final noteId = state.noteId;
+    if (noteId == null || state.failedStep == null) return;
+    final failed = state.failedStep!;
+    emit(
+      state.copyWith(
+        clearError: true,
+        clearFailedStep: true,
+        stepProgress: 0,
+        step: failed,
+      ),
+    );
+    if (failed == 0) {
+      await _repository.setStatus(noteId, NoteStatus.transcribing);
+      _queue.retry(noteId);
+    } else {
+      _tickClaude();
+      await _enrichment?.enrichNote(noteId, force: true);
+    }
+  }
+
+  /// Fecha o HUD. Se o processamento ainda roda, ele continua em background e o
+  /// progresso aparece no item da lista; se falhou, apenas abandona o HUD.
+  void closeHud() {
+    if (state.processingFailed) {
+      _finishProcessing(state.noteId ?? '');
+    } else {
+      emit(state.copyWith(hudDismissed: true));
+    }
   }
 
   void _tickClaude() {
@@ -365,7 +476,10 @@ class RecordingCubit extends Cubit<RecordingState> {
     _stepTicker?.cancel();
     unawaited(_procSub?.cancel());
     unawaited(_aiSub?.cancel());
-    _created.add(CreatedNote(id: noteId, kind: state.kind));
+    unawaited(_aiPhaseSub?.cancel());
+    if (noteId.isNotEmpty) {
+      _created.add(CreatedNote(id: noteId, kind: state.kind));
+    }
     _reset();
   }
 
@@ -422,6 +536,7 @@ class RecordingCubit extends Cubit<RecordingState> {
     await _liveSub?.cancel();
     await _procSub?.cancel();
     await _aiSub?.cancel();
+    await _aiPhaseSub?.cancel();
     await _diagSub?.cancel();
     await _created.close();
     return super.close();

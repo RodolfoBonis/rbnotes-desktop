@@ -31,7 +31,7 @@ class RecordingHud extends StatelessWidget {
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeInCubic,
           transitionBuilder: fadeScaleTransition,
-          child: !state.isActive
+          child: !state.hudVisible
               ? const SizedBox.shrink()
               : Padding(
                   // Centraliza o HUD sobre o painel de detalhe (à direita da
@@ -202,30 +202,122 @@ class _ProcessingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cubit = context.read<RecordingCubit>();
+    if (state.processingFailed) {
+      return _ProcessingErrorCard(state: state);
+    }
     return _DarkCard(
       width: 420,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            'Preparando sua nota · ${Formatters.duration(state.elapsed)}',
-            style: context.bodyText(
-              size: 12,
-              weight: FontWeight.w600,
-              color: Colors.white.withValues(alpha: 0.6),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Preparando sua nota · ${Formatters.duration(state.elapsed)}',
+                  style: context.bodyText(
+                    size: 12,
+                    weight: FontWeight.w600,
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
+                ),
+              ),
+              _CloseHudButton(onTap: cubit.closeHud),
+            ],
           ),
           const SizedBox(height: 12),
           for (var i = 0; i < RecordingHud._steps.length; i++)
             _StepRow(
               label: RecordingHud._steps[i].$1,
-              where: RecordingHud._steps[i].$2,
+              // Na etapa do Claude, o "onde" vira o status real do SSE.
+              where: i == 2 && i == state.step && state.claudeStatus != null
+                  ? state.claudeStatus!
+                  : RecordingHud._steps[i].$2,
               done: i < state.step,
               active: i == state.step,
               progress: state.stepProgress,
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Estado de erro do HUD de processamento: mensagem + "Tentar de novo" +
+/// "Fechar". O processamento não some sozinho; o usuário decide.
+class _ProcessingErrorCard extends StatelessWidget {
+  const _ProcessingErrorCard({required this.state});
+  final RecordingState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final cubit = context.read<RecordingCubit>();
+    return _DarkCard(
+      width: 420,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.error_outline,
+                size: 16,
+                color: RbTokens.recDot,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  state.error ?? 'Algo deu errado.',
+                  style: context.bodyText(
+                    size: 13,
+                    weight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              _CloseHudButton(onTap: cubit.closeHud),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              _HudButton(
+                label: 'Fechar',
+                onTap: cubit.closeHud,
+                color: Colors.white.withValues(alpha: 0.75),
+              ),
+              const SizedBox(width: 8),
+              _HudButton(
+                label: 'Tentar de novo',
+                onTap: cubit.retryProcessing,
+                background: Colors.white,
+                color: const Color(0xFF1D1D1F),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CloseHudButton extends StatelessWidget {
+  const _CloseHudButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Icon(
+        Icons.close,
+        size: 16,
+        color: Colors.white.withValues(alpha: 0.5),
       ),
     );
   }

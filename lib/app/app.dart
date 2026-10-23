@@ -29,6 +29,8 @@ class RbNotesApp extends StatelessWidget {
             settings: di(),
             paths: di(),
             diagnostics: di<DiagnosticsMonitor>().stream,
+            aiActivity: di(),
+            enrichment: di(),
           ),
         ),
       ],

@@ -122,4 +122,19 @@ void main() {
     await shot(tester, 'processing_hud');
     await down(tester);
   });
+
+  testWidgets('HUD de processamento — erro', (tester) async {
+    final rec = _MockRecordingCubit();
+    const state = RecordingState(
+      status: RecordingStatus.processing,
+      noteId: 'n1',
+      failedStep: 0,
+      error: 'Não foi possível transcrever.',
+    );
+    whenListen(rec, const Stream<RecordingState>.empty(), initialState: state);
+    when(() => rec.createdNotes).thenAnswer((_) => const Stream.empty());
+    await boot(tester, recording: rec);
+    await shot(tester, 'processing_hud_error');
+    await down(tester);
+  });
 }

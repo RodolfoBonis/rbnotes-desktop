@@ -416,7 +416,7 @@ class _NoteCard extends StatelessWidget {
                   const SizedBox(width: 7),
                   Expanded(
                     child: Text(
-                      note.title,
+                      note.title.isEmpty ? 'Sem título' : note.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: context.bodyText(
@@ -426,6 +426,7 @@ class _NoteCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  _NoteProgressBadge(note: note, selected: selected),
                 ],
               ),
               if (excerpt.isNotEmpty)
@@ -449,6 +450,43 @@ class _NoteCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Indicador de processamento no item da lista: gira enquanto transcreve ou
+/// gera o resumo (para o progresso aparecer mesmo com o HUD fechado) e mostra
+/// um alerta quando a transcrição falhou.
+class _NoteProgressBadge extends StatelessWidget {
+  const _NoteProgressBadge({required this.note, required this.selected});
+  final NoteRow note;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final busy =
+        note.status == NoteStatus.transcribing ||
+        note.status == NoteStatus.recording ||
+        note.aiStatus == AiStatus.pending;
+    final failed = note.status == NoteStatus.failed;
+    if (!busy && !failed) return const SizedBox.shrink();
+    final color = selected ? Colors.white : context.rb.secondary(0.7);
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: failed
+          ? Icon(
+              Icons.error_outline,
+              size: 13,
+              color: selected ? Colors.white : RbTokens.destructive,
+            )
+          : SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.6,
+                valueColor: AlwaysStoppedAnimation(color),
+              ),
+            ),
     );
   }
 }
