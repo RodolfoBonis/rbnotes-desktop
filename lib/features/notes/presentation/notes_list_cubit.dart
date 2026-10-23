@@ -83,13 +83,18 @@ class NotesListCubit extends Cubit<NotesListState> {
 
   void _onProgress(TranscriptionProgress p) {
     final next = Map<String, TranscriptionProgress>.from(state.progress);
-    if (p.done) {
+    // Estados terminais (done/failed/cancelled) saem do mapa de progresso; o
+    // status da própria nota passa a ditar o indicador (ready/failed).
+    if (p.isTerminal) {
       next.remove(p.noteId);
     } else {
       next[p.noteId] = p;
     }
     emit(state.copyWith(progress: next));
   }
+
+  /// Reenfileira a transcrição de uma nota que falhou (botão "Tentar de novo").
+  void retryTranscription(String noteId) => _queue.retry(noteId);
 
   void setTagFilter(String? tagId) {
     if (tagId == state.tagFilterId) return;

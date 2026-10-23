@@ -44,12 +44,15 @@ class FakeRbNative implements RbNative {
   final List<TranscriptSegment> _transcriptResult;
 
   final _dictation = StreamController<DictationEvent>.broadcast();
+  final _diagnostics = StreamController<NativeDiagnostic>.broadcast();
   final Set<String> _recording = {};
   final Map<String, String> _dirs = {};
 
   // Hooks de teste.
   final List<String> pastedTexts = [];
   final List<DictationSound> playedSounds = [];
+  final List<String> cancelledWavs = [];
+  TranscriptionPriority? lastTranscribePriority;
   Hotkey? registeredHotkey;
   DictationMode? registeredMode;
 
@@ -171,8 +174,10 @@ class FakeRbNative implements RbNative {
     required String wavPath,
     required WhisperModel model,
     String language = 'pt',
+    TranscriptionPriority priority = TranscriptionPriority.normal,
     void Function(double progress)? onProgress,
   }) async {
+    lastTranscribePriority = priority;
     if (!modelDownloaded) {
       throw const RbNativeException(
         RbNativeErrorCode.modelMissing,
@@ -185,7 +190,8 @@ class FakeRbNative implements RbNative {
   }
 
   @override
-  Future<void> cancelTranscription(String wavPath) async {}
+  Future<void> cancelTranscription(String wavPath) async =>
+      cancelledWavs.add(wavPath);
 
   @override
   Future<void> registerDictationHotkey(
@@ -209,13 +215,23 @@ class FakeRbNative implements RbNative {
   void emitDictation(DictationEvent event) => _dictation.add(event);
 
   @override
+  Stream<NativeDiagnostic> diagnostics() => _diagnostics.stream;
+
+  /// Emite um diagnóstico nativo (uso em dev/testes).
+  void emitDiagnostic(NativeDiagnostic diagnostic) =>
+      _diagnostics.add(diagnostic);
+
+  @override
   Future<void> pasteText(String text) async => pastedTexts.add(text);
 
   @override
   Future<void> playDictationSound(DictationSound s) async =>
       playedSounds.add(s);
 
-  Future<void> dispose() => _dictation.close();
+  Future<void> dispose() async {
+    await _dictation.close();
+    await _diagnostics.close();
+  }
 
   void _assertRecording(String id) {
     if (!_recording.contains(id)) {

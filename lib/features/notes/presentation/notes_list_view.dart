@@ -145,6 +145,9 @@ class _GroupedList extends StatelessWidget {
               progress: progress[item.note.id],
               selected: item.note.id == selectedId,
               onTap: () => onSelect(item.note.id),
+              onRetry: () => context
+                  .read<NotesListCubit>()
+                  .retryTranscription(item.note.id),
             ),
           ),
         );
@@ -280,6 +283,7 @@ class _NoteTile extends StatelessWidget {
     required this.onTap,
     this.progress,
     this.snippet,
+    this.onRetry,
   });
 
   final NoteRow note;
@@ -288,6 +292,7 @@ class _NoteTile extends StatelessWidget {
   final VoidCallback onTap;
   final TranscriptionProgress? progress;
   final String? snippet;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -351,7 +356,12 @@ class _NoteTile extends StatelessWidget {
                   ),
                 ],
                 const Spacer(),
-                _StatusHint(status: note.status, progress: progress, colors: c),
+                _StatusHint(
+                  status: note.status,
+                  progress: progress,
+                  colors: c,
+                  onRetry: onRetry,
+                ),
               ],
             ),
             if (snippet != null && snippet!.isNotEmpty) ...[
@@ -387,11 +397,13 @@ class _StatusHint extends StatelessWidget {
     required this.status,
     required this.progress,
     required this.colors,
+    this.onRetry,
   });
 
   final NoteStatus status;
   final TranscriptionProgress? progress;
   final FormaThemeExtension colors;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -426,10 +438,20 @@ class _StatusHint extends StatelessWidget {
           color: colors.textHint,
         ),
       ),
-      NoteStatus.failed => Icon(
-        Icons.error_outline_rounded,
-        size: 14,
-        color: colors.errorColor,
+      NoteStatus.failed => Tooltip(
+        message: 'Falhou — tentar de novo',
+        child: InkWell(
+          onTap: onRetry,
+          borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: const EdgeInsets.all(2),
+            child: Icon(
+              Icons.refresh_rounded,
+              size: 16,
+              color: colors.errorColor,
+            ),
+          ),
+        ),
       ),
       _ => const SizedBox.shrink(),
     };

@@ -10,21 +10,39 @@ import 'package:rbnotes/features/transcription/domain/transcription_logic.dart';
 import 'package:rbnotes/native/rb_native.dart';
 
 /// Progresso de transcrição de uma nota (0..1), ou estado terminal.
+///
+/// Estados terminais são mutuamente exclusivos: [done] (sucesso, possivelmente
+/// [partial] quando o áudio do sistema falhou mas o mic foi salvo), [failed]
+/// (erro reportado) ou [cancelled] (transcrição cancelada — não é erro).
 class TranscriptionProgress extends Equatable {
   const TranscriptionProgress({
     required this.noteId,
     required this.progress,
     this.done = false,
     this.failed = false,
+    this.cancelled = false,
+    this.partial = false,
   });
 
   final String noteId;
   final double progress;
   final bool done;
   final bool failed;
+  final bool cancelled;
+  final bool partial;
+
+  /// Chegou ao fim (sucesso, falha ou cancelamento) — sai da UI de progresso.
+  bool get isTerminal => done || failed || cancelled;
 
   @override
-  List<Object?> get props => [noteId, progress, done, failed];
+  List<Object?> get props => [
+    noteId,
+    progress,
+    done,
+    failed,
+    cancelled,
+    partial,
+  ];
 }
 
 /// Fila serial de transcrição em background.
@@ -32,6 +50,9 @@ class TranscriptionProgress extends Equatable {
 /// Transcreve `mic.wav` (eu) e, quando existe, `system.wav` (outros), junta os
 /// segmentos por tempo, salva e gera o título automático. Emite progresso por
 /// nota em [progress]; a lista de notas assina para mostrar a barra.
+///
+/// É robusta por construção: nenhuma falha de uma nota derruba o processamento
+/// das demais, e cancelamento/exclusão são tratados sem reportar erro.
 class TranscriptionQueue {
   TranscriptionQueue({
     required RbNative native,
@@ -49,22 +70,81 @@ class TranscriptionQueue {
   final _controller = StreamController<TranscriptionProgress>.broadcast();
   bool _processing = false;
 
+  /// Nota sendo processada agora (para dedup contra a fila).
+  String? _current;
+
   Stream<TranscriptionProgress> get progress => _controller.stream;
 
-  /// Enfileira uma nota para transcrição (ignora duplicatas pendentes).
+  /// Enfileira uma nota para transcrição (ignora duplicatas pendentes ou a nota
+  /// que já está em processamento).
   void enqueue(String noteId) {
-    if (_queue.contains(noteId)) return;
+    if (_queue.contains(noteId) || _current == noteId) return;
     _queue.add(noteId);
     unawaited(_drain());
   }
 
+  /// Reenfileira uma nota (ex.: botão "Tentar de novo" após falha).
+  void retry(String noteId) => enqueue(noteId);
+
+  /// No boot, reenfileira todas as notas presas em `transcribing` (o app pode
+  /// ter sido encerrado no meio da transcrição).
+  Future<void> requeueInterrupted() async {
+    try {
+      final pending = await _repository.notesWithStatus(
+        NoteStatus.transcribing,
+      );
+      for (final note in pending) {
+        enqueue(note.id);
+      }
+    } on Object catch (e, st) {
+      await AppLogger.error(
+        e,
+        st,
+        reason: 'requeue_interrupted',
+        category: 'transcription',
+      );
+    }
+  }
+
+  /// Cancela a transcrição dos `.wav` de [note] e a remove da fila. Deve ser
+  /// chamado ANTES de apagar os arquivos da nota.
+  Future<void> cancel(NoteRow note) async {
+    _queue.remove(note.id);
+    for (final path in [note.micWavPath, note.systemWavPath]) {
+      if (path == null) continue;
+      try {
+        await _native.cancelTranscription(path);
+      } on Object catch (e, st) {
+        await AppLogger.error(
+          e,
+          st,
+          reason: 'cancel_transcription',
+          category: 'transcription',
+        );
+      }
+    }
+  }
+
+  /// Loop de drenagem protegido: processa a fila inteira e nunca morre por uma
+  /// exceção não prevista (cada item é isolado).
   Future<void> _drain() async {
     if (_processing) return;
     _processing = true;
     try {
       while (_queue.isNotEmpty) {
         final noteId = _queue.removeFirst();
-        await _process(noteId);
+        try {
+          await _process(noteId);
+        } on Object catch (e, st) {
+          // Rede de segurança: _process já trata tudo, mas se algo escapar o
+          // loop continua com as próximas notas.
+          await AppLogger.error(
+            e,
+            st,
+            reason: 'drain',
+            category: 'transcription',
+          );
+        }
       }
     } finally {
       _processing = false;
@@ -72,26 +152,61 @@ class TranscriptionQueue {
   }
 
   Future<void> _process(String noteId) async {
-    final note = await _repository.getNote(noteId);
-    if (note == null || note.micWavPath == null) return;
-    await _repository.setStatus(noteId, NoteStatus.transcribing);
-    _emit(noteId, 0);
+    _current = noteId;
     try {
+      final note = await _repository.getNote(noteId);
+      // Nota apagada durante o processamento (ou antes): sem erro.
+      if (note == null) return;
+
+      final micPath = note.micWavPath;
+      if (micPath == null) {
+        await _repository.setStatus(noteId, NoteStatus.failed);
+        _controller.add(
+          TranscriptionProgress(noteId: noteId, progress: 0, failed: true),
+        );
+        return;
+      }
+
+      await _repository.setStatus(noteId, NoteStatus.transcribing);
+      _emit(noteId, 0);
+
       final model = _settings.model;
-      final hasSystem = note.systemWavPath != null;
+      final systemPath = note.systemWavPath;
+      final hasSystem = systemPath != null;
 
       final mic = await _native.transcribe(
-        wavPath: note.micWavPath!,
+        wavPath: micPath,
         model: model,
         onProgress: (p) => _emit(noteId, hasSystem ? p * 0.5 : p),
       );
-      final system = hasSystem
-          ? await _native.transcribe(
-              wavPath: note.systemWavPath!,
-              model: model,
-              onProgress: (p) => _emit(noteId, 0.5 + p * 0.5),
-            )
-          : const <TranscriptSegment>[];
+
+      var partial = false;
+      var system = const <TranscriptSegment>[];
+      if (hasSystem) {
+        try {
+          system = await _native.transcribe(
+            wavPath: systemPath,
+            model: model,
+            onProgress: (p) => _emit(noteId, 0.5 + p * 0.5),
+          );
+        } on RbNativeException catch (e, st) {
+          // Cancelamento propaga para o tratamento terminal; qualquer outra
+          // falha do sistema é parcial: salvamos o mic e seguimos.
+          if (e.code == RbNativeErrorCode.transcriptionCancelled) rethrow;
+          partial = true;
+          AppLogger.warning(
+            'system audio transcription failed; saving mic only',
+            category: 'transcription',
+            error: e,
+          );
+          await AppLogger.error(
+            e,
+            st,
+            reason: 'transcribe_system_partial',
+            category: 'transcription',
+          );
+        }
+      }
 
       final merged = mergeSpeakerSegments(mic: mic, system: system);
       await _repository.replaceSegments(noteId, merged);
@@ -102,19 +217,29 @@ class TranscriptionQueue {
       }
       await _repository.setStatus(noteId, NoteStatus.ready);
       _controller.add(
-        TranscriptionProgress(noteId: noteId, progress: 1, done: true),
+        TranscriptionProgress(
+          noteId: noteId,
+          progress: 1,
+          done: true,
+          partial: partial,
+        ),
       );
     } on RbNativeException catch (e, st) {
+      if (e.code == RbNativeErrorCode.transcriptionCancelled) {
+        // Cancelamento não é erro: sem Sentry, estado terminal distinto.
+        AppLogger.info('transcription cancelled', category: 'transcription');
+        _controller.add(
+          TranscriptionProgress(noteId: noteId, progress: 0, cancelled: true),
+        );
+        return;
+      }
       await AppLogger.error(
         e,
         st,
         reason: 'transcribe',
         category: 'transcription',
       );
-      await _repository.setStatus(noteId, NoteStatus.failed);
-      _controller.add(
-        TranscriptionProgress(noteId: noteId, progress: 0, failed: true),
-      );
+      await _failQuietly(noteId);
     } on Object catch (e, st) {
       await AppLogger.error(
         e,
@@ -122,11 +247,23 @@ class TranscriptionQueue {
         reason: 'transcribe',
         category: 'transcription',
       );
-      await _repository.setStatus(noteId, NoteStatus.failed);
-      _controller.add(
-        TranscriptionProgress(noteId: noteId, progress: 0, failed: true),
-      );
+      await _failQuietly(noteId);
+    } finally {
+      _current = null;
     }
+  }
+
+  /// Marca a nota como `failed` sem deixar escapar erro (a nota pode ter sido
+  /// apagada nesse meio-tempo).
+  Future<void> _failQuietly(String noteId) async {
+    try {
+      await _repository.setStatus(noteId, NoteStatus.failed);
+    } on Object catch (_) {
+      // nota provavelmente apagada; ignore.
+    }
+    _controller.add(
+      TranscriptionProgress(noteId: noteId, progress: 0, failed: true),
+    );
   }
 
   void _emit(String noteId, double progress) {

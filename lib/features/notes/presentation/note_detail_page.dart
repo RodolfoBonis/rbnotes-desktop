@@ -30,6 +30,7 @@ class NoteDetailPage extends StatelessWidget {
         noteId: noteId,
         repository: di(),
         player: di<AudioPlayerController>(),
+        queue: di(),
       ),
       child: const _NoteDetailBody(),
     );
@@ -324,15 +325,27 @@ class _Transcript extends StatelessWidget {
       );
     }
     if (state.segments.isEmpty) {
+      final failed = state.note!.status == NoteStatus.failed;
       return Center(
-        child: FormaEmptyState(
-          icon: state.note!.status == NoteStatus.failed
-              ? Icons.error_outline_rounded
-              : Icons.subtitles_off_outlined,
-          title: state.note!.status == NoteStatus.failed
-              ? 'Falha na transcrição'
-              : 'Sem transcrição',
-          compact: true,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FormaEmptyState(
+              icon: failed
+                  ? Icons.error_outline_rounded
+                  : Icons.subtitles_off_outlined,
+              title: failed ? 'Falha na transcrição' : 'Sem transcrição',
+              compact: true,
+            ),
+            if (failed) ...[
+              const SizedBox(height: FormaSpacing.sm),
+              FormaButton.secondary(
+                label: 'Tentar de novo',
+                small: true,
+                onPressed: context.read<NoteDetailCubit>().retryTranscription,
+              ),
+            ],
+          ],
         ),
       );
     }

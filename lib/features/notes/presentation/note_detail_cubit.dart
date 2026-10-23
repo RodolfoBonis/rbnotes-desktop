@@ -8,6 +8,7 @@ import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/presentation/audio_player_controller.dart';
+import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:uuid/uuid.dart';
 
 class NoteDetailState extends Equatable {
@@ -84,10 +85,12 @@ class NoteDetailCubit extends Cubit<NoteDetailState> {
     required String noteId,
     required NoteRepository repository,
     required AudioPlayerController player,
+    required TranscriptionQueue queue,
     Uuid? uuid,
   }) : _noteId = noteId,
        _repository = repository,
        _player = player,
+       _queue = queue,
        _uuid = uuid ?? const Uuid(),
        super(const NoteDetailState()) {
     _noteSub = _repository.watchNote(noteId).listen(_onNote);
@@ -111,6 +114,7 @@ class NoteDetailCubit extends Cubit<NoteDetailState> {
   final String _noteId;
   final NoteRepository _repository;
   final AudioPlayerController _player;
+  final TranscriptionQueue _queue;
   final Uuid _uuid;
 
   StreamSubscription<NoteRow?>? _noteSub;
@@ -170,8 +174,15 @@ class NoteDetailCubit extends Cubit<NoteDetailState> {
     await _repository.addTagToNote(_noteId, id);
   }
 
+  /// Reenfileira a transcrição de uma nota que falhou.
+  void retryTranscription() => _queue.retry(_noteId);
+
   Future<void> delete() async {
     await _player.pause();
+    // Cancela qualquer transcrição em voo ANTES de apagar os arquivos, para o
+    // nativo não ler um `.wav` que deixou de existir.
+    final note = state.note;
+    if (note != null) await _queue.cancel(note);
     await _repository.deleteNote(_noteId);
     _deleteFilesQuietly();
     if (!isClosed) emit(state.copyWith(deleted: true));
