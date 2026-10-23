@@ -34,4 +34,16 @@ class AppPaths {
   /// Cache dos `.m4a` baixados sob demanda de outro dispositivo
   /// (`GET /notes/{id}/audio`). Persistente: uma vez baixado, toca offline.
   String get audioCacheDir => p.join(root.path, 'audio_cache');
+
+  /// Logs em arquivo (fora do Application Support): `~/Library/Logs/RbNotes`,
+  /// o local padrão de logs no macOS, fácil de achar e de anexar a um report.
+  static String get logsDirPath {
+    final home = Platform.environment['HOME'] ?? root0();
+    return p.join(home, 'Library', 'Logs', 'RbNotes');
+  }
+
+  Directory get logsDir => Directory(logsDirPath);
+
+  // Fallback improvável (HOME ausente): usa o diretório atual.
+  static String root0() => Directory.current.path;
 }

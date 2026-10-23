@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:rbnotes/app/theme_mode_cubit.dart';
+import 'package:rbnotes/core/observability/app_logger.dart';
+import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/traffic_lights.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
@@ -12,6 +15,7 @@ import 'package:rbnotes/features/settings/presentation/vocabulary_editor.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/sync/data/sync_status.dart';
 import 'package:rbnotes/native/rb_native.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Rótulos, tamanhos e descrições dos 5 modelos Whisper (design v3).
 const whisperModelInfo = <WhisperModel, (String, String, String)>{
@@ -479,7 +483,36 @@ class _SettingsModalState extends State<SettingsModal> {
         ),
       ],
     ),
+    _Group(
+      title: 'Diagnóstico',
+      foot:
+          'Os logs ajudam a investigar problemas. Não contêm o conteúdo das '
+          'notas nem tokens.',
+      rows: [
+        _button(
+          'Logs do aplicativo',
+          'Abre ~/Library/Logs/RbNotes no Finder',
+          'Abrir pasta',
+          onTap: _openLogsFolder,
+        ),
+      ],
+    ),
   ]);
+
+  Future<void> _openLogsFolder() async {
+    try {
+      final dir = Directory(AppPaths.logsDirPath);
+      await dir.create(recursive: true);
+      await launchUrl(Uri.file(dir.path));
+    } on Object catch (e, st) {
+      await AppLogger.error(
+        e,
+        st,
+        reason: 'open_logs_folder',
+        category: 'settings',
+      );
+    }
+  }
 
   Future<void> _openVocabularyEditor() async {
     await showDialog<void>(
