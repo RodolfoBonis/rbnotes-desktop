@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:path/path.dart' as p;
 import 'package:rbnotes/native/rb_native.dart';
@@ -7,8 +8,9 @@ import 'package:rbnotes/native/rb_native.dart';
 /// Implementação em memória do contrato nativo para desenvolvimento e testes.
 ///
 /// Gera arquivos-placeholder reais em disco (para o player e a recuperação
-/// funcionarem) e segmentos de transcrição canônicos. Todo comportamento é
-/// configurável para os testes não dependerem de temporizadores reais.
+/// funcionarem) e segmentos de transcrição canônicos com palavras e
+/// confiança. Todo comportamento é configurável para os testes não dependerem
+/// de temporizadores reais.
 class FakeRbNative implements RbNative {
   FakeRbNative({
     Map<RbPermission, PermissionStatus>? permissions,
@@ -22,20 +24,34 @@ class FakeRbNative implements RbNative {
          RbPermission.accessibility: PermissionStatus.granted,
          ...?permissions,
        },
-       _transcriptResult =
-           transcriptResult ??
-           const [
-             TranscriptSegment(
-               start: Duration.zero,
-               end: Duration(seconds: 2),
-               text: 'Esta é uma nota de voz de exemplo gerada pelo fake.',
-             ),
-             TranscriptSegment(
-               start: Duration(seconds: 2),
-               end: Duration(seconds: 4),
-               text: 'O conteúdo real virá do whisper.cpp pelo plugin nativo.',
-             ),
-           ];
+       _transcriptResult = transcriptResult ?? _defaultSegments;
+
+  static List<TranscriptSegment> get _defaultSegments => const [
+    TranscriptSegment(
+      start: Duration.zero,
+      end: Duration(seconds: 2),
+      text: 'Esta é uma nota de voz de exemplo gerada pelo fake.',
+      words: [
+        Word(
+          text: 'Esta',
+          start: Duration.zero,
+          end: Duration(milliseconds: 400),
+          probability: 0.98,
+        ),
+        Word(
+          text: 'Taís',
+          start: Duration(milliseconds: 400),
+          end: Duration(milliseconds: 800),
+          probability: 0.42,
+        ),
+      ],
+    ),
+    TranscriptSegment(
+      start: Duration(seconds: 2),
+      end: Duration(seconds: 4),
+      text: 'O conteúdo real virá do whisper.cpp pelo plugin nativo.',
+    ),
+  ];
 
   final Map<RbPermission, PermissionStatus> _permissions;
   bool modelDownloaded;
@@ -45,14 +61,19 @@ class FakeRbNative implements RbNative {
 
   final _dictation = StreamController<DictationEvent>.broadcast();
   final _diagnostics = StreamController<NativeDiagnostic>.broadcast();
+  final _live = <String, StreamController<LiveTranscript>>{};
   final Set<String> _recording = {};
   final Map<String, String> _dirs = {};
+  final Set<WhisperModel> _downloadedModels = {...WhisperModel.values};
 
   // Hooks de teste.
   final List<String> pastedTexts = [];
   final List<DictationSound> playedSounds = [];
   final List<String> cancelledWavs = [];
   TranscriptionPriority? lastTranscribePriority;
+  String? lastInitialPrompt;
+  String? lastInputDeviceId;
+  bool lastLiveTranscription = false;
   Hotkey? registeredHotkey;
   DictationMode? registeredMode;
 
@@ -71,6 +92,8 @@ class FakeRbNative implements RbNative {
     required String id,
     required String directory,
     required bool captureSystemAudio,
+    bool liveTranscription = false,
+    String? inputDeviceId,
   }) async {
     if (_recording.contains(id)) {
       throw const RbNativeException(
@@ -80,12 +103,17 @@ class FakeRbNative implements RbNative {
     }
     _recording.add(id);
     _dirs[id] = directory;
+    lastLiveTranscription = liveTranscription;
+    lastInputDeviceId = inputDeviceId;
     await Directory(directory).create(recursive: true);
     await _touch(p.join(directory, '$id.mic.wav'));
     if (captureSystemAudio && systemAudioAvailable) {
       await _touch(p.join(directory, '$id.system.wav'));
     }
     await _touch(p.join(directory, '$id.m4a'));
+    if (liveTranscription) {
+      _live[id] = StreamController<LiveTranscript>.broadcast();
+    }
     return RecordingHandle(id: id, startedAt: DateTime.now());
   }
 
@@ -96,6 +124,11 @@ class FakeRbNative implements RbNative {
         RbNativeErrorCode.notRecording,
         'Nenhuma gravação ativa com este id.',
       );
+    }
+    final live = _live.remove(id);
+    if (live != null && !live.isClosed) {
+      live.add(LiveTranscript(recordingId: id, text: '', isFinal: true));
+      await live.close();
     }
     final dir = _dirFor(id);
     final system = p.join(dir, '$id.system.wav');
@@ -128,6 +161,46 @@ class FakeRbNative implements RbNative {
   }
 
   @override
+  Stream<LiveTranscript> liveTranscript(String id) =>
+      _live.putIfAbsent(id, StreamController<LiveTranscript>.broadcast).stream;
+
+  /// Emite um trecho de transcrição ao vivo (uso em dev/testes).
+  void emitLiveTranscript(String id, String text, {bool isFinal = false}) {
+    final ctrl = _live[id];
+    if (ctrl != null && !ctrl.isClosed) {
+      ctrl.add(LiveTranscript(recordingId: id, text: text, isFinal: isFinal));
+    }
+  }
+
+  @override
+  Future<List<AudioInputDevice>> inputDevices() async => const [
+    AudioInputDevice(
+      id: 'builtin',
+      name: 'Microfone do MacBook Pro',
+      isDefault: true,
+    ),
+    AudioInputDevice(id: 'airpods', name: 'AirPods Pro', isDefault: false),
+    AudioInputDevice(id: 'shure', name: 'Shure MV7', isDefault: false),
+  ];
+
+  @override
+  Future<List<double>> waveformPeaks(String path, int buckets) async {
+    // Picos determinísticos do caminho (espelha `seedBars` do design).
+    var x = 0;
+    for (final c in path.codeUnits) {
+      x = (x * 31 + c) % 9973;
+    }
+    final out = <double>[];
+    for (var i = 0; i < buckets; i++) {
+      x = (x * 16807 + 7) % 2147483647;
+      final r = (x % 1000) / 1000.0;
+      final env = 0.45 + 0.55 * math.sin(i / 7 + x % 3).abs();
+      out.add((0.12 + r * 0.82 * env).clamp(0.0, 1.0));
+    }
+    return out;
+  }
+
+  @override
   Future<List<RecoverableRecording>> findRecoverableRecordings(
     String directory,
   ) async {
@@ -154,11 +227,13 @@ class FakeRbNative implements RbNative {
   }
 
   @override
-  Future<WhisperModelState> modelState(WhisperModel model) async =>
-      WhisperModelState(
-        downloaded: modelDownloaded,
-        sizeBytes: modelDownloaded ? 1600000000 : null,
-      );
+  Future<WhisperModelState> modelState(WhisperModel model) async {
+    final has = modelDownloaded && _downloadedModels.contains(model);
+    return WhisperModelState(
+      downloaded: has,
+      sizeBytes: has ? 1600000000 : null,
+    );
+  }
 
   @override
   Stream<double> downloadModel(WhisperModel model) async* {
@@ -166,18 +241,25 @@ class FakeRbNative implements RbNative {
       await Future<void>.delayed(const Duration(milliseconds: 10));
       yield i / 10;
     }
+    _downloadedModels.add(model);
     modelDownloaded = true;
   }
+
+  @override
+  Future<void> deleteModel(WhisperModel model) async =>
+      _downloadedModels.remove(model);
 
   @override
   Future<List<TranscriptSegment>> transcribe({
     required String wavPath,
     required WhisperModel model,
     String language = 'pt',
+    String? initialPrompt,
     TranscriptionPriority priority = TranscriptionPriority.normal,
     void Function(double progress)? onProgress,
   }) async {
     lastTranscribePriority = priority;
+    lastInitialPrompt = initialPrompt;
     if (!modelDownloaded) {
       throw const RbNativeException(
         RbNativeErrorCode.modelMissing,
@@ -231,6 +313,9 @@ class FakeRbNative implements RbNative {
   Future<void> dispose() async {
     await _dictation.close();
     await _diagnostics.close();
+    for (final c in _live.values) {
+      if (!c.isClosed) await c.close();
+    }
   }
 
   void _assertRecording(String id) {

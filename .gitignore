@@ -21,3 +21,4 @@ macos/Flutter/ephemeral/
 dist/
 pubspec_overrides.yaml
 
+*.zip

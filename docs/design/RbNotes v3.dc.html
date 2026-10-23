@@ -1,0 +1,1401 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;height:100%;background:#CFC9BF;-webkit-font-smoothing:antialiased}
+a{color:#E0512E;text-decoration:none}a:hover{text-decoration:underline}
+*{box-sizing:border-box}
+::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:rgba(var(--k,0,0,0),.14);border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+@keyframes rbpulse{0%,100%{opacity:1}50%{opacity:.35}}
+input::placeholder{color:rgba(var(--s,60,60,67),.45)}
+</style>
+</helmet>
+<div ref="{{ rootRef }}" style="--acc:#E0512E;min-height:100vh;width:max-content;min-width:100%;display:flex;align-items:safe center;justify-content:safe center;padding:40px;background:var(--wall,radial-gradient(120% 90% at 20% 10%,#E4DED4 0%,#CFC9BF 55%,#BDB6AA 100%));font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif;color:var(--tx,#1D1D1F);font-size:13px">
+
+<div style="position:relative;width:1280px;height:800px;flex:none;border-radius:12px;overflow:hidden;display:flex;box-shadow:0 0 0 .5px rgba(0,0,0,.28),0 1px 0 rgba(255,255,255,.4) inset,0 24px 70px rgba(40,30,20,.32),0 8px 20px rgba(40,30,20,.12)">
+
+  <!-- Sidebar -->
+  <aside style="width:228px;flex:none;display:flex;flex-direction:column;background:var(--side,rgba(238,235,230,.82));backdrop-filter:blur(30px) saturate(1.6);border-right:.5px solid rgba(var(--k,0,0,0),.12)">
+    <div style="height:52px;display:flex;align-items:center;gap:8px;padding:0 18px;flex:none">
+      <span style="width:12px;height:12px;border-radius:50%;background:#FF5F57;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.15)"></span>
+      <span style="width:12px;height:12px;border-radius:50%;background:#FEBC2E;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.15)"></span>
+      <span style="width:12px;height:12px;border-radius:50%;background:#28C840;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.15)"></span>
+    </div>
+    <div style="padding:2px 18px 14px;display:flex;align-items:baseline;gap:6px">
+      <span style="font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:22px;font-weight:600;letter-spacing:-.4px">Rb</span>
+      <span style="font-size:15px;font-weight:600;letter-spacing:-.2px">Notes</span>
+    </div>
+    <div style="flex:1;overflow:auto;padding:0 10px;display:flex;flex-direction:column;gap:2px">
+      <sc-for list="{{ library }}" as="f" hint-placeholder-count="2">
+        <div onClick="{{ f.onClick }}" style="display:flex;align-items:center;gap:9px;height:30px;padding:0 10px;border-radius:7px;cursor:default;background:{{ f.bg }}">
+          <span style="width:16px;display:flex;justify-content:center;color:var(--acc,#E0512E);font-size:13px">{{ f.glyph }}</span>
+          <span style="flex:1;font-weight:500">{{ f.label }}</span>
+          <span style="font-size:12px;color:rgba(var(--s,60,60,67),.55);font-variant-numeric:tabular-nums">{{ f.count }}</span>
+        </div>
+      </sc-for>
+      <div style="font-size:11px;font-weight:600;color:rgba(var(--s,60,60,67),.5);padding:16px 10px 6px">Pastas</div>
+      <sc-for list="{{ folders }}" as="f" hint-placeholder-count="4">
+        <div onClick="{{ f.onClick }}" style="display:flex;align-items:center;gap:9px;height:30px;padding:0 10px;border-radius:7px;cursor:default;background:{{ f.bg }}">
+          <span style="width:16px;display:flex;justify-content:center"><span style="width:8px;height:8px;border-radius:3px;background:{{ f.color }}"></span></span>
+          <span style="flex:1">{{ f.label }}</span>
+          <span style="font-size:12px;color:rgba(var(--s,60,60,67),.55);font-variant-numeric:tabular-nums">{{ f.count }}</span>
+        </div>
+      </sc-for>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 4px 6px 10px">
+        <span style="font-size:11px;font-weight:600;color:rgba(var(--s,60,60,67),.5)">Coleções inteligentes</span>
+        <span onClick="{{ openNewColl }}" style="width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1;color:rgba(var(--s,60,60,67),.7);cursor:default" style-hover="background:rgba(var(--k,0,0,0),.07)">+</span>
+      </div>
+      <sc-for list="{{ colls }}" as="f" hint-placeholder-count="3">
+        <div onClick="{{ f.onClick }}" style="display:flex;align-items:center;gap:9px;height:30px;padding:0 10px;border-radius:7px;cursor:default;background:{{ f.bg }}">
+          <span style="width:16px;display:flex;justify-content:center;color:var(--acc,#E0512E);font-size:12px">◇</span>
+          <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ f.label }}</span>
+          <span style="min-width:18px;height:18px;padding:0 5px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums;background:{{ f.badgeBg }};color:{{ f.badgeFg }}">{{ f.count }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin:10px;padding:11px 12px;border-radius:10px;background:var(--sidecard,rgba(255,255,255,.55));box-shadow:0 0 0 .5px rgba(var(--k,0,0,0),.08);display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:7px;height:7px;border-radius:50%;background:#28A745;flex:none"></span>
+        <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+          <span style="font-size:12px;font-weight:600">Whisper {{ modelLabel }}</span>
+          <span style="font-size:11px;color:rgba(var(--s,60,60,67),.6)">Local · Neural Engine · 1,6 GB</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:7px;height:7px;border-radius:50%;background:#28A745;flex:none"></span>
+        <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+          <span style="font-size:12px;font-weight:600">Claude</span>
+          <span style="font-size:11px;color:rgba(var(--s,60,60,67),.6)">Só recebe o texto, nunca o áudio</span>
+        </div>
+      </div>
+    </div>
+    <div style="margin:0 10px 10px;display:flex;align-items:center;gap:10px;padding:6px 6px 6px 8px;border-radius:9px">
+      <span style="width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:var(--ink,#1D1D1F);color:#fff;font-size:10.5px;font-weight:700">{{ userIni }}</span>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+        <span style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ userName }}</span>
+        <span style="font-size:11px;color:rgba(var(--s,60,60,67),.6)">RbNotes Pro</span>
+      </div>
+      <div onClick="{{ openSettings }}" style="width:28px;height:28px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;color:rgba(var(--s,60,60,67),.75);cursor:default" style-hover="background:rgba(var(--k,0,0,0),.07)">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" style="stroke-width:1.5;stroke-linecap:round"><path d="M10 6.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM10 2v2M10 16v2M2 10h2M16 10h2M4.3 4.3l1.4 1.4M14.3 14.3l1.4 1.4M4.3 15.7l1.4-1.4M14.3 5.7l1.4-1.4"></path></svg>
+      </div>
+    </div>
+  </aside>
+
+  <!-- List -->
+  <section style="width:304px;flex:none;display:flex;flex-direction:column;background:var(--bg2,#FBFAF8);border-right:.5px solid rgba(var(--k,0,0,0),.1)">
+    <div style="height:52px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 16px">
+      <div style="display:flex;flex-direction:column">
+        <span style="font-size:13px;font-weight:600">{{ listTitle }}</span>
+        <span style="font-size:11px;color:rgba(var(--s,60,60,67),.6)">{{ listCount }}</span>
+      </div>
+    </div>
+    <div style="padding:0 12px 10px">
+      <div style="height:28px;border-radius:7px;background:rgba(118,118,128,.1);display:flex;align-items:center;gap:6px;padding:0 9px">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="rgba(var(--s,60,60,67),.55)" style="stroke-width:1.8;flex:none"><circle cx="7" cy="7" r="5"></circle><path d="M11 11l3.5 3.5" style="stroke-linecap:round"></path></svg>
+        <input value="{{ search }}" onChange="{{ onSearch }}" placeholder="Buscar em notas e transcrições" style="flex:1;border:0;outline:0;background:transparent;font:inherit;font-size:13px;color:var(--tx,#1D1D1F);min-width:0">
+      </div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:0 8px 12px">
+      <sc-if value="{{ hasRule }}" hint-placeholder-val="{{ false }}">
+        <div style="margin:0 4px 6px;padding:8px 10px;border-radius:8px;background:rgba(118,118,128,.08);font-size:11.5px;line-height:1.4;color:rgba(var(--s,60,60,67),.75)">Regra criada pelo Claude: {{ ruleText }}</div>
+      </sc-if>
+      <sc-if value="{{ hasOverview }}" hint-placeholder-val="{{ false }}">
+        <div onClick="{{ onOverview }}" style="margin-top:4px;padding:10px 12px;border-radius:9px;cursor:default;display:flex;align-items:center;gap:8px;background:{{ ovBg }};color:{{ ovFg }}">
+          <span style="flex:1;font-weight:600;font-size:13px">{{ ovLabel }}</span>
+          <span style="font-size:11px;color:{{ ovSub }}">{{ ovMeta }}</span>
+        </div>
+      </sc-if>
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="2">
+        <div style="font-size:11px;font-weight:600;color:rgba(var(--s,60,60,67),.5);padding:12px 10px 6px">{{ g.label }}</div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <sc-for list="{{ g.items }}" as="n" hint-placeholder-count="3">
+            <div onClick="{{ n.onClick }}" style="padding:10px 12px;border-radius:9px;cursor:default;display:flex;flex-direction:column;gap:3px;background:{{ n.bg }}">
+              <div style="display:flex;align-items:center;gap:7px">
+                <span style="width:7px;height:7px;border-radius:2.5px;flex:none;background:{{ n.dot }}"></span>
+                <span style="flex:1;font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:{{ n.fg }}">{{ n.title }}</span>
+              </div>
+              <sc-if value="{{ n.showExcerpt }}" hint-placeholder-val="{{ true }}">
+                <span style="font-size:12px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;padding-left:14px;color:{{ n.sub }}">{{ n.excerpt }}</span>
+              </sc-if>
+              <span style="font-size:11px;padding-left:14px;font-variant-numeric:tabular-nums;color:{{ n.sub }}">{{ n.meta }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+      <sc-if value="{{ listEmpty }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:40px 20px;text-align:center;color:rgba(var(--s,60,60,67),.6);font-size:12px;line-height:1.5">{{ emptyText }}</div>
+      </sc-if>
+    </div>
+  </section>
+
+  <!-- Detail -->
+  <main style="flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg,#FFFFFF);position:relative">
+    <div style="height:52px;flex:none;display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:0 16px;border-bottom:.5px solid rgba(var(--k,0,0,0),.07)">
+      <div onClick="{{ openAsk }}" style="height:28px;display:flex;align-items:center;gap:8px;padding:0 10px 0 11px;border-radius:7px;background:rgba(118,118,128,.1);cursor:default;color:rgba(var(--t,29,29,31),.85)" style-hover="background:rgba(118,118,128,.16)">
+        <span style="font-size:12.5px;font-weight:500">Perguntar às notas</span>
+        <span style="font-size:11px;color:rgba(var(--s,60,60,67),.5)">⌘K</span>
+      </div>
+      <div style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:rgba(var(--s,60,60,67),.75)" style-hover="background:rgba(118,118,128,.12)">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" style="stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round"><path d="M8 10V1.5M5 4.5l3-3 3 3"></path><path d="M3.5 7.5v6h9v-6"></path></svg>
+      </div>
+      <div onClick="{{ startRec }}" style="height:30px;display:flex;align-items:center;gap:8px;padding:0 13px 0 10px;border-radius:15px;background:var(--acc,#E0512E);color:#fff;cursor:default;box-shadow:0 1px 2px rgba(0,0,0,.15),inset 0 .5px 0 rgba(255,255,255,.3)" style-active="filter:brightness(.92)">
+        <span style="width:10px;height:10px;border-radius:50%;background:#fff"></span>
+        <span style="font-size:12.5px;font-weight:600">Gravar</span>
+        <span style="font-size:11px;opacity:.75">⌘R</span>
+      </div>
+    </div>
+
+    <div style="flex:1;overflow:auto">
+      <sc-if value="{{ viewNote }}" hint-placeholder-val="{{ true }}">
+      <div style="max-width:640px;margin:0 auto;padding:34px 40px 140px;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(var(--s,60,60,67),.65)">
+          <span style="display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:2.5px;background:{{ cur.dot }}"></span>{{ cur.folderLabel }}</span>
+          <span>·</span><span>{{ cur.dateLong }}</span>
+          <span>·</span><span>{{ cur.speakersLabel }}</span>
+        </div>
+        <h1 style="font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:30px;line-height:1.15;font-weight:600;letter-spacing:-.5px;margin:10px 0 0;text-wrap:balance">{{ cur.title }}</h1>
+        <sc-if value="{{ cur.autoTitle }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:10px;display:flex;align-items:center;gap:10px;font-size:11.5px;color:rgba(var(--s,60,60,67),.65)">
+            <span style="padding:3px 8px;border-radius:6px;font-weight:600;color:var(--acc,#E0512E);background:color-mix(in srgb,var(--acc,#E0512E) 10%,transparent)">{{ titleChip }}</span>
+            <span style="cursor:default">Renomear</span>
+          </div>
+        </sc-if>
+
+        <!-- Player -->
+        <div style="margin-top:24px;display:flex;align-items:center;gap:14px;padding:12px 14px 12px 12px;border-radius:14px;background:var(--fill,#F6F4F1);box-shadow:inset 0 0 0 .5px rgba(var(--k,0,0,0),.06)">
+          <div onClick="{{ togglePlay }}" style="width:36px;height:36px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:var(--ink,#1D1D1F);color:#fff;cursor:default" style-active="transform:scale(.95)">
+            <sc-if value="{{ playing }}" hint-placeholder-val="{{ false }}">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="1" width="3" height="10" rx="1"></rect><rect x="7" y="1" width="3" height="10" rx="1"></rect></svg>
+            </sc-if>
+            <sc-if value="{{ paused }}" hint-placeholder-val="{{ true }}">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style="margin-left:2px"><path d="M2.5 1.3v9.4a.6.6 0 0 0 .9.5l7.6-4.7a.6.6 0 0 0 0-1L3.4.8a.6.6 0 0 0-.9.5z"></path></svg>
+            </sc-if>
+          </div>
+          <span style="font-size:11.5px;font-variant-numeric:tabular-nums;color:rgba(var(--s,60,60,67),.75);width:36px;text-align:right;flex:none">{{ posLabel }}</span>
+          <div onClick="{{ seek }}" style="flex:1;height:34px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;min-width:0">
+            <sc-for list="{{ bars }}" as="b" hint-placeholder-count="80">
+              <span style="width:2px;border-radius:1px;flex:none;height:{{ b.h }};background:{{ b.c }}"></span>
+            </sc-for>
+          </div>
+          <span style="font-size:11.5px;font-variant-numeric:tabular-nums;color:rgba(var(--s,60,60,67),.75);width:36px;flex:none">{{ cur.durLabel }}</span>
+          <div onClick="{{ toggleSpeed }}" style="height:22px;min-width:34px;padding:0 6px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:rgba(var(--t,29,29,31),.8);box-shadow:inset 0 0 0 1px rgba(var(--k,0,0,0),.12);cursor:default;font-variant-numeric:tabular-nums">{{ speedLabel }}</div>
+        </div>
+
+        <!-- Tabs -->
+        <div style="margin-top:26px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div style="display:flex;padding:2px;border-radius:8px;background:rgba(118,118,128,.12);gap:2px">
+            <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+              <div onClick="{{ t.onClick }}" style="height:24px;padding:0 14px;border-radius:6px;display:flex;align-items:center;font-size:12.5px;font-weight:500;cursor:default;background:{{ t.bg }};box-shadow:{{ t.shadow }}">{{ t.label }}</div>
+            </sc-for>
+          </div>
+          <span style="font-size:11px;color:rgba(var(--s,60,60,67),.55)">{{ tabNote }}</span>
+        </div>
+
+        <!-- Resumo -->
+        <sc-if value="{{ tabResumo }}" hint-placeholder-val="{{ true }}">
+          <div style="margin-top:22px;display:flex;flex-direction:column;gap:22px">
+            <p style="margin:0;font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:18px;line-height:1.55;color:var(--tx,#1D1D1F);text-wrap:pretty">{{ cur.tldr }}</p>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <span style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:rgba(var(--s,60,60,67),.55)">Pontos principais</span>
+              <sc-for list="{{ cur.points }}" as="p" hint-placeholder-count="4">
+                <div style="display:flex;gap:12px;font-size:14px;line-height:1.5">
+                  <span style="width:5px;height:5px;border-radius:50%;background:var(--acc,#E0512E);margin-top:8px;flex:none"></span>
+                  <span style="text-wrap:pretty">{{ p }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <sc-if value="{{ cur.hasQuote }}" hint-placeholder-val="{{ true }}">
+              <div onClick="{{ cur.quoteJump }}" style="display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-radius:12px;background:var(--fill,#F6F4F1);cursor:default" style-hover="background:var(--fill2,#F1EEEA)">
+                <span style="font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:15px;line-height:1.5;font-style:italic">“{{ cur.quote.text }}”</span>
+                <span style="font-size:11.5px;color:rgba(var(--s,60,60,67),.65)">{{ cur.quote.sp }} · <span style="color:var(--acc,#E0512E);font-variant-numeric:tabular-nums">ouvir em {{ cur.quote.ts }}</span></span>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <!-- Transcrição -->
+        <sc-if value="{{ tabTrans }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:14px;display:flex;flex-direction:column">
+            <sc-for list="{{ segs }}" as="s" hint-placeholder-count="5">
+              <div onClick="{{ s.onClick }}" style="display:flex;gap:14px;padding:12px 12px;margin:0 -12px;border-radius:10px;cursor:default;background:{{ s.bg }}">
+                <span style="width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:#fff;background:{{ s.color }}">{{ s.ini }}</span>
+                <div style="flex:1;display:flex;flex-direction:column;gap:3px;min-width:0">
+                  <div style="display:flex;align-items:baseline;gap:8px">
+                    <span style="font-size:12px;font-weight:600">{{ s.sp }}</span>
+                    <sc-if value="{{ showTs }}" hint-placeholder-val="{{ true }}">
+                      <span style="font-size:11px;font-variant-numeric:tabular-nums;color:rgba(var(--s,60,60,67),.55)">{{ s.ts }}</span>
+                    </sc-if>
+                  </div>
+                  <span style="font-size:14px;line-height:1.55;text-wrap:pretty;color:{{ s.fg }}"><sc-for list="{{ s.parts }}" as="pt" hint-placeholder-count="1"><span onClick="{{ pt.onClick }}" style="border-radius:3px;text-underline-offset:3px;text-decoration-style:dotted;text-decoration-line:{{ pt.deco }};text-decoration-color:var(--acc,#E0512E);background:{{ pt.bg }};cursor:{{ pt.cur }}">{{ pt.text }}</span></sc-for></span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <!-- Insights -->
+        <sc-if value="{{ tabIns }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:22px;display:flex;flex-direction:column;gap:26px">
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <span style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:rgba(var(--s,60,60,67),.55);margin-bottom:6px">Próximas ações</span>
+              <sc-for list="{{ actions }}" as="a" hint-placeholder-count="3">
+                <div onClick="{{ a.toggle }}" style="display:flex;align-items:flex-start;gap:12px;padding:8px 0;cursor:default;border-bottom:.5px solid rgba(var(--k,0,0,0),.07)">
+                  <span style="width:18px;height:18px;border-radius:50%;flex:none;margin-top:1px;display:flex;align-items:center;justify-content:center;background:{{ a.boxBg }};box-shadow:{{ a.boxRing }}">
+                    <sc-if value="{{ a.done }}" hint-placeholder-val="{{ false }}">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#fff" style="stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M2 5.2l2 2L8 3"></path></svg>
+                    </sc-if>
+                  </span>
+                  <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+                    <span style="font-size:14px;line-height:1.45;color:{{ a.fg }};text-decoration:{{ a.deco }}">{{ a.t }}</span>
+                    <span style="font-size:11.5px;color:rgba(var(--s,60,60,67),.6)">{{ a.owner }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px">
+              <div style="display:flex;flex-direction:column;gap:10px;padding:16px;border-radius:12px;background:var(--fill,#F6F4F1)">
+                <span style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:rgba(var(--s,60,60,67),.55)">Decisões</span>
+                <sc-for list="{{ cur.decisions }}" as="d" hint-placeholder-count="2">
+                  <span style="font-size:13px;line-height:1.5;text-wrap:pretty">{{ d }}</span>
+                </sc-for>
+                <sc-if value="{{ cur.noDecisions }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:13px;color:rgba(var(--s,60,60,67),.55)">Nenhuma decisão registrada.</span>
+                </sc-if>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px;padding:16px;border-radius:12px;background:var(--fill,#F6F4F1)">
+                <span style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:rgba(var(--s,60,60,67),.55)">Em aberto</span>
+                <sc-for list="{{ cur.questions }}" as="q" hint-placeholder-count="2">
+                  <span style="font-size:13px;line-height:1.5;text-wrap:pretty">{{ q }}</span>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- Conversa -->
+        <sc-if value="{{ tabChat }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:22px;display:flex;flex-direction:column;gap:18px">
+            <sc-if value="{{ chatEmpty }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:18px;font-weight:500">Pergunte qualquer coisa sobre esta nota.</span>
+                <span style="font-size:13px;line-height:1.5;color:rgba(var(--s,60,60,67),.65)">As respostas usam só esta transcrição e apontam o trecho do áudio de onde vieram.</span>
+              </div>
+            </sc-if>
+            <sc-for list="{{ msgs }}" as="m" hint-placeholder-count="0">
+              <sc-if value="{{ m.isUser }}" hint-placeholder-val="{{ false }}">
+                <div style="align-self:flex-end;max-width:80%;padding:9px 14px;border-radius:17px 17px 5px 17px;background:var(--acc,#E0512E);color:#fff;font-size:14px;line-height:1.45">{{ m.text }}</div>
+              </sc-if>
+              <sc-if value="{{ m.isAi }}" hint-placeholder-val="{{ false }}">
+                <div style="max-width:94%;display:flex;flex-direction:column;gap:8px">
+                  <span style="font-size:11px;font-weight:600;color:rgba(var(--s,60,60,67),.55)">Claude</span>
+                  <span style="font-size:14.5px;line-height:1.6;white-space:pre-wrap;text-wrap:pretty">{{ m.shown }}</span>
+                  <sc-if value="{{ m.hasCites }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;flex-wrap:wrap;gap:6px">
+                      <sc-for list="{{ m.cites }}" as="c" hint-placeholder-count="1">
+                        <span onClick="{{ c.onClick }}" style="height:24px;padding:0 10px 0 8px;border-radius:12px;display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--acc,#E0512E);background:color-mix(in srgb,var(--acc,#E0512E) 10%,transparent);cursor:default">▶ ouvir {{ c.label }}</span>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-if>
+            </sc-for>
+            <sc-if value="{{ chatThinking }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:rgba(var(--s,60,60,67),.65)"><span style="width:7px;height:7px;border-radius:50%;background:var(--acc,#E0512E);animation:rbpulse 1s ease-in-out infinite"></span>Lendo a transcrição…</div>
+            </sc-if>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <sc-for list="{{ chatSugg }}" as="sg" hint-placeholder-count="3">
+                <span onClick="{{ sg.onClick }}" style="height:28px;padding:0 12px;border-radius:14px;display:flex;align-items:center;font-size:12.5px;background:rgba(118,118,128,.1);cursor:default" style-hover="background:rgba(118,118,128,.18)">{{ sg.label }}</span>
+              </sc-for>
+            </div>
+            <div style="height:42px;border-radius:21px;display:flex;align-items:center;gap:8px;padding:0 5px 0 16px;background:var(--fill,#F6F4F1);box-shadow:inset 0 0 0 .5px rgba(var(--k,0,0,0),.08)">
+              <input value="{{ chatQ }}" onChange="{{ onChatQ }}" onKeyDown="{{ onChatKey }}" placeholder="Pergunte sobre esta nota" style="flex:1;border:0;outline:0;background:transparent;font:inherit;font-size:14px;color:var(--tx,#1D1D1F);min-width:0">
+              <span onClick="{{ chatSend }}" style="width:32px;height:32px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:var(--acc,#E0512E);color:#fff;cursor:default">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" style="stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M7 11.5V2.5M3 6.5l4-4 4 4"></path></svg>
+              </span>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+      </sc-if>
+
+      <!-- Tarefas esquecidas -->
+      <sc-if value="{{ viewTasks }}" hint-placeholder-val="{{ false }}">
+        <div style="max-width:640px;margin:0 auto;padding:34px 40px 80px;display:flex;flex-direction:column">
+          <span style="font-size:12px;color:rgba(var(--s,60,60,67),.65)">Coleção inteligente</span>
+          <h1 style="font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:30px;line-height:1.15;font-weight:600;letter-spacing:-.5px;margin:10px 0 0">Tarefas esquecidas</h1>
+          <p style="margin:10px 0 0;font-size:14px;line-height:1.5;color:rgba(var(--s,60,60,67),.7)">{{ forgotIntro }}</p>
+          <div style="margin-top:24px;display:flex;flex-direction:column;gap:10px">
+            <sc-for list="{{ tasks }}" as="t" hint-placeholder-count="4">
+              <div style="display:flex;gap:14px;padding:14px 16px;border-radius:12px;background:var(--fill,#F6F4F1)">
+                <span onClick="{{ t.done }}" style="width:18px;height:18px;border-radius:50%;flex:none;margin-top:1px;box-shadow:inset 0 0 0 1.5px rgba(var(--s,60,60,67),.35);cursor:default" style-hover="box-shadow:inset 0 0 0 1.5px var(--acc,#E0512E)"></span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                  <span style="font-size:14px;font-weight:500;line-height:1.45">{{ t.t }}</span>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:rgba(var(--s,60,60,67),.65)">
+                    <span onClick="{{ t.open }}" style="color:var(--acc,#E0512E);cursor:default">{{ t.from }}</span><span>·</span><span>{{ t.age }}</span><span>·</span><span>{{ t.owner }}</span>
+                  </div>
+                  <div style="display:flex;gap:6px;margin-top:8px">
+                    <span onClick="{{ t.snooze }}" style="height:24px;padding:0 10px;border-radius:6px;display:flex;align-items:center;font-size:12px;font-weight:500;background:rgba(118,118,128,.12);cursor:default" style-hover="background:rgba(118,118,128,.2)">Lembrar amanhã</span>
+                    <span onClick="{{ t.dismiss }}" style="height:24px;padding:0 10px;border-radius:6px;display:flex;align-items:center;font-size:12px;font-weight:500;color:rgba(var(--s,60,60,67),.75);cursor:default" style-hover="background:rgba(118,118,128,.12)">Não é mais relevante</span>
+                  </div>
+                </div>
+              </div>
+            </sc-for>
+            <sc-if value="{{ forgotEmpty }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:40px 0;display:flex;flex-direction:column;gap:6px">
+                <span style="font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:20px">Nada esquecido.</span>
+                <span style="font-size:13px;color:rgba(var(--s,60,60,67),.65)">Todas as tarefas das suas notas estão em dia.</span>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- Diário -->
+      <sc-if value="{{ viewDiary }}" hint-placeholder-val="{{ false }}">
+        <div style="max-width:640px;margin:0 auto;padding:34px 40px 80px;display:flex;flex-direction:column">
+          <span style="font-size:12px;color:rgba(var(--s,60,60,67),.65)">Privado · protegido por Touch ID</span>
+          <h1 style="font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:30px;line-height:1.15;font-weight:600;letter-spacing:-.5px;margin:10px 0 0">Diário</h1>
+          <div style="margin-top:22px;padding:22px 24px;border-radius:16px;background:var(--warm,#F1ECE4);display:flex;flex-direction:column">
+            <span style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:rgba(var(--s,60,60,67),.6)">Pergunta de hoje</span>
+            <span style="margin:8px 0 18px;font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:24px;line-height:1.25;font-weight:500;text-wrap:balance">{{ diaryPrompt }}</span>
+            <div style="display:flex;align-items:center;gap:14px">
+              <div onClick="{{ recDiary }}" style="height:32px;display:flex;align-items:center;gap:8px;padding:0 14px 0 11px;border-radius:16px;background:var(--acc,#E0512E);color:#fff;cursor:default;box-shadow:0 1px 2px rgba(0,0,0,.15)">
+                <span style="width:10px;height:10px;border-radius:50%;background:#fff"></span><span style="font-size:13px;font-weight:600">Gravar resposta</span>
+              </div>
+              <span onClick="{{ nextPrompt }}" style="font-size:12.5px;color:rgba(var(--s,60,60,67),.75);cursor:default">Outra pergunta</span>
+            </div>
+          </div>
+          <div style="margin-top:16px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start">
+            <div style="padding:16px;border-radius:14px;background:var(--fill,#F6F4F1);display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between">
+                <span style="font-size:13px;font-weight:600">Outubro</span>
+                <span style="font-size:12px;font-weight:600;color:var(--acc,#E0512E)">{{ streakLabel }}</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;font-size:10.5px;font-weight:600;text-align:center;color:rgba(var(--s,60,60,67),.5)">
+                <span>D</span><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px">
+                <sc-for list="{{ cal }}" as="d" hint-placeholder-count="35">
+                  <span style="height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-variant-numeric:tabular-nums;color:{{ d.fg }};background:{{ d.bg }};box-shadow:{{ d.ring }};font-weight:{{ d.fw }}">{{ d.n }}</span>
+                </sc-for>
+              </div>
+            </div>
+            <div style="padding:16px 18px;border-radius:14px;background:var(--fill,#F6F4F1);display:flex;flex-direction:column;gap:12px">
+              <span style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:rgba(var(--s,60,60,67),.6)">Seu mês até agora</span>
+              <p style="margin:0;font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:15px;line-height:1.55;text-wrap:pretty">Outubro começou pesado, com o kickoff do projeto e noites curtas. Desde a semana passada você fala mais de descanso e das corridas de manhã, e os dias que você descreve como bons são os que começaram cedo.</p>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <sc-for list="{{ themes }}" as="th" hint-placeholder-count="4">
+                  <span style="height:24px;padding:0 10px;border-radius:12px;display:flex;align-items:center;gap:6px;font-size:12px;background:var(--bg,#FFFFFF);box-shadow:0 0 0 .5px rgba(var(--k,0,0,0),.1)">{{ th.label }}<span style="color:rgba(var(--s,60,60,67),.55);font-variant-numeric:tabular-nums">{{ th.count }}</span></span>
+                </sc-for>
+              </div>
+              <span style="font-size:11px;color:rgba(var(--s,60,60,67),.55)">{{ diaryCount }}</span>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+
+    <!-- Recording HUD -->
+    <sc-if value="{{ isRec }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;left:50%;bottom:24px;transform:translateX(-50%);width:540px;border-radius:20px;background:rgba(28,28,30,.94);backdrop-filter:blur(30px);color:#fff;box-shadow:0 20px 50px rgba(0,0,0,.35),0 0 0 .5px rgba(255,255,255,.08) inset;padding:18px 18px 16px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="width:9px;height:9px;border-radius:50%;background:{{ recDot }};animation:{{ recAnim }}"></span>
+          <span style="font-size:12px;font-weight:600;color:rgba(255,255,255,.85)">{{ recLabel }}</span>
+          <span style="flex:1"></span>
+          <span style="font-size:20px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:.5px">{{ recTime }}</span>
+        </div>
+        <div style="height:40px;display:flex;align-items:center;justify-content:space-between">
+          <sc-for list="{{ liveBars }}" as="b" hint-placeholder-count="64">
+            <span style="width:3px;border-radius:2px;flex:none;height:{{ b.h }};background:{{ b.c }}"></span>
+          </sc-for>
+        </div>
+        <div style="height:66px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;font-size:14px;line-height:1.55;-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 40%)">
+          <span>{{ liveText }} <span style="color:rgba(255,255,255,.4)">{{ liveTail }}</span></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:11px;color:rgba(255,255,255,.5);flex:1">Transcrevendo ao vivo no seu Mac</span>
+          <div onClick="{{ discardRec }}" style="height:30px;padding:0 12px;border-radius:15px;display:flex;align-items:center;font-size:12.5px;font-weight:500;color:rgba(255,255,255,.75);cursor:default" style-hover="background:rgba(255,255,255,.08)">Descartar</div>
+          <div onClick="{{ pauseRec }}" style="height:30px;padding:0 14px;border-radius:15px;display:flex;align-items:center;font-size:12.5px;font-weight:500;background:rgba(255,255,255,.12);cursor:default">{{ pauseLabel }}</div>
+          <div onClick="{{ stopRec }}" style="height:30px;padding:0 14px 0 11px;border-radius:15px;display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;background:#fff;color:var(--tx,#1D1D1F);cursor:default">
+            <span style="width:9px;height:9px;border-radius:2px;background:var(--acc,#E0512E)"></span>Concluir
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- Processing HUD -->
+    <sc-if value="{{ isProc }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;left:50%;bottom:24px;transform:translateX(-50%);width:420px;border-radius:20px;background:rgba(28,28,30,.94);backdrop-filter:blur(30px);color:#fff;box-shadow:0 20px 50px rgba(0,0,0,.35);padding:18px 20px;display:flex;flex-direction:column;gap:12px">
+        <span style="font-size:12px;font-weight:600;color:rgba(255,255,255,.6)">Preparando sua nota · {{ recTime }}</span>
+        <sc-for list="{{ steps }}" as="st" hint-placeholder-count="3">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="width:16px;height:16px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:{{ st.dotBg }};box-shadow:{{ st.ring }}">
+                <sc-if value="{{ st.done }}" hint-placeholder-val="{{ false }}">
+                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="#fff" style="stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M2 5.2l2 2L8 3"></path></svg>
+                </sc-if>
+              </span>
+              <span style="flex:1;font-size:13px;color:{{ st.fg }}">{{ st.label }}</span>
+              <span style="font-size:11px;color:rgba(255,255,255,.45)">{{ st.where }}</span>
+            </div>
+            <sc-if value="{{ st.active }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-left:26px;height:3px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden">
+                <div style="height:100%;border-radius:2px;background:var(--acc,#E0512E);width:{{ st.pct }}"></div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+  </main>
+
+  <!-- Ask overlay -->
+  <sc-if value="{{ askOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeAsk }}" style="position:absolute;inset:0;background:rgba(30,25,20,.18);display:flex;justify-content:center;align-items:flex-start;padding-top:110px">
+      <div onClick="{{ stop }}" style="width:620px;border-radius:16px;background:var(--pop,rgba(252,251,249,.96));backdrop-filter:blur(40px);box-shadow:0 30px 80px rgba(0,0,0,.28),0 0 0 .5px rgba(0,0,0,.15);overflow:hidden">
+        <div style="display:flex;align-items:center;gap:12px;padding:0 18px;height:58px;border-bottom:.5px solid rgba(var(--k,0,0,0),.08)">
+          <span style="font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:18px;font-weight:600;color:var(--acc,#E0512E)">?</span>
+          <input ref="{{ askRef }}" value="{{ q }}" onChange="{{ onQ }}" onKeyDown="{{ onQKey }}" placeholder="Pergunte qualquer coisa sobre suas notas" style="flex:1;border:0;outline:0;background:transparent;font:inherit;font-size:17px;color:var(--tx,#1D1D1F);min-width:0">
+          <span style="font-size:11px;color:rgba(var(--s,60,60,67),.5)">esc</span>
+        </div>
+        <sc-if value="{{ askIdle }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:14px 10px 12px;display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:11px;font-weight:600;color:rgba(var(--s,60,60,67),.5);padding:0 10px 6px">Sugestões</span>
+            <sc-for list="{{ suggestions }}" as="sg" hint-placeholder-count="3">
+              <div onClick="{{ sg.onClick }}" style="height:34px;padding:0 10px;border-radius:8px;display:flex;align-items:center;font-size:13.5px;cursor:default" style-hover="background:rgba(118,118,128,.1)">{{ sg.label }}</div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{ askThinking }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:22px 22px;font-size:13px;color:rgba(var(--s,60,60,67),.65);display:flex;align-items:center;gap:10px">
+            <span style="width:7px;height:7px;border-radius:50%;background:var(--acc,#E0512E);animation:rbpulse 1s ease-in-out infinite"></span>Lendo 6 notas…
+          </div>
+        </sc-if>
+        <sc-if value="{{ askAnswer }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:20px 22px 18px;display:flex;flex-direction:column;gap:16px">
+            <p style="margin:0;font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:16.5px;line-height:1.6;text-wrap:pretty">{{ answer }}</p>
+            <sc-if value="{{ answerDone }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span style="font-size:11px;font-weight:600;color:rgba(var(--s,60,60,67),.5)">Fontes</span>
+                <div style="display:flex;flex-wrap:wrap;gap:6px">
+                  <sc-for list="{{ cites }}" as="c" hint-placeholder-count="3">
+                    <div onClick="{{ c.onClick }}" style="height:26px;padding:0 10px;border-radius:13px;display:flex;align-items:center;gap:6px;font-size:12px;background:rgba(118,118,128,.1);cursor:default" style-hover="background:rgba(118,118,128,.18)">
+                      <span style="width:6px;height:6px;border-radius:2px;background:{{ c.dot }}"></span>{{ c.title }}
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- Fix word -->
+  <sc-if value="{{ fixOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeFix }}" style="position:absolute;inset:0;background:rgba(30,25,20,.16);display:flex;align-items:center;justify-content:center">
+      <div onClick="{{ stop }}" style="width:400px;border-radius:14px;background:var(--pop,rgba(252,251,249,.96));backdrop-filter:blur(40px);box-shadow:0 30px 80px rgba(0,0,0,.28),0 0 0 .5px rgba(0,0,0,.15);padding:20px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span style="font-size:15px;font-weight:600">Corrigir palavra</span>
+          <span style="font-size:12.5px;line-height:1.5;color:rgba(var(--s,60,60,67),.7)">O Whisper ouviu “{{ fixWrong }}” com baixa confiança. Como se escreve?</span>
+        </div>
+        <input value="{{ fixVal }}" onChange="{{ onFixVal }}" style="height:34px;border:0;outline:0;border-radius:8px;padding:0 12px;font:inherit;font-size:14px;background:var(--card,#fff);color:var(--tx,#1D1D1F);box-shadow:0 0 0 .5px rgba(0,0,0,.22)" style-focus="box-shadow:0 0 0 1px var(--acc,#E0512E),0 0 0 4px color-mix(in srgb,var(--acc,#E0512E) 22%,transparent)">
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div onClick="{{ toggleFixAll }}" style="display:flex;gap:10px;cursor:default">
+            <span style="width:16px;height:16px;border-radius:4px;flex:none;margin-top:1px;display:flex;align-items:center;justify-content:center;background:{{ fixAllBg }};box-shadow:{{ fixAllRing }}">
+              <sc-if value="{{ fixAllOn }}" hint-placeholder-val="{{ true }}"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#fff" style="stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M2 5.2l2 2L8 3"></path></svg></sc-if>
+            </span>
+            <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:13px">Corrigir em todas as notas</span><span style="font-size:11.5px;color:rgba(var(--s,60,60,67),.6)">{{ fixCount }}</span></div>
+          </div>
+          <div onClick="{{ toggleFixVocab }}" style="display:flex;gap:10px;cursor:default">
+            <span style="width:16px;height:16px;border-radius:4px;flex:none;margin-top:1px;display:flex;align-items:center;justify-content:center;background:{{ fixVocabBg }};box-shadow:{{ fixVocabRing }}">
+              <sc-if value="{{ fixVocabOn }}" hint-placeholder-val="{{ true }}"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#fff" style="stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M2 5.2l2 2L8 3"></path></svg></sc-if>
+            </span>
+            <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:13px">Adicionar ao vocabulário do Whisper</span><span style="font-size:11.5px;color:rgba(var(--s,60,60,67),.6)">Para acertar nas próximas gravações</span></div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
+          <div onClick="{{ closeFix }}" style="height:28px;padding:0 14px;border-radius:7px;display:flex;align-items:center;font-size:13px;font-weight:500;background:rgba(118,118,128,.14);cursor:default">Cancelar</div>
+          <div onClick="{{ applyFix }}" style="height:28px;padding:0 14px;border-radius:7px;display:flex;align-items:center;font-size:13px;font-weight:600;background:var(--acc,#E0512E);color:#fff;cursor:default">Corrigir</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- New collection -->
+  <sc-if value="{{ newCollOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeNewColl }}" style="position:absolute;inset:0;background:rgba(30,25,20,.16);display:flex;align-items:center;justify-content:center">
+      <div onClick="{{ stop }}" style="width:460px;border-radius:14px;background:var(--pop,rgba(252,251,249,.96));backdrop-filter:blur(40px);box-shadow:0 30px 80px rgba(0,0,0,.28),0 0 0 .5px rgba(0,0,0,.15);padding:20px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span style="font-size:15px;font-weight:600">Nova coleção inteligente</span>
+          <span style="font-size:12.5px;line-height:1.5;color:rgba(var(--s,60,60,67),.7)">Descreva o que deve entrar. O Claude cria a regra e a coleção se atualiza sozinha a cada nova nota.</span>
+        </div>
+        <input value="{{ newCollQ }}" onChange="{{ onNewCollQ }}" onKeyDown="{{ onNewCollKey }}" placeholder="Ex.: tudo sobre o app de finanças" style="height:34px;border:0;outline:0;border-radius:8px;padding:0 12px;font:inherit;font-size:14px;background:var(--card,#fff);color:var(--tx,#1D1D1F);box-shadow:0 0 0 .5px rgba(0,0,0,.22)" style-focus="box-shadow:0 0 0 1px var(--acc,#E0512E),0 0 0 4px color-mix(in srgb,var(--acc,#E0512E) 22%,transparent)">
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <sc-for list="{{ collEx }}" as="c" hint-placeholder-count="3">
+            <span onClick="{{ c.onClick }}" style="height:26px;padding:0 11px;border-radius:13px;display:flex;align-items:center;font-size:12px;background:rgba(118,118,128,.1);cursor:default" style-hover="background:rgba(118,118,128,.18)">{{ c.label }}</span>
+          </sc-for>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
+          <div onClick="{{ closeNewColl }}" style="height:28px;padding:0 14px;border-radius:7px;display:flex;align-items:center;font-size:13px;font-weight:500;background:rgba(118,118,128,.14);cursor:default">Cancelar</div>
+          <div onClick="{{ createColl }}" style="height:28px;padding:0 14px;border-radius:7px;display:flex;align-items:center;font-size:13px;font-weight:600;background:var(--acc,#E0512E);color:#fff;cursor:default">Criar coleção</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ toastOn }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:50%;top:64px;transform:translateX(-50%);padding:8px 16px;border-radius:18px;background:rgba(28,28,30,.92);backdrop-filter:blur(20px);color:#fff;font-size:12.5px;font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,.25);white-space:nowrap">{{ toastMsg }}</div>
+  </sc-if>
+
+  <!-- Settings -->
+  <sc-if value="{{ settingsOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeSettings }}" style="position:absolute;inset:0;background:rgba(30,25,20,.14);display:flex;align-items:center;justify-content:center">
+      <div onClick="{{ stop }}" style="width:700px;height:580px;border-radius:12px;background:var(--bg3,#F5F3F0);box-shadow:0 30px 80px rgba(0,0,0,.3),0 0 0 .5px rgba(0,0,0,.22);display:flex;flex-direction:column;overflow:hidden">
+        <div style="flex:none;padding:12px 16px 0;background:var(--side,rgba(236,233,228,.95));border-bottom:.5px solid rgba(var(--k,0,0,0),.1)">
+          <div style="position:relative;height:16px;display:flex;align-items:center;gap:8px">
+            <span onClick="{{ closeSettings }}" style="width:12px;height:12px;border-radius:50%;background:#FF5F57;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.15)"></span>
+            <span style="width:12px;height:12px;border-radius:50%;background:rgba(var(--k,0,0,0),.12)"></span>
+            <span style="width:12px;height:12px;border-radius:50%;background:rgba(var(--k,0,0,0),.12)"></span>
+            <span style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;pointer-events:none">{{ paneTitle }}</span>
+          </div>
+          <div style="display:flex;justify-content:center;gap:2px;padding:10px 0 8px">
+            <sc-for list="{{ sTabs }}" as="t" hint-placeholder-count="7">
+              <div onClick="{{ t.onClick }}" style="width:78px;height:52px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:default;background:{{ t.bg }};color:{{ t.fg }}">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" style="stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round"><path d="{{ t.d }}"></path></svg>
+                <span style="font-size:11px;font-weight:500">{{ t.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="flex:1;overflow:auto;padding:22px 32px 30px;display:flex;flex-direction:column;gap:22px">
+          <sc-for list="{{ sGroups }}" as="g" hint-placeholder-count="2">
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <sc-if value="{{ g.hasTitle }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:12px;font-weight:600;color:rgba(var(--s,60,60,67),.65);padding-left:4px">{{ g.title }}</span>
+              </sc-if>
+              <div style="background:var(--card,#fff);border-radius:10px;box-shadow:0 0 0 .5px rgba(var(--k,0,0,0),.09),0 1px 2px rgba(var(--k,0,0,0),.03)">
+                <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="3">
+                  <div onClick="{{ r.onClick }}" style="display:flex;align-items:center;gap:12px;min-height:44px;padding:10px 14px;cursor:default;border-top:{{ r.border }}">
+                    <sc-if value="{{ r.isProfile }}" hint-placeholder-val="{{ false }}">
+                      <span style="width:46px;height:46px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:var(--ink,#1D1D1F);color:#fff;font-size:16px;font-weight:700">{{ userIni }}</span>
+                    </sc-if>
+                    <sc-if value="{{ r.isModel }}" hint-placeholder-val="{{ false }}">
+                      <span style="width:16px;height:16px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:{{ r.radioBg }};box-shadow:{{ r.radioRing }}">
+                        <sc-if value="{{ r.radioDot }}" hint-placeholder-val="{{ false }}"><span style="width:6px;height:6px;border-radius:50%;background:#fff"></span></sc-if>
+                      </span>
+                    </sc-if>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                      <span style="font-size:{{ r.fs }};font-weight:{{ r.fw }};color:{{ r.labelFg }}">{{ r.label }}</span>
+                      <sc-if value="{{ r.hasSub }}" hint-placeholder-val="{{ false }}">
+                        <span style="font-size:11.5px;line-height:1.4;color:rgba(var(--s,60,60,67),.62);text-wrap:pretty">{{ r.sub }}</span>
+                      </sc-if>
+                      <sc-if value="{{ r.isMeter }}" hint-placeholder-val="{{ false }}">
+                        <div style="margin-top:7px;height:5px;border-radius:3px;background:rgba(118,118,128,.16);overflow:hidden"><div style="height:100%;border-radius:3px;background:var(--acc,#E0512E);width:{{ r.pct }}"></div></div>
+                      </sc-if>
+                    </div>
+                    <sc-if value="{{ r.isToggle }}" hint-placeholder-val="{{ false }}">
+                      <span style="width:36px;height:20px;border-radius:10px;flex:none;position:relative;transition:background .2s;background:{{ r.trackBg }}">
+                        <span style="position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .2s;transform:{{ r.knob }}"></span>
+                      </span>
+                    </sc-if>
+                    <sc-if value="{{ r.isSelect }}" hint-placeholder-val="{{ false }}">
+                      <span style="height:24px;padding:0 7px 0 10px;border-radius:6px;flex:none;display:flex;align-items:center;gap:8px;font-size:12.5px;background:var(--card,#fff);box-shadow:0 0 0 .5px rgba(0,0,0,.2),0 1px 1.5px rgba(var(--k,0,0,0),.08)">{{ r.value }}<svg width="8" height="12" viewBox="0 0 8 12" fill="none" stroke="rgba(var(--s,60,60,67),.7)" style="stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round"><path d="M1.5 4.5L4 2l2.5 2.5M1.5 7.5L4 10l2.5-2.5"></path></svg></span>
+                    </sc-if>
+                    <sc-if value="{{ r.isSeg }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;padding:2px;border-radius:7px;background:rgba(118,118,128,.12);gap:2px;flex:none">
+                        <sc-for list="{{ r.opts }}" as="o" hint-placeholder-count="3">
+                          <span onClick="{{ o.onClick }}" style="height:22px;padding:0 12px;border-radius:5px;display:flex;align-items:center;font-size:12px;font-weight:500;background:{{ o.bg }};box-shadow:{{ o.shadow }}">{{ o.label }}</span>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ r.isKeys }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;gap:4px;flex:none">
+                        <sc-for list="{{ r.keys }}" as="k" hint-placeholder-count="2">
+                          <span style="min-width:24px;height:24px;padding:0 7px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;background:var(--fill,#F6F4F1);box-shadow:inset 0 -1px 0 rgba(var(--k,0,0,0),.12),0 0 0 .5px rgba(var(--k,0,0,0),.14)">{{ k }}</span>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ r.isBtn }}" hint-placeholder-val="{{ false }}">
+                      <span onClick="{{ r.onBtn }}" style="height:26px;padding:0 12px;border-radius:7px;flex:none;display:flex;align-items:center;font-size:12.5px;font-weight:500;background:rgba(118,118,128,.12);color:{{ r.btnFg }}" style-hover="background:rgba(118,118,128,.2)">{{ r.value }}</span>
+                    </sc-if>
+                    <sc-if value="{{ r.isStatus }}" hint-placeholder-val="{{ false }}">
+                      <span style="font-size:12px;flex:none;color:{{ r.stFg }}">{{ r.value }}</span>
+                    </sc-if>
+                    <sc-if value="{{ r.isDl }}" hint-placeholder-val="{{ false }}">
+                      <span onClick="{{ r.onDl }}" style="height:24px;padding:0 11px;border-radius:12px;flex:none;display:flex;align-items:center;font-size:12px;font-weight:600;color:var(--acc,#E0512E);background:color-mix(in srgb,var(--acc,#E0512E) 10%,transparent)">Baixar</span>
+                    </sc-if>
+                    <sc-if value="{{ r.isProg }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;align-items:center;gap:8px;flex:none">
+                        <div style="width:80px;height:4px;border-radius:2px;background:rgba(118,118,128,.16);overflow:hidden"><div style="height:100%;background:var(--acc,#E0512E);width:{{ r.pct }}"></div></div>
+                        <span style="font-size:11px;width:30px;font-variant-numeric:tabular-nums;color:rgba(var(--s,60,60,67),.65)">{{ r.pct }}</span>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ g.hasFoot }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:11.5px;line-height:1.45;color:rgba(var(--s,60,60,67),.6);padding:0 4px;text-wrap:pretty">{{ g.foot }}</span>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- Login -->
+  <sc-if value="{{ isLogin }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;inset:0;display:flex;background:var(--bg2,#FBFAF8)">
+      <div style="width:560px;flex:none;display:flex;flex-direction:column;padding:18px 56px 44px;background:var(--warm,#F1ECE4);border-right:.5px solid rgba(var(--k,0,0,0),.08)">
+        <div style="display:flex;gap:8px;height:16px;align-items:center">
+          <span style="width:12px;height:12px;border-radius:50%;background:#FF5F57;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.15)"></span>
+          <span style="width:12px;height:12px;border-radius:50%;background:#FEBC2E;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.15)"></span>
+          <span style="width:12px;height:12px;border-radius:50%;background:#28C840;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.15)"></span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:36px">
+          <h1 style="margin:0;font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:42px;line-height:1.12;font-weight:500;letter-spacing:-.8px;text-wrap:balance">Fale à vontade. O RbNotes escreve, resume e lembra por você.</h1>
+          <div style="border-radius:18px;background:#1C1C1E;color:#fff;padding:18px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 40px rgba(60,40,20,.18);transform:rotate(-1.2deg)">
+            <div style="display:flex;align-items:center;gap:9px">
+              <span style="width:8px;height:8px;border-radius:50%;background:#FF453A;animation:rbpulse 1.2s ease-in-out infinite"></span>
+              <span style="font-size:12px;font-weight:600;color:rgba(255,255,255,.85)">Gravando</span>
+              <span style="flex:1"></span>
+              <span style="font-size:17px;font-variant-numeric:tabular-nums">0:14</span>
+            </div>
+            <div style="height:36px;display:flex;align-items:center;justify-content:space-between">
+              <sc-for list="{{ loginBars }}" as="b" hint-placeholder-count="64">
+                <span style="width:3px;border-radius:2px;flex:none;height:{{ b.h }};background:{{ b.c }}"></span>
+              </sc-for>
+            </div>
+            <span style="font-size:14px;line-height:1.55">…a ideia é testar o protótipo com cinco pessoas antes de sexta e <span style="color:rgba(255,255,255,.4)">ajustar o fluxo</span></span>
+          </div>
+        </div>
+        <span style="font-size:12px;line-height:1.5;color:rgba(var(--s,60,60,67),.7);max-width:400px">A transcrição roda no seu Mac com Whisper. O áudio nunca sai do seu computador.</span>
+      </div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:40px">
+        <div style="width:320px;display:flex;flex-direction:column">
+          <div style="width:56px;height:56px;border-radius:14px;background:var(--ink,#1D1D1F);display:flex;align-items:center;justify-content:center;position:relative;box-shadow:0 6px 16px rgba(0,0,0,.18),inset 0 .5px 0 rgba(255,255,255,.2)">
+            <span style="font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:24px;font-weight:600;color:#fff;letter-spacing:-.5px">Rb</span>
+            <span style="position:absolute;right:10px;bottom:11px;width:6px;height:6px;border-radius:50%;background:var(--acc,#E0512E)"></span>
+          </div>
+          <h2 style="margin:22px 0 6px;font-size:22px;font-weight:600;letter-spacing:-.3px">{{ authTitle }}</h2>
+          <span style="font-size:13px;line-height:1.45;color:rgba(var(--s,60,60,67),.65)">Suas notas sincronizadas entre todos os seus Macs.</span>
+          <div style="margin-top:26px;display:flex;flex-direction:column;gap:8px">
+            <div onClick="{{ submitAuth }}" style="height:38px;border-radius:9px;background:#000;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px;font-size:13.5px;font-weight:500;cursor:default" style-active="filter:brightness(1.3)"><span style="font-size:15px;margin-top:-2px"></span>Continuar com a Apple</div>
+            <div onClick="{{ submitAuth }}" style="height:38px;border-radius:9px;background:var(--card,#fff);display:flex;align-items:center;justify-content:center;gap:8px;font-size:13.5px;font-weight:500;cursor:default;box-shadow:0 0 0 .5px rgba(0,0,0,.2),0 1px 2px rgba(var(--k,0,0,0),.06)" style-hover="background:var(--fill,#FAFAF9)"><span style="font-weight:700;font-size:14px;color:#4285F4">G</span>Continuar com Google</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;margin:20px 0;color:rgba(var(--s,60,60,67),.5);font-size:11.5px">
+            <span style="flex:1;height:.5px;background:rgba(var(--k,0,0,0),.14)"></span>ou<span style="flex:1;height:.5px;background:rgba(var(--k,0,0,0),.14)"></span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <sc-if value="{{ authSignup }}" hint-placeholder-val="{{ false }}">
+              <input value="{{ name }}" onChange="{{ onName }}" placeholder="Nome" style="height:36px;border:0;outline:0;border-radius:8px;padding:0 12px;font:inherit;font-size:13.5px;background:var(--card,#fff);color:var(--tx,#1D1D1F);box-shadow:0 0 0 .5px rgba(0,0,0,.22)" style-focus="box-shadow:0 0 0 1px var(--acc,#E0512E),0 0 0 4px color-mix(in srgb,var(--acc,#E0512E) 22%,transparent)">
+            </sc-if>
+            <input value="{{ email }}" onChange="{{ onEmail }}" placeholder="E-mail" style="height:36px;border:0;outline:0;border-radius:8px;padding:0 12px;font:inherit;font-size:13.5px;background:var(--card,#fff);color:var(--tx,#1D1D1F);box-shadow:0 0 0 .5px rgba(0,0,0,.22)" style-focus="box-shadow:0 0 0 1px var(--acc,#E0512E),0 0 0 4px color-mix(in srgb,var(--acc,#E0512E) 22%,transparent)">
+            <input type="password" value="{{ pass }}" onChange="{{ onPass }}" onKeyDown="{{ onPassKey }}" placeholder="Senha" style="height:36px;border:0;outline:0;border-radius:8px;padding:0 12px;font:inherit;font-size:13.5px;background:var(--card,#fff);color:var(--tx,#1D1D1F);box-shadow:0 0 0 .5px rgba(0,0,0,.22)" style-focus="box-shadow:0 0 0 1px var(--acc,#E0512E),0 0 0 4px color-mix(in srgb,var(--acc,#E0512E) 22%,transparent)">
+            <div onClick="{{ submitAuth }}" style="margin-top:6px;height:38px;border-radius:9px;background:var(--acc,#E0512E);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13.5px;font-weight:600;cursor:default;box-shadow:0 1px 2px rgba(0,0,0,.15),inset 0 .5px 0 rgba(255,255,255,.3)" style-active="filter:brightness(.92)">{{ authBtn }}</div>
+            <sc-if value="{{ authLogin }}" hint-placeholder-val="{{ true }}">
+              <span style="text-align:center;font-size:12px;color:var(--acc,#E0512E);margin-top:6px;cursor:default">Esqueceu a senha?</span>
+            </sc-if>
+          </div>
+          <div style="margin-top:30px;padding-top:18px;border-top:.5px solid rgba(var(--k,0,0,0),.1);display:flex;justify-content:center;gap:5px;font-size:12.5px">
+            <span style="color:rgba(var(--s,60,60,67),.65)">{{ authQ }}</span>
+            <span onClick="{{ toggleAuth }}" style="color:var(--acc,#E0512E);font-weight:600;cursor:default">{{ authA }}</span>
+          </div>
+          <span style="margin-top:14px;text-align:center;font-size:11px;line-height:1.5;color:rgba(var(--s,60,60,67),.5)">Ao continuar, você concorda com os Termos de Uso e a Política de Privacidade.</span>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- Onboarding -->
+  <sc-if value="{{ isOnboard }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;background:var(--bg2,#FBFAF8)">
+      <div style="height:52px;flex:none;display:flex;align-items:center;gap:8px;padding:0 18px;position:relative">
+        <span style="width:12px;height:12px;border-radius:50%;background:#FF5F57;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.15)"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#FEBC2E;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.15)"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#28C840;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.15)"></span>
+        <div style="position:absolute;left:0;right:0;display:flex;justify-content:center;gap:6px;pointer-events:none">
+          <sc-for list="{{ obDots }}" as="d" hint-placeholder-count="4">
+            <span style="height:6px;border-radius:3px;transition:all .3s;width:{{ d.w }};background:{{ d.c }}"></span>
+          </sc-for>
+        </div>
+      </div>
+      <div style="flex:1;overflow:auto;display:flex;align-items:safe center;justify-content:center;padding:20px 40px">
+        <div style="width:560px;display:flex;flex-direction:column">
+
+          <sc-if value="{{ ob0 }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column">
+              <div style="width:64px;height:64px;border-radius:16px;background:var(--ink,#1D1D1F);display:flex;align-items:center;justify-content:center;position:relative;box-shadow:0 6px 16px rgba(0,0,0,.18)">
+                <span style="font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:27px;font-weight:600;color:#fff;letter-spacing:-.5px">Rb</span>
+                <span style="position:absolute;right:12px;bottom:13px;width:7px;height:7px;border-radius:50%;background:var(--acc,#E0512E)"></span>
+              </div>
+              <h1 style="margin:26px 0 10px;font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:38px;line-height:1.1;font-weight:500;letter-spacing:-.7px">Olá, {{ firstName }}.</h1>
+              <p style="margin:0;font-size:15px;line-height:1.55;color:rgba(var(--s,60,60,67),.72);text-wrap:pretty">Em um minuto o RbNotes fica pronto. Antes, veja o caminho que cada nota faz.</p>
+              <div style="margin-top:32px;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr);align-items:stretch;gap:10px">
+                <div style="padding:16px;border-radius:12px;background:var(--fill,#F6F4F1);display:flex;flex-direction:column;gap:4px"><span style="font-size:13.5px;font-weight:600">Sua voz</span><span style="font-size:12px;line-height:1.4;color:rgba(var(--s,60,60,67),.65)">Gravada pelo microfone do Mac</span></div>
+                <span style="align-self:center;color:rgba(var(--s,60,60,67),.4);font-size:16px">→</span>
+                <div style="padding:16px;border-radius:12px;background:var(--fill,#F6F4F1);display:flex;flex-direction:column;gap:4px"><span style="font-size:13.5px;font-weight:600">Whisper</span><span style="font-size:12px;line-height:1.4;color:rgba(var(--s,60,60,67),.65)">Transcreve no seu Mac, sem internet</span></div>
+                <span style="align-self:center;color:rgba(var(--s,60,60,67),.4);font-size:16px">→</span>
+                <div style="padding:16px;border-radius:12px;background:var(--fill,#F6F4F1);display:flex;flex-direction:column;gap:4px"><span style="font-size:13.5px;font-weight:600">Claude</span><span style="font-size:12px;line-height:1.4;color:rgba(var(--s,60,60,67),.65)">Recebe só o texto para resumir</span></div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ ob1 }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column">
+              <h1 style="margin:0 0 10px;font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:32px;line-height:1.1;font-weight:500;letter-spacing:-.6px">Permissões</h1>
+              <p style="margin:0;font-size:14px;line-height:1.55;color:rgba(var(--s,60,60,67),.72);text-wrap:pretty">O macOS pede sua confirmação para cada uma. Você pode mudar depois em Ajustes do Sistema › Privacidade e Segurança.</p>
+              <div style="margin-top:24px;border-radius:12px;background:var(--card,#fff);box-shadow:0 0 0 .5px rgba(var(--k,0,0,0),.1),0 1px 2px rgba(var(--k,0,0,0),.04)">
+                <sc-for list="{{ perms }}" as="pm" hint-placeholder-count="4">
+                  <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-top:{{ pm.border }}">
+                    <span style="width:34px;height:34px;border-radius:9px;flex:none;display:flex;align-items:center;justify-content:center;color:var(--acc,#E0512E);background:color-mix(in srgb,var(--acc,#E0512E) 10%,transparent)">
+                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" style="stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round"><path d="{{ pm.d }}"></path></svg>
+                    </span>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                      <div style="display:flex;align-items:center;gap:8px">
+                        <span style="font-size:13.5px;font-weight:600">{{ pm.label }}</span>
+                        <span style="font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:4px;background:{{ pm.tagBg }};color:{{ pm.tagFg }}">{{ pm.tag }}</span>
+                      </div>
+                      <span style="font-size:12px;line-height:1.45;color:rgba(var(--s,60,60,67),.65);text-wrap:pretty">{{ pm.sub }}</span>
+                    </div>
+                    <sc-if value="{{ pm.isNo }}" hint-placeholder-val="{{ true }}">
+                      <span onClick="{{ pm.onClick }}" style="height:26px;padding:0 12px;border-radius:7px;flex:none;display:flex;align-items:center;font-size:12.5px;font-weight:500;background:rgba(118,118,128,.12);cursor:default;white-space:nowrap" style-hover="background:rgba(118,118,128,.2)">{{ pm.btn }}</span>
+                    </sc-if>
+                    <sc-if value="{{ pm.isWait }}" hint-placeholder-val="{{ false }}">
+                      <span style="flex:none;display:flex;align-items:center;gap:7px;font-size:12px;color:rgba(var(--s,60,60,67),.65)"><span style="width:6px;height:6px;border-radius:50%;background:var(--acc,#E0512E);animation:rbpulse 1s ease-in-out infinite"></span>Aguardando…</span>
+                    </sc-if>
+                    <sc-if value="{{ pm.isOk }}" hint-placeholder-val="{{ false }}">
+                      <span style="flex:none;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#1E8C5A">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" style="stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M3 7.3l2.6 2.6L11 4.5"></path></svg>Permitido
+                      </span>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ ob2 }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column">
+              <h1 style="margin:0 0 10px;font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:32px;line-height:1.1;font-weight:500;letter-spacing:-.6px">Modelo de transcrição</h1>
+              <p style="margin:0;font-size:14px;line-height:1.55;color:rgba(var(--s,60,60,67),.72);text-wrap:pretty">O Whisper roda inteiro no seu Mac. Escolha um para começar; dá para trocar depois em Ajustes.</p>
+              <div style="margin-top:24px;display:flex;flex-direction:column;gap:8px">
+                <sc-for list="{{ obModels }}" as="m" hint-placeholder-count="3">
+                  <div onClick="{{ m.onClick }}" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:12px;background:var(--card,#fff);cursor:default;box-shadow:{{ m.ring }}">
+                    <span style="width:16px;height:16px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:{{ m.radioBg }};box-shadow:{{ m.radioRing }}">
+                      <sc-if value="{{ m.radioDot }}" hint-placeholder-val="{{ false }}"><span style="width:6px;height:6px;border-radius:50%;background:#fff"></span></sc-if>
+                    </span>
+                    <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+                      <span style="font-size:13.5px;font-weight:600">{{ m.label }}</span>
+                      <span style="font-size:12px;color:rgba(var(--s,60,60,67),.65)">{{ m.sub }}</span>
+                    </div>
+                    <sc-if value="{{ m.isRec }}" hint-placeholder-val="{{ false }}">
+                      <span style="font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:4px;color:var(--acc,#E0512E);background:color-mix(in srgb,var(--acc,#E0512E) 12%,transparent)">Recomendado</span>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ obDownloading }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:18px;display:flex;flex-direction:column;gap:8px">
+                  <div style="display:flex;justify-content:space-between;font-size:12px;color:rgba(var(--s,60,60,67),.7)"><span>Baixando {{ obModelLabel }}</span><span style="font-variant-numeric:tabular-nums">{{ obPct }}</span></div>
+                  <div style="height:5px;border-radius:3px;background:rgba(118,118,128,.16);overflow:hidden"><div style="height:100%;border-radius:3px;background:var(--acc,#E0512E);width:{{ obPct }}"></div></div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ ob3 }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;align-items:center;text-align:center">
+              <div onClick="{{ obRecord }}" style="width:92px;height:92px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--acc,#E0512E);cursor:default;box-shadow:0 0 0 10px color-mix(in srgb,var(--acc,#E0512E) 14%,transparent),0 10px 30px color-mix(in srgb,var(--acc,#E0512E) 40%,transparent)" style-active="transform:scale(.96)">
+                <span style="width:28px;height:28px;border-radius:50%;background:#fff"></span>
+              </div>
+              <h1 style="margin:34px 0 10px;font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:36px;line-height:1.1;font-weight:500;letter-spacing:-.7px">Tudo pronto.</h1>
+              <p style="margin:0;max-width:420px;font-size:15px;line-height:1.55;color:rgba(var(--s,60,60,67),.72);text-wrap:pretty">Grave sua primeira nota agora. Pode ser qualquer coisa: uma ideia, o plano do dia, a lista do mercado.</p>
+              <div style="margin-top:22px;display:flex;align-items:center;gap:8px;font-size:12.5px;color:rgba(var(--s,60,60,67),.7)">
+                <span>De qualquer app:</span>
+                <span style="min-width:24px;height:24px;padding:0 7px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:var(--tx,#1D1D1F);background:var(--fill,#F6F4F1);box-shadow:inset 0 -1px 0 rgba(var(--k,0,0,0),.12),0 0 0 .5px rgba(var(--k,0,0,0),.14)">⌥</span>
+                <span style="min-width:24px;height:24px;padding:0 9px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:var(--tx,#1D1D1F);background:var(--fill,#F6F4F1);box-shadow:inset 0 -1px 0 rgba(var(--k,0,0,0),.12),0 0 0 .5px rgba(var(--k,0,0,0),.14)">Espaço</span>
+              </div>
+              <span onClick="{{ obFinish }}" style="margin-top:28px;font-size:13px;font-weight:500;color:var(--acc,#E0512E);cursor:default">Explorar o app primeiro</span>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+      <sc-if value="{{ obShowFooter }}" hint-placeholder-val="{{ true }}">
+        <div style="height:68px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 28px;border-top:.5px solid rgba(var(--k,0,0,0),.08)">
+          <span onClick="{{ obBack }}" style="font-size:13px;font-weight:500;color:rgba(var(--s,60,60,67),.75);cursor:default;visibility:{{ obBackVis }}">Voltar</span>
+          <div style="display:flex;align-items:center;gap:14px">
+            <span style="font-size:12px;color:rgba(var(--s,60,60,67),.6)">{{ obHint }}</span>
+            <div onClick="{{ obNext }}" style="height:32px;padding:0 18px;border-radius:8px;display:flex;align-items:center;font-size:13px;font-weight:600;background:var(--acc,#E0512E);color:#fff;cursor:default;box-shadow:0 1px 2px rgba(0,0,0,.15);transition:opacity .2s;opacity:{{ obNextOp }}">{{ obNextLabel }}</div>
+          </div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ alertOn }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;inset:0;background:rgba(0,0,0,.1);display:flex;align-items:center;justify-content:center">
+          <div style="width:264px;border-radius:13px;background:var(--pop,rgba(252,251,249,.96));backdrop-filter:blur(40px);box-shadow:0 20px 60px rgba(0,0,0,.3),0 0 0 .5px rgba(0,0,0,.18);padding:20px 16px 16px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px">
+            <div style="width:52px;height:52px;border-radius:13px;background:var(--ink,#1D1D1F);display:flex;align-items:center;justify-content:center;position:relative">
+              <span style="font-family:'New York','Newsreader',ui-serif,Georgia,serif;font-size:22px;font-weight:600;color:#fff">Rb</span>
+              <span style="position:absolute;right:9px;bottom:10px;width:5px;height:5px;border-radius:50%;background:var(--acc,#E0512E)"></span>
+            </div>
+            <span style="font-size:13px;font-weight:700;line-height:1.35">{{ alertTitle }}</span>
+            <span style="font-size:11.5px;line-height:1.45;color:rgba(var(--s,60,60,67),.75)">{{ alertBody }}</span>
+            <div style="width:100%;display:flex;flex-direction:column;gap:6px;margin-top:6px">
+              <div onClick="{{ allowAlert }}" style="height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;background:var(--acc,#E0512E);color:#fff;cursor:default">Permitir</div>
+              <div onClick="{{ denyAlert }}" style="height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;background:rgba(118,118,128,.16);cursor:default">Não Permitir</div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1360,&quot;height&quot;:880},&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Login&quot;,&quot;Onboarding&quot;,&quot;App&quot;],&quot;default&quot;:&quot;Login&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;appearance&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Sistema&quot;,&quot;Claro&quot;,&quot;Escuro&quot;],&quot;default&quot;:&quot;Sistema&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#E0512E&quot;,&quot;options&quot;:[&quot;#E0512E&quot;,&quot;#2F6BEB&quot;,&quot;#1E8C5A&quot;,&quot;#1D1D1F&quot;],&quot;tsType&quot;:&quot;string&quot;},&quot;showTimestamps&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Detalhada&quot;,&quot;Compacta&quot;],&quot;default&quot;:&quot;Detalhada&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const FOLDERS = [
+  { id: 'trabalho', label: 'Trabalho', color: '#2F6BEB' },
+  { id: 'pessoal', label: 'Pessoal', color: '#1E8C5A' },
+  { id: 'estudos', label: 'Estudos', color: '#B7791F' },
+  { id: 'ideias', label: 'Ideias', color: '#D9472B' },
+  { id: 'diario', label: 'Diário', color: '#8A7A66', hidden: true },
+];
+const SPK_COLORS = ['var(--ink,#1D1D1F)', '#2F6BEB', '#1E8C5A', '#B7791F'];
+const NOTES = [
+  { id: 'n1', title: 'Kickoff do app de finanças pessoais', folder: 'trabalho', group: 'Hoje', time: '09:42', dateLong: 'Hoje, 09:42', dur: 1102, fav: true,
+    speakers: ['Você', 'Camila', 'Rafael'],
+    tldr: 'Camila apresentou o escopo do MVP: controle de gastos por categoria e metas mensais. O time decidiu lançar só no iOS e validar com 200 usuários beta antes de investir em Open Finance.',
+    points: ['MVP com três telas: visão do mês, categorias e metas.', 'Open Finance fica para a segunda fase, por causa do custo e do prazo de certificação.', 'Rafael estima seis semanas de desenvolvimento com o time atual.', 'Entrevistas com usuários começam na semana que vem.'],
+    quote: 2,
+    actions: [{ t: 'Enviar a proposta revisada com o novo escopo', owner: 'Você · até sexta' }, { t: 'Agendar 5 entrevistas com usuários beta', owner: 'Camila' }, { t: 'Levantar o custo de certificação do Open Finance', owner: 'Rafael', done: true }],
+    decisions: ['Primeira versão apenas para iOS.', 'Beta fechado com 200 pessoas da lista de espera.'],
+    questions: ['Modelo de receita: assinatura ou freemium?', 'Quem aprova o design final do lado do cliente?'],
+    transcript: [
+      [0, 0, 'Bom, acho que todo mundo já está aqui. A ideia hoje é alinhar o escopo do MVP antes de eu mandar a proposta final.'],
+      [64, 1, 'Perfeito. Do nosso lado, o essencial é a pessoa abrir o app e entender em dois segundos quanto já gastou no mês.'],
+      [188, 1, 'Se a pessoa não entende o mês em dois segundos, ela não volta. O resto é categoria e meta. Open Finance a gente quer, mas não precisa ser agora.'],
+      [352, 2, 'Concordo. Só a certificação leva uns dois meses, e a Taís do jurídico ainda precisa levantar o custo.'],
+      [497, 0, 'Então fica para a fase dois. E plataforma? Eu sugiro começar só com iOS e medir.'],
+      [640, 1, 'Faz sentido, setenta por cento da lista de espera usa iPhone.'],
+      [812, 2, 'Com esse escopo, eu diria seis semanas, considerando o time de hoje.'],
+      [1010, 0, 'Fechado. Vou revisar a proposta e mando até sexta.'],
+    ] },
+  { id: 'n2', title: 'Ideia: podcast sobre ofícios', folder: 'ideias', group: 'Hoje', time: '07:15', dateLong: 'Hoje, 07:15', dur: 192,
+    speakers: ['Você'],
+    tldr: 'Uma série curta de entrevistas com artesãos de São Paulo, cada episódio gravado dentro da oficina, usando o som do trabalho como trilha.',
+    points: ['Episódios de 20 minutos, um ofício por episódio.', 'Primeiros nomes: marceneiro, encadernadora e luthier.', 'Sem trilha musical: o som da oficina conduz a narrativa.'],
+    quote: 1,
+    actions: [{ t: 'Listar 10 possíveis entrevistados', owner: 'Você' }, { t: 'Testar microfone de lapela na oficina do Jorge', owner: 'Você' }],
+    decisions: [],
+    questions: ['Publicar também em vídeo ou só em áudio?'],
+    transcript: [
+      [0, 0, 'Ideia rápida antes que eu esqueça. Um podcast sobre ofícios, gente que ainda trabalha com as mãos aqui em São Paulo.'],
+      [41, 0, 'O som do trabalho é a trilha. A plaina, a agulha passando no papel, a afinação do violão.'],
+      [97, 0, 'Começaria com o Jorge, o marceneiro do bairro. Depois a encadernadora da Vila Madalena e um luthier.'],
+      [150, 0, 'Episódios curtos, uns vinte minutos. Preciso testar a captação de som lá dentro.'],
+    ] },
+  { id: 'n3', title: 'Consulta com a Dra. Marina', folder: 'pessoal', group: 'Esta semana', time: 'Ter, 16:30', dateLong: 'Terça, 16:30', age: 3, dur: 588,
+    speakers: ['Você', 'Dra. Marina'],
+    tldr: 'Retorno de rotina. A recomendação é ajustar o horário de sono, voltar à atividade física três vezes por semana e repetir os exames em dois meses.',
+    points: ['Dormir antes da meia-noite pelo menos cinco dias por semana.', 'Caminhada ou musculação três vezes por semana.', 'Exame de sangue em jejum antes do retorno.'],
+    quote: 1,
+    actions: [{ t: 'Fazer exame de sangue em jejum', owner: 'Você' }, { t: 'Marcar retorno para daqui a 60 dias', owner: 'Você' }],
+    decisions: ['Sem mudança de medicação por enquanto.'],
+    questions: ['Vale incluir acompanhamento com nutricionista?'],
+    transcript: [
+      [0, 1, 'Então, olhando os resultados, está tudo dentro do esperado. O ponto de atenção é o sono.'],
+      [130, 1, 'Mais do que qualquer remédio, o que muda esse quadro é regularidade: horário para dormir e atividade física.'],
+      [302, 0, 'Entendi. E quando eu volto?'],
+      [340, 1, 'Daqui a uns dois meses, já com um exame novo em jejum.'],
+    ] },
+  { id: 'n4', title: 'Aula 7 — Heurísticas de Nielsen', folder: 'estudos', group: 'Esta semana', time: 'Seg, 10:00', dateLong: 'Segunda, 10:00', age: 4, dur: 2535,
+    speakers: ['Prof. Lúcia'],
+    tldr: 'Revisão das dez heurísticas de usabilidade, com foco em visibilidade do estado do sistema e prevenção de erros. A avaliação heurística em grupo será o trabalho final.',
+    points: ['Visibilidade do estado: o sistema precisa sempre informar o que está acontecendo.', 'Prevenir o erro vale mais do que escrever uma boa mensagem de erro.', 'Avaliações com 3 a 5 avaliadores encontram a maior parte dos problemas.'],
+    quote: 1,
+    actions: [{ t: 'Escolher o app para a avaliação heurística', owner: 'Grupo' }, { t: 'Ler o capítulo 5 do livro-texto', owner: 'Você' }],
+    decisions: ['Trabalho final em grupos de três.'],
+    questions: ['A entrega aceita vídeo ou só relatório?'],
+    transcript: [
+      [0, 0, 'Hoje a gente fecha as heurísticas. Começando pela primeira, que é a mais violada: visibilidade do estado do sistema.'],
+      [610, 0, 'Uma boa mensagem de erro é ótima, mas o melhor erro é aquele que nunca acontece.'],
+      [1480, 0, 'Com três a cinco avaliadores vocês encontram a maior parte dos problemas. Por isso os grupos serão de três.'],
+    ] },
+  { id: 'n5', title: 'Roadmap do primeiro trimestre', folder: 'trabalho', group: 'Semana passada', time: '14 out', dateLong: '14 de outubro, 14:20', age: 9, dur: 1503,
+    speakers: ['Você', 'Bruno'],
+    tldr: 'Prioridades do trimestre: estabilizar a sincronização, lançar a busca nova e adiar o redesign do painel para abril.',
+    points: ['Sincronização é prioridade número um pelo volume de reclamações.', 'Busca nova entra em fevereiro.', 'Redesign do painel fica para abril.'],
+    quote: 1,
+    actions: [{ t: 'Escrever o documento de requisitos da busca', owner: 'Bruno' }, { t: 'Comunicar a mudança de data do redesign', owner: 'Você', done: true }],
+    decisions: ['Redesign do painel adiado para abril.'],
+    questions: ['Precisamos contratar mais uma pessoa de backend?'],
+    transcript: [
+      [0, 0, 'Vamos olhar o trimestre inteiro. O que não pode esperar?'],
+      [220, 1, 'Sincronização. A Taís do suporte mostrou que metade dos tickets da semana passada são sobre isso.'],
+      [690, 0, 'Então o redesign do painel vai para abril. Eu aviso o time.'],
+    ] },
+  { id: 'n6', title: 'Lista do fim de semana', folder: 'pessoal', group: 'Semana passada', time: '11 out', dateLong: '11 de outubro, 11:02', age: 12, dur: 48,
+    speakers: ['Você'],
+    tldr: 'Compras para o almoço de domingo e duas tarefas da casa.',
+    points: ['Feira: tomate, manjericão, limão e pão.', 'Buscar a encomenda na portaria.', 'Trocar a lâmpada da varanda.'],
+    quote: 0,
+    actions: [{ t: 'Feira de domingo', owner: 'Você', done: true }, { t: 'Buscar encomenda na portaria', owner: 'Você' }, { t: 'Trocar a lâmpada da varanda', owner: 'Você' }],
+    decisions: [],
+    questions: ['Convidar a Ana para o almoço?'],
+    transcript: [
+      [0, 0, 'Pra domingo: tomate, manjericão, limão e um pão bom.'],
+      [22, 0, 'E não esquecer da encomenda na portaria e da lâmpada da varanda.'],
+    ] },
+];
+const DIARY = [
+  { id: 'd1', title: 'Um dia mais leve', folder: 'diario', group: 'Ontem', time: '22:10', dateLong: 'Ontem, 22:10', dur: 214, age: 1, speakers: ['Você'],
+    tldr: 'Dia produtivo depois de uma noite bem dormida. A corrida da manhã ajudou a começar com energia e a proposta avançou bastante.',
+    points: ['Dormir antes da meia-noite fez diferença.', 'Corrida de manhã antes do trabalho.', 'Proposta quase pronta.'], quote: 0, actions: [], decisions: [], questions: ['Dá para manter o horário de sono no fim de semana?'],
+    transcript: [[0, 0, 'Hoje foi um dia mais leve. Dormi cedo ontem e acordei sem despertador.'], [62, 0, 'Corri antes do trabalho e a manhã rendeu. A proposta está quase pronta.'], [140, 0, 'Quero repetir isso amanhã.']] },
+  { id: 'd2', title: 'Ansiedade antes do kickoff', folder: 'diario', group: 'Esta semana', time: 'Ter, 23:02', dateLong: 'Terça, 23:02', dur: 176, age: 3, speakers: ['Você'],
+    tldr: 'Noite agitada pensando no kickoff do app de finanças. Escrever a pauta ajudou a organizar a cabeça.',
+    points: ['Preocupação com o escopo do cliente.', 'Escrever a pauta acalmou.'], quote: 0, actions: [], decisions: [], questions: ['O que está fora do meu controle nessa reunião?'],
+    transcript: [[0, 0, 'Estou meio ansioso com o kickoff. Fico pensando se o escopo vai caber no prazo.'], [88, 0, 'Escrevi a pauta e já me sinto melhor.']] },
+  { id: 'd3', title: 'Domingo com a família', folder: 'diario', group: 'Semana passada', time: 'Dom, 21:40', dateLong: 'Domingo, 21:40', dur: 241, age: 5, speakers: ['Você'],
+    tldr: 'Almoço longo na casa da mãe, sem celular. Um dia de descanso de verdade.',
+    points: ['Almoço na casa da mãe.', 'Dia inteiro longe do trabalho.'], quote: 0, actions: [], decisions: [], questions: ['Fazer isso todo mês?'],
+    transcript: [[0, 0, 'Passei o dia na casa da minha mãe. Deixei o celular na bolsa e nem senti falta.'], [120, 0, 'Preciso de mais domingos assim.']] },
+];
+NOTES.push(...DIARY);
+const LIVE_D = 'Hoje foi bom. Acordei cedo, corri cinco quilômetros e consegui terminar a proposta antes do almoço. À tarde fiquei um pouco ansioso com a reunião de amanhã, mas conversei com a Ana e melhorou.'.split(' ');
+const PROMPTS = ['O que te deixou com energia hoje?', 'O que você faria diferente amanhã?', 'Pelo que você é grato hoje?', 'O que ocupou sua cabeça hoje?'];
+const DIARY_DAYS = [1, 2, 3, 5, 6, 8, 9, 12, 13, 14, 15, 16, 18, 20, 21, 22];
+const THEMES = [['Trabalho', 11], ['Sono', 6], ['Família', 4], ['Corrida', 3]];
+const BASE_COLLS = [
+  { id: 'c-forgot', label: 'Tarefas esquecidas', kind: 'tasks', rule: 'Tarefas abertas há mais de 3 dias' },
+  { id: 'c-meet', label: 'Reuniões', rule: 'Notas com mais de uma pessoa falando', test: n => n.speakers.length > 1 },
+  { id: 'c-ideas', label: 'Ideias para explorar', rule: 'Pasta Ideias com tarefas em aberto', test: n => n.folder === 'ideias' && n.actions.some(a => !a.done) },
+];
+const PERMS = [
+  { id: 'mic', label: 'Microfone', tag: 'Obrigatória', sub: 'Para gravar suas notas de voz.', kind: 'alert', alertTitle: '“RbNotes” quer acessar o microfone.', alertBody: 'O áudio é transcrito no seu Mac e nunca é enviado para a internet.',
+    d: 'M10 2.5a2.5 2.5 0 0 0-2.5 2.5v5a2.5 2.5 0 0 0 5 0V5A2.5 2.5 0 0 0 10 2.5zM5 9.5a5 5 0 0 0 10 0M10 14.5v3' },
+  { id: 'screen', label: 'Gravação de tela e áudio do sistema', tag: 'Opcional', sub: 'Para captar as outras vozes em chamadas no Meet, Zoom e Teams. Nenhuma imagem da tela é gravada.', kind: 'settings',
+    d: 'M3 4.5h14v9H3zM7.5 16.5h5M10 13.5v3' },
+  { id: 'ax', label: 'Acessibilidade', tag: 'Opcional', sub: 'Para o atalho ⌥ Espaço iniciar uma gravação em qualquer app.', kind: 'settings',
+    d: 'M10 5a1.25 1.25 0 1 0 0-2.5A1.25 1.25 0 0 0 10 5zM4.5 7h11M10 7v5M7 17.5l3-5.5 3 5.5' },
+  { id: 'notif', label: 'Notificações', tag: 'Opcional', sub: 'Para lembrar tarefas esquecidas e a pergunta do diário.', kind: 'alert', alertTitle: '“RbNotes” quer enviar notificações.', alertBody: 'As notificações podem incluir alertas, sons e indicadores.',
+    d: 'M5.5 13.5V9a4.5 4.5 0 0 1 9 0v4.5l1.5 1.5h-12zM8.5 17.5h3' },
+];
+const OB_MODELS = [
+  { id: 'small', label: 'Small', sub: '466 MB · rápido, bom para notas curtas' },
+  { id: 'turbo', label: 'Large v3 Turbo', sub: '1,6 GB · melhor equilíbrio no Apple Silicon', rec: true },
+  { id: 'large', label: 'Large v3', sub: '3,1 GB · máxima precisão, mais lento' },
+];
+const WRONG = 'Taís', RIGHT = 'Thaís';
+const LIVE = 'Então, pensando no onboarding do RbNotes. A primeira tela precisa pedir o microfone de um jeito leve, explicar que o áudio nunca sai do Mac, e deixar a pessoa gravar a primeira nota em menos de dez segundos. Depois disso a gente mostra o resumo e só então apresenta as pastas.'.split(' ');
+const STEPS = [
+  { label: 'Transcrevendo com Whisper', where: 'no seu Mac' },
+  { label: 'Separando falantes e pontuação', where: 'no seu Mac' },
+  { label: 'Gerando título, resumo e insights', where: 'Claude' },
+];
+const OPT = { appearance: ['Sistema', 'Claro', 'Escuro'], defFolder: ['Ideias', 'Trabalho', 'Pessoal', 'Estudos'], mic: ['Microfone do MacBook Pro', 'AirPods Pro', 'Shure MV7'],
+  lang: ['Detectar automaticamente', 'Português (Brasil)', 'English', 'Español'], tone: ['Objetivo', 'Detalhado', 'Em tópicos'], length: ['Curto', 'Médio', 'Longo'],
+  aiModel: ['Claude Sonnet', 'Claude Opus', 'Claude Haiku'], retention: ['Para sempre', '1 ano', '90 dias', '30 dias'] };
+const MODELS = [
+  { id: 'tiny', label: 'Tiny', size: '75 MB', desc: 'Instantâneo, ideal para lembretes curtos' },
+  { id: 'small', label: 'Small', size: '466 MB', desc: 'Equilíbrio para notas do dia a dia' },
+  { id: 'medium', label: 'Medium', size: '1,5 GB', desc: 'Mais preciso com sotaques e ruído' },
+  { id: 'turbo', label: 'Large v3 Turbo', size: '1,6 GB', desc: 'Recomendado para Apple Silicon' },
+  { id: 'large', label: 'Large v3', size: '3,1 GB', desc: 'Máxima precisão, mais lento' },
+];
+const STABS = [
+  { id: 'geral', label: 'Geral', d: 'M10 6.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM10 2v2M10 16v2M2 10h2M16 10h2M4.3 4.3l1.4 1.4M14.3 14.3l1.4 1.4M4.3 15.7l1.4-1.4M14.3 5.7l1.4-1.4' },
+  { id: 'gravacao', label: 'Gravação', d: 'M10 2.5a2.5 2.5 0 0 0-2.5 2.5v5a2.5 2.5 0 0 0 5 0V5A2.5 2.5 0 0 0 10 2.5zM5 9.5a5 5 0 0 0 10 0M10 14.5v3M7 17.5h6' },
+  { id: 'transcricao', label: 'Transcrição', d: 'M3 8.5v3M6 6v8M9 3.5v13M12 6.5v7M15 4.5v11M18 8.5v3' },
+  { id: 'ia', label: 'Inteligência', d: 'M4 4.5h12M4 8.5h12M4 12.5h7M4 16.5h4M15 12v5M12.5 14.5h5' },
+  { id: 'conta', label: 'Conta', d: 'M10 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3.5 17.5c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5' },
+  { id: 'atalhos', label: 'Atalhos', d: 'M7.5 7.5h5v5h-5zM7.5 7.5V6a1.5 1.5 0 1 0-1.5 1.5h1.5M12.5 7.5V6a1.5 1.5 0 1 1 1.5 1.5h-1.5M7.5 12.5V14a1.5 1.5 0 1 1-1.5-1.5h1.5M12.5 12.5V14a1.5 1.5 0 1 0 1.5-1.5h-1.5' },
+  { id: 'privacidade', label: 'Privacidade', d: 'M5.5 9h9v8.5h-9zM7.5 9V6.5a2.5 2.5 0 0 1 5 0V9' },
+];
+const R = o => ({ isToggle: false, isSelect: false, isSeg: false, isKeys: false, isBtn: false, isStatus: false, isModel: false, isProfile: false, isMeter: false, isDl: false, isProg: false, radioDot: false,
+  hasSub: !!o.sub, fs: '13px', fw: '400', labelFg: 'var(--tx,#1D1D1F)', onClick: null, ...o });
+const fmt = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`; };
+const seedBars = (id, n) => { let x = 0; for (const c of id) x = (x * 31 + c.charCodeAt(0)) % 9973; const out = []; for (let i = 0; i < n; i++) { x = (x * 16807 + 7) % 2147483647; const r = (x % 1000) / 1000; const env = .45 + .55 * Math.abs(Math.sin(i / 7 + x % 3)); out.push(Math.round(4 + r * 26 * env)); } return out; };
+
+class Component extends DCLogic {
+  state = { screen: ({ 'Onboarding': 'onboard', 'App': 'app' })[this.props.startScreen] || 'login', authMode: 'login', email: '', pass: '', name: '', authLoading: false, settings: false, sTab: 'geral', dl: {}, downloaded: ['tiny', 'small', 'turbo'],
+    prefs: { appearance: this.props.appearance ?? 'Sistema', launch: true, menubar: true, defFolder: 'Ideias', weekly: true, remind: true, mic: 'Microfone do MacBook Pro', sysAudio: true, autoMeet: false, noise: true, silence: true,
+      model: 'turbo', lang: 'Detectar automaticamente', diar: true, autoSum: true, tasks: true, tone: 'Objetivo', length: 'Médio', aiModel: 'Claude Sonnet', skipPersonal: true, redact: true,
+      sync: true, touchid: false, retention: '1 ano', delAudio: false },
+    ob: 0, perms: { mic: 'no', screen: 'no', ax: 'no', notif: 'no' }, alert: null, obModel: 'turbo', obDl: null,
+    view: 'note', chats: {}, chatQ: '', chatBusy: null, chatStream: null, fix: false, fixVal: RIGHT, fixAll: true, fixVocab: true, toast: null,
+    hidden: [], colls: [], newColl: false, newCollQ: '', diaryPrompt: 0, diaryToday: false, recKind: 'note', titling: null,
+    notes: NOTES, sel: 'n1', folder: 'all', tab: 'resumo', playing: false, pos: 0, speed: 1, search: '',
+    rec: null, recT: 0, live: Array(64).fill(3), words: 0, step: 0, stepP: 0,
+    ask: false, q: '', askPhase: 'idle', ansLen: 0 };
+  rootRef = React.createRef();
+  askRef = React.createRef();
+  barCache = {};
+  tickN = 0;
+
+  componentDidMount() {
+    this.applyAccent();
+    this.iv = setInterval(() => this.tick(), 90);
+    this.kd = e => {
+      const k = e.key.toLowerCase();
+      if (this.state.screen !== 'app') return;
+      if ((e.metaKey || e.ctrlKey) && k === ',') { e.preventDefault(); this.setState(x => ({ settings: !x.settings, ask: false })); return; }
+      if (k === 'escape' && this.state.settings) { this.setState({ settings: false }); return; }
+      if (this.state.settings) return;
+      if ((e.metaKey || e.ctrlKey) && k === 'k') { e.preventDefault(); this.state.ask ? this.closeAsk() : this.openAsk(); }
+      else if ((e.metaKey || e.ctrlKey) && k === 'r') { e.preventDefault(); this.startRec(); }
+      else if (k === 'escape') { if (this.state.ask) this.closeAsk(); }
+      else if (k === ' ' && e.target.tagName !== 'INPUT' && !this.state.rec) { e.preventDefault(); this.togglePlay(); }
+    };
+    window.addEventListener('keydown', this.kd);
+  }
+  componentDidUpdate(pp, ps) {
+    if (pp.appearance !== this.props.appearance && this.props.appearance) this.setPref('appearance', this.props.appearance);
+    this.applyAccent();
+    if (this.state.ask && !ps.ask) setTimeout(() => this.askRef.current && this.askRef.current.focus(), 30);
+  }
+  componentWillUnmount() { clearInterval(this.iv); window.removeEventListener('keydown', this.kd); }
+  isDark() { const a = this.state.prefs.appearance; return a === 'Escuro' || (a === 'Sistema' && !!(this.mq && this.mq.matches)); }
+  applyAccent() {
+    const el = this.rootRef.current; if (!el) return;
+    if (!this.mq) { this.mq = window.matchMedia('(prefers-color-scheme: dark)'); this.mq.addEventListener('change', () => this.forceUpdate()); }
+    el.style.setProperty('--acc', this.props.accent ?? '#E0512E');
+    const dark = this.isDark();
+    if (this.lastDark === dark) return; this.lastDark = dark;
+    const D = { '--tx': '#F2F2F4', '--t': '242,242,244', '--s': '235,235,245', '--k': '255,255,255', '--ink': '#55555A', '--bg': '#1E1E20', '--bg2': '#242426', '--bg3': '#232325',
+      '--card': '#2E2E31', '--fill': '#2A2A2D', '--fill2': '#333336', '--side': 'rgba(42,42,45,.8)', '--sidecard': 'rgba(255,255,255,.06)', '--pop': 'rgba(40,40,43,.96)', '--seg': '#636366', '--warm': '#2A2724',
+      '--wall': 'radial-gradient(120% 90% at 20% 10%,#3A3631 0%,#24221F 55%,#161513 100%)' };
+    Object.keys(D).forEach(k => dark ? el.style.setProperty(k, D[k]) : el.style.removeProperty(k));
+    el.style.colorScheme = dark ? 'dark' : 'light';
+  }
+
+  cur() { return this.state.notes.find(n => n.id === this.state.sel) || this.state.notes[0]; }
+
+  tick() {
+    const s = this.state, up = {}; this.tickN++;
+    if (s.obDl != null) { const v = s.obDl + 0.02; if (v >= 1) { up.obDl = null; up.ob = 3; up.prefs = { ...s.prefs, model: s.obModel }; up.downloaded = s.downloaded.includes(s.obModel) ? s.downloaded : s.downloaded.concat(s.obModel); } else up.obDl = v; }
+    if (s.chatStream) { const L = s.chatStream.len + 5; up.chatStream = L >= s.chatStream.full ? null : { ...s.chatStream, len: L }; }
+    if (s.titling) { const n = s.notes.find(x => x.id === s.titling.id); up.titling = !n || s.titling.len >= n.title.length ? null : { ...s.titling, len: s.titling.len + 1 }; }
+    if (s.screen === 'login') { const t = this.tickN, amp = .35 + .65 * Math.abs(Math.sin(t / 5)) * Math.abs(Math.sin(t / 13 + 1)); up.live = s.live.slice(1).concat(Math.round(3 + Math.random() * 30 * amp)); }
+    const dk = Object.keys(s.dl);
+    if (dk.length) { const dl = {}, done = []; dk.forEach(k => { const v = s.dl[k] + 0.012; v >= 1 ? done.push(k) : (dl[k] = v); }); up.dl = dl; if (done.length) up.downloaded = s.downloaded.concat(done); }
+    if (s.playing) { const d = this.cur().dur; let p = s.pos + 0.09 * s.speed; if (p >= d) { p = d; up.playing = false; } up.pos = p; }
+    if (s.rec === 'rec') {
+      up.recT = s.recT + 0.09;
+      const t = this.tickN, amp = .35 + .65 * Math.abs(Math.sin(t / 5)) * Math.abs(Math.sin(t / 13 + 1));
+      up.live = s.live.slice(1).concat(Math.round(3 + Math.random() * 34 * amp));
+      if (t % 3 === 0 && s.words < this.liveWords().length) up.words = s.words + 1;
+    } else if (s.rec === 'paused') {
+      up.live = s.live.slice(1).concat(3);
+    } else if (s.rec === 'proc') {
+      let p = s.stepP + (s.step === 2 ? 0.03 : 0.05), st = s.step;
+      if (p >= 1) { st++; p = 0; }
+      if (st >= 3) { this.finishNote(); return; }
+      up.step = st; up.stepP = p;
+    }
+    if (s.askPhase === 'stream') { const L = this.answerText().length; up.ansLen = Math.min(L, s.ansLen + 7); if (up.ansLen >= L) up.askPhase = 'done'; }
+    if (Object.keys(up).length) this.setState(up);
+  }
+
+  answerText() { return 'Você tem quatro tarefas abertas esta semana. As mais urgentes são enviar a proposta revisada do app de finanças até sexta e fazer o exame de sangue em jejum antes do retorno com a Dra. Marina. Para o podcast, falta listar os possíveis entrevistados e testar o microfone na oficina do Jorge. As entrevistas com usuários beta estão com a Camila.'; }
+
+  select = id => this.setState({ sel: id, pos: 0, playing: false, view: 'note' });
+  togglePlay = () => { const d = this.cur().dur; this.setState(s => ({ playing: !s.playing, pos: s.pos >= d ? 0 : s.pos })); };
+  startRec = () => { if (this.state.rec) return; this.setState({ rec: 'rec', recT: 0, words: 0, live: Array(64).fill(3), playing: false, ask: false, recKind: 'note' }); };
+  openAsk = () => this.setState({ ask: true, q: '', askPhase: 'idle', ansLen: 0 });
+  closeAsk = () => this.setState({ ask: false });
+  submitAsk = q => { this.setState({ q: q ?? this.state.q, askPhase: 'think', ansLen: 0 }); setTimeout(() => this.setState({ askPhase: 'stream' }), 1100); };
+
+  finishNote() {
+    const s = this.state, d = Math.max(4, Math.round(s.recT)), diary = s.recKind === 'diary', words = this.liveWords().slice(0, Math.max(s.words, 12)).join(' ');
+    const id = 'r' + Date.now();
+    const note = diary ? { id, title: 'Uma manhã que rendeu', folder: 'diario', group: 'Hoje', time: 'Agora', dateLong: 'Hoje, agora', dur: d, speakers: ['Você'], autoTitle: true,
+      tldr: 'Dia bom, que começou cedo com uma corrida de cinco quilômetros e a proposta terminada antes do almoço. A ansiedade com a reunião de amanhã apareceu à tarde e passou depois de conversar com a Ana.',
+      points: ['Acordar cedo e correr deu energia para o dia todo.', 'Proposta entregue antes do almoço.', 'Conversar com a Ana ajudou com a ansiedade.'],
+      quote: 0, actions: [], decisions: [], questions: ['O que preparar hoje para a reunião de amanhã?'], transcript: [[0, 0, words]] }
+    : { id, title: 'Primeiras ideias para o onboarding', folder: 'ideias', group: 'Hoje', time: 'Agora', dateLong: 'Hoje, agora', dur: d, speakers: ['Você'], autoTitle: true,
+      tldr: 'Proposta de onboarding em três momentos: pedir acesso ao microfone deixando claro que o áudio fica no Mac, levar a pessoa a gravar a primeira nota em menos de dez segundos e só depois apresentar o resumo e as pastas.',
+      points: ['Pedido de microfone leve, com a privacidade explicada na mesma tela.', 'Meta: primeira nota gravada em menos de dez segundos.', 'Pastas e organização aparecem só depois do primeiro resumo.'],
+      quote: 0,
+      actions: [{ t: 'Desenhar a tela de permissão do microfone', owner: 'Você' }, { t: 'Medir o tempo até a primeira gravação nos testes', owner: 'Você' }],
+      decisions: ['Organização em pastas fica fora do primeiro uso.'],
+      questions: ['Mostrar um exemplo de nota antes da primeira gravação?'],
+      transcript: [[0, 0, words]] };
+    this.setState({ notes: [note, ...s.notes], sel: id, folder: diary ? 'diario' : 'all', view: 'note', search: '', tab: 'resumo', rec: null, pos: 0, step: 0, stepP: 0, titling: { id, len: 0 }, diaryToday: s.diaryToday || diary });
+  }
+
+  toggleAction(nid, i) {
+    this.setState(s => ({ notes: s.notes.map(n => n.id !== nid ? n : { ...n, actions: n.actions.map((a, j) => j === i ? { ...a, done: !a.done } : a) }) }));
+  }
+
+  setPref = (k, v) => this.setState(s => ({ prefs: { ...s.prefs, [k]: v } }));
+  submitAuth = () => { if (this.state.authLoading) return; this.setState({ authLoading: true }); setTimeout(() => { this.setState({ authLoading: false, screen: this.onboarded ? 'app' : 'onboard' }); this.onboarded = true; }, 900); };
+
+  liveWords() { return this.state.recKind === 'diary' ? LIVE_D : LIVE; }
+  allColls() { return BASE_COLLS.concat(this.state.colls); }
+  titleOf(x) { const t = this.state.titling; return t && t.id === x.id ? x.title.slice(0, t.len) : x.title; }
+  forgotten() {
+    const s = this.state, out = [];
+    s.notes.forEach(n => { if (n.folder === 'diario' || (n.age || 0) < 3) return; n.actions.forEach((a, i) => { const key = n.id + ':' + i; if (!a.done && !s.hidden.includes(key)) out.push({ nid: n.id, i, key, a, n }); }); });
+    return out.sort((x, y) => y.n.age - x.n.age);
+  }
+  parts(text) {
+    const P = t => ({ text: t, deco: 'none', bg: 'transparent', cur: 'inherit', onClick: null });
+    if (!text.includes(WRONG)) return [P(text)];
+    const out = [];
+    text.split(WRONG).forEach((p, i, arr) => { out.push(P(p)); if (i < arr.length - 1) out.push({ text: WRONG, deco: 'underline', bg: 'color-mix(in srgb,var(--acc,#E0512E) 12%,transparent)', cur: 'pointer', onClick: e => { e.stopPropagation(); this.setState({ fix: true, fixVal: RIGHT }); } }); });
+    return out;
+  }
+  toast(msg) { this.setState({ toast: msg }); clearTimeout(this.tt); this.tt = setTimeout(() => this.setState({ toast: null }), 2600); }
+  setFolder(id) { this.setState({ folder: id, view: id === 'c-forgot' ? 'tasks' : id === 'diario' ? 'diary' : 'note', search: '' }); }
+  recDiary = () => { this.startRec(); this.setState({ recKind: 'diary' }); };
+  askPerm(pm) {
+    if (pm.kind === 'alert') { this.setState({ alert: pm.id }); return; }
+    this.setState(x => ({ perms: { ...x.perms, [pm.id]: 'wait' } }));
+    setTimeout(() => this.setState(x => ({ perms: { ...x.perms, [pm.id]: 'ok' } })), 1600);
+  }
+  answerAlert(yes) { const id = this.state.alert; this.setState(x => ({ alert: null, perms: { ...x.perms, [id]: yes ? 'ok' : 'no' } })); }
+  chatAnswer(n, q) {
+    const l = q.toLowerCase(), segs = n.transcript, at = i => segs[Math.min(i, segs.length - 1)][0];
+    const low = t => t.charAt(0).toLowerCase() + t.slice(1).replace(/\.$/, '');
+    if (l.includes('frase')) return { text: n.tldr.split('. ')[0].replace(/\.$/, '') + '.', cites: [at(0)] };
+    if (l.includes('lista')) return { text: n.actions.length ? n.actions.map(a => '• ' + a.t).join('\n') : '• ' + n.points.join('\n• '), cites: [] };
+    if (l.includes('prometi') || l.includes('fazer')) { const mine = n.actions.filter(a => a.owner.startsWith('Você')); return { text: mine.length ? 'Você ficou responsável por ' + mine.map(a => low(a.t)).join(' e por ') + '.' : 'Nesta nota não há tarefas atribuídas a você.', cites: [at(segs.length - 1)] }; }
+    if (l.includes('mail')) return { text: `Assunto: ${n.title}\n\nOi, pessoal. Obrigado pelo tempo hoje. Resumindo o que combinamos: ${n.points.slice(0, 3).map(low).join('; ')}.\n\nPróximos passos: ${n.actions.filter(a => !a.done).map(a => `${low(a.t)} (${a.owner.split(' ·')[0]})`).join(', ')}.\n\nQualquer ajuste, me avisem.`, cites: [] };
+    if (l.includes('desacordo') || l.includes('discord')) return { text: `Não houve um desacordo explícito. O ponto que ficou sem resposta foi: ${n.questions[0] || 'nenhum'}`, cites: [at(1)] };
+    return { text: `Pelo que foi dito, ${low(n.points[0])}.${n.points[1] ? ' Além disso, ' + low(n.points[1]) + '.' : ''}`, cites: [at(1), at(2)] };
+  }
+  sendChat(q) {
+    const s = this.state; q = (q ?? s.chatQ).trim(); if (!q || s.chatBusy || s.chatStream) return;
+    const n = this.cur(), id = n.id;
+    this.setState({ chats: { ...s.chats, [id]: (s.chats[id] || []).concat({ role: 'user', text: q }) }, chatQ: '', chatBusy: id });
+    setTimeout(() => { const a = this.chatAnswer(n, q); this.setState(x => { const list = (x.chats[id] || []).concat({ role: 'ai', text: a.text, cites: a.cites }); return { chats: { ...x.chats, [id]: list }, chatBusy: null, chatStream: { nid: id, idx: list.length - 1, len: 0, full: a.text.length } }; }); }, 900);
+  }
+  applyFix() {
+    const s = this.state, v = s.fixVal.trim() || RIGHT, cid = this.cur().id; let k = 0;
+    const notes = s.notes.map(x => { if (!s.fixAll && x.id !== cid) return x; if (!x.transcript.some(t => t[2].includes(WRONG))) return x; k++; return { ...x, transcript: x.transcript.map(t => [t[0], t[1], t[2].split(WRONG).join(v)]) }; });
+    this.setState({ notes, fix: false });
+    this.toast(`“${v}” corrigido em ${k} ${k > 1 ? 'notas' : 'nota'}` + (s.fixVocab ? ' e salvo no vocabulário' : ''));
+  }
+  createColl() {
+    const q = this.state.newCollQ.trim(); if (!q) return;
+    const norm = t => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const stop = ['sobre', 'tudo', 'todas', 'notas', 'minhas', 'coisas', 'relacionadas', 'qualquer', 'quando', 'conversas'];
+    const kws = norm(q).split(/[^a-z0-9]+/).filter(w => w.length >= 5 && !stop.includes(w));
+    const id = 'c' + Date.now(), label = q.charAt(0).toUpperCase() + q.slice(1);
+    const c = { id, label: label.length > 26 ? label.slice(0, 25) + '…' : label, rule: kws.length ? 'Notas que mencionam ' + kws.slice(0, 3).join(', ') : q,
+      test: x => kws.some(k => norm(x.title + ' ' + x.tldr + ' ' + x.speakers.join(' ') + ' ' + x.transcript.map(t => t[2]).join(' ')).includes(k)) };
+    this.setState(x => ({ colls: x.colls.concat(c), newColl: false, newCollQ: '', folder: id, view: 'note' }));
+    this.toast('Coleção criada. Ela se atualiza sozinha.');
+  }
+
+  featVals(n, ev) {
+    const s = this.state, forgot = this.forgotten(), coll = this.allColls().find(c => c.id === s.folder), ovOn = s.view !== 'note';
+    const msgs = (s.chats[n.id] || []).map((m, i) => {
+      const st = s.chatStream && s.chatStream.nid === n.id && s.chatStream.idx === i;
+      return { isUser: m.role === 'user', isAi: m.role === 'ai', text: m.text, shown: st ? m.text.slice(0, s.chatStream.len) : m.text, hasCites: !st && !!(m.cites && m.cites.length),
+        cites: (m.cites || []).map(t => ({ label: fmt(t), onClick: () => this.setState({ tab: 'trans', pos: t + .01, playing: true }) })) };
+    });
+    const sugg = n.speakers.length > 1 ? ['O que eu prometi fazer?', 'Houve algum desacordo?', 'Escreva um e-mail de follow-up'] : ['Resuma em uma frase', 'Transforme em lista de tarefas', 'O que eu prometi fazer?'];
+    const tasks = forgot.map(f => ({ t: f.a.t, from: this.titleOf(f.n), age: `há ${f.n.age} dias`, owner: f.a.owner.split(' ·')[0],
+      done: () => { this.toggleAction(f.nid, f.i); this.toast('Tarefa concluída'); },
+      open: () => this.setState({ sel: f.nid, view: 'note', tab: 'ins', pos: 0, playing: false }),
+      snooze: () => { this.setState(x => ({ hidden: x.hidden.concat(f.key) })); this.toast('Vou te lembrar amanhã às 9h'); },
+      dismiss: () => { this.setState(x => ({ hidden: x.hidden.concat(f.key) })); this.toast('Removida das tarefas esquecidas'); } }));
+    const days = DIARY_DAYS.concat(s.diaryToday ? [23] : []), cal = [];
+    for (let i = 0; i < 4; i++) cal.push({ n: '', bg: 'transparent', fg: 'transparent', ring: 'none', fw: '400' });
+    for (let d = 1; d <= 31; d++) { const has = days.includes(d), today = d === 23, fut = d > 23;
+      cal.push({ n: String(d), bg: has ? 'color-mix(in srgb,var(--acc,#E0512E) 16%,transparent)' : 'transparent', fg: fut ? 'rgba(var(--s,60,60,67),.3)' : has ? 'var(--tx,#1D1D1F)' : 'rgba(var(--s,60,60,67),.6)', ring: today ? 'inset 0 0 0 1.5px var(--acc,#E0512E)' : 'none', fw: has || today ? '600' : '400' }); }
+    let streak = 0; for (let d = s.diaryToday ? 23 : 22; days.includes(d); d--) streak++;
+    const flaggedNotes = s.notes.filter(x => x.transcript.some(t => t[2].includes(WRONG))).length;
+    const occ = s.notes.reduce((a, x) => a + x.transcript.reduce((b, t) => b + t[2].split(WRONG).length - 1, 0), 0);
+    const box = on => ({ bg: on ? 'var(--acc,#E0512E)' : 'transparent', ring: on ? 'none' : 'inset 0 0 0 1.5px rgba(var(--s,60,60,67),.35)' });
+    const fa = box(s.fixAll), fv = box(s.fixVocab);
+    const micOk = s.perms.mic === 'ok', dling = s.obDl != null, al = PERMS.find(p => p.id === s.alert);
+    const obNext = () => { if (s.ob === 0) this.setState({ ob: 1 }); else if (s.ob === 1) { if (micOk) this.setState({ ob: 2 }); } else if (s.ob === 2 && !dling) this.setState({ obDl: 0 }); };
+    return {
+      viewNote: s.view === 'note', viewTasks: s.view === 'tasks', viewDiary: s.view === 'diary',
+      hasOverview: s.folder === 'diario' || s.folder === 'c-forgot', ovLabel: s.folder === 'diario' ? 'Visão do mês' : 'Todas as tarefas esquecidas', ovMeta: s.folder === 'diario' ? 'Outubro' : String(forgot.length),
+      ovBg: ovOn ? 'var(--acc,#E0512E)' : 'transparent', ovFg: ovOn ? '#fff' : 'var(--tx,#1D1D1F)', ovSub: ovOn ? 'rgba(255,255,255,.85)' : 'rgba(var(--s,60,60,67),.6)',
+      onOverview: () => this.setState({ view: s.folder === 'diario' ? 'diary' : 'tasks' }), hasRule: !!coll, ruleText: coll ? coll.rule : '',
+      titleChip: s.titling && s.titling.id === n.id ? 'Gerando título…' : 'Título gerado pelo Claude',
+      tabChat: s.tab === 'chat', msgs, chatEmpty: msgs.length === 0, chatThinking: s.chatBusy === n.id, chatSugg: sugg.map(l => ({ label: l, onClick: () => this.sendChat(l) })),
+      chatQ: s.chatQ, onChatQ: e => this.setState({ chatQ: e.target.value }), onChatKey: e => { if (e.key === 'Enter') this.sendChat(); }, chatSend: () => this.sendChat(),
+      tasks, forgotEmpty: tasks.length === 0, forgotIntro: tasks.length ? `${tasks.length} ${tasks.length === 1 ? 'tarefa aberta' : 'tarefas abertas'} há mais de 3 dias, encontradas nas suas notas.` : 'Nenhuma tarefa parada há mais de 3 dias.',
+      diaryPrompt: PROMPTS[s.diaryPrompt % PROMPTS.length], nextPrompt: () => this.setState(x => ({ diaryPrompt: x.diaryPrompt + 1 })), recDiary: this.recDiary,
+      cal, streakLabel: `${streak} ${streak === 1 ? 'dia seguido' : 'dias seguidos'}`, diaryCount: `Gerado pelo Claude a partir de ${days.length} entradas`, themes: THEMES.map(([label, count]) => ({ label, count })),
+      fixOpen: s.fix, fixWrong: WRONG, fixVal: s.fixVal, onFixVal: e => this.setState({ fixVal: e.target.value }), closeFix: () => this.setState({ fix: false }), applyFix: () => this.applyFix(),
+      fixAllOn: s.fixAll, fixAllBg: fa.bg, fixAllRing: fa.ring, toggleFixAll: () => this.setState(x => ({ fixAll: !x.fixAll })),
+      fixVocabOn: s.fixVocab, fixVocabBg: fv.bg, fixVocabRing: fv.ring, toggleFixVocab: () => this.setState(x => ({ fixVocab: !x.fixVocab })),
+      fixCount: `${occ} ${occ === 1 ? 'ocorrência' : 'ocorrências'} em ${flaggedNotes} ${flaggedNotes === 1 ? 'nota' : 'notas'}`,
+      newCollOpen: s.newColl, openNewColl: () => this.setState({ newColl: true, newCollQ: '' }), closeNewColl: () => this.setState({ newColl: false }),
+      newCollQ: s.newCollQ, onNewCollQ: e => this.setState({ newCollQ: e.target.value }), onNewCollKey: e => { if (e.key === 'Enter') this.createColl(); }, createColl: () => this.createColl(),
+      collEx: ['Tudo sobre o app de finanças', 'Conversas com o Rafael', 'Ideias sobre o podcast'].map(l => ({ label: l, onClick: () => this.setState({ newCollQ: l }) })),
+      toastOn: !!s.toast, toastMsg: s.toast || '',
+      isOnboard: s.screen === 'onboard', ob0: s.ob === 0, ob1: s.ob === 1, ob2: s.ob === 2, ob3: s.ob === 3, firstName: ev.userName.split(' ')[0],
+      obDots: [0, 1, 2, 3].map(i => ({ w: i === s.ob ? '18px' : '6px', c: i <= s.ob ? 'var(--acc,#E0512E)' : 'rgba(var(--k,0,0,0),.15)' })),
+      perms: PERMS.map((pm, i) => { const st = s.perms[pm.id], req = pm.tag === 'Obrigatória';
+        return { label: pm.label, tag: pm.tag, sub: pm.sub, d: pm.d, border: i ? '.5px solid rgba(var(--k,0,0,0),.08)' : 'none', isNo: st === 'no', isWait: st === 'wait', isOk: st === 'ok',
+          btn: pm.kind === 'alert' ? 'Permitir' : 'Abrir Ajustes', tagBg: req ? 'color-mix(in srgb,var(--acc,#E0512E) 14%,transparent)' : 'rgba(118,118,128,.14)', tagFg: req ? 'var(--acc,#E0512E)' : 'rgba(var(--s,60,60,67),.75)', onClick: () => this.askPerm(pm) }; }),
+      obModels: OB_MODELS.map(m => { const sel = s.obModel === m.id; return { label: m.label, sub: m.sub, isRec: !!m.rec, radioDot: sel, ring: sel ? '0 0 0 1.5px var(--acc,#E0512E)' : '0 0 0 .5px rgba(var(--k,0,0,0),.14)',
+        radioBg: sel ? 'var(--acc,#E0512E)' : 'transparent', radioRing: sel ? 'none' : 'inset 0 0 0 1.5px rgba(var(--s,60,60,67),.3)', onClick: dling ? null : () => this.setState({ obModel: m.id }) }; }),
+      obDownloading: dling, obPct: Math.round((s.obDl || 0) * 100) + '%', obModelLabel: OB_MODELS.find(m => m.id === s.obModel).label,
+      obNext, obNextLabel: dling ? 'Baixando…' : (['Começar', 'Continuar', 'Baixar e continuar'][s.ob] || ''), obNextOp: (s.ob === 1 && !micOk) || dling ? '.45' : '1',
+      obHint: s.ob === 1 && !micOk ? 'O microfone é necessário para continuar.' : '', obBackVis: s.ob > 0 && !dling ? 'visible' : 'hidden', obBack: () => this.setState(x => ({ ob: Math.max(0, x.ob - 1) })),
+      obShowFooter: s.ob < 3, alertOn: !!al, alertTitle: al ? al.alertTitle : '', alertBody: al ? al.alertBody : '', allowAlert: () => this.answerAlert(true), denyAlert: () => this.answerAlert(false),
+      obFinish: () => this.setState({ screen: 'app' }), obRecord: () => { this.setState({ screen: 'app' }); setTimeout(() => this.startRec(), 350); },
+    };
+  }
+
+  extraVals() {
+    const s = this.state, p = s.prefs;
+    const emailName = s.email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim();
+    const userName = s.name.trim() || emailName || 'Renata Borges', userEmail = s.email.trim() || 'renata@borges.studio';
+    const userIni = userName.split(' ').filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+    const signup = s.authMode === 'signup';
+
+    const T = (label, sub, k) => R({ label, sub, isToggle: true, trackBg: p[k] ? 'var(--acc,#E0512E)' : 'rgba(120,120,128,.24)', knob: p[k] ? 'translateX(16px)' : 'none', onClick: () => this.setPref(k, !p[k]) });
+    const S = (label, sub, k) => R({ label, sub, isSelect: true, value: p[k], onClick: () => { const o = OPT[k]; this.setPref(k, o[(o.indexOf(p[k]) + 1) % o.length]); } });
+    const K = (label, keys) => R({ label, isKeys: true, keys });
+    const B = (label, sub, value, onBtn, red) => R({ label, sub, isBtn: true, value, onBtn, btnFg: red ? '#D70015' : 'var(--tx,#1D1D1F)' });
+    const ST = (label, sub, value) => R({ label, sub, isStatus: true, value, stFg: 'rgba(var(--s,60,60,67),.65)' });
+    const G = (title, rows, foot) => ({ title, hasTitle: !!title, foot, hasFoot: !!foot, rows: rows.map((r, i) => ({ ...r, border: i ? '.5px solid rgba(var(--k,0,0,0),.08)' : 'none' })) });
+    const seg = (label, k) => R({ label, isSeg: true, opts: OPT[k].map(o => ({ label: o, bg: p[k] === o ? 'var(--seg,#fff)' : 'transparent', shadow: p[k] === o ? '0 1px 2px rgba(var(--k,0,0,0),.12),0 0 0 .5px rgba(var(--k,0,0,0),.06)' : 'none', onClick: () => this.setPref(k, o) })) });
+    const models = MODELS.map(m => {
+      const has = s.downloaded.includes(m.id), sel = p.model === m.id, prog = s.dl[m.id];
+      return R({ isModel: true, label: m.label, sub: `${m.size} · ${m.desc}`, radioDot: sel, radioBg: sel ? 'var(--acc,#E0512E)' : 'transparent', radioRing: sel ? 'none' : 'inset 0 0 0 1.5px rgba(var(--s,60,60,67),.3)',
+        fw: sel ? '600' : '400', labelFg: has ? 'var(--tx,#1D1D1F)' : 'rgba(var(--t,29,29,31),.55)', onClick: has ? () => this.setPref('model', m.id) : null,
+        isStatus: has, value: sel ? 'Em uso' : 'Baixado', stFg: sel ? 'var(--acc,#E0512E)' : 'rgba(var(--s,60,60,67),.55)',
+        isDl: !has && prog == null, onDl: () => this.setState(x => ({ dl: { ...x.dl, [m.id]: 0 } })), isProg: prog != null, pct: Math.round((prog || 0) * 100) + '%' });
+    });
+    const logout = () => this.setState({ screen: 'login', settings: false, pass: '', authMode: 'login', rec: null, ask: false, playing: false });
+    const panes = {
+      geral: [G('', [seg('Aparência', 'appearance'), T('Abrir ao iniciar sessão', '', 'launch'), T('Mostrar na barra de menus', 'Grave de qualquer app pelo ícone na barra', 'menubar'), S('Pasta para novas notas', '', 'defFolder')]),
+        G('Notificações', [T('Resumo semanal', 'Toda segunda, um panorama das suas notas e tarefas', 'weekly'), T('Lembrar tarefas com prazo', '', 'remind')])],
+      gravacao: [G('', [S('Microfone', '', 'mic'), K('Atalho global', ['⌥', 'Espaço']), T('Gravar áudio do sistema', 'Capta as duas vozes em chamadas no Meet, Zoom e Teams', 'sysAudio'), T('Sugerir gravação ao detectar reunião', '', 'autoMeet')]),
+        G('Qualidade', [T('Redução de ruído', '', 'noise'), T('Remover silêncios longos', 'O áudio original é preservado', 'silence')])],
+      transcricao: [G('Modelo Whisper', models, 'Os modelos rodam no Neural Engine do seu Mac. Nenhum áudio é enviado para a internet.'),
+        G('', [S('Idioma', '', 'lang'), T('Identificar falantes', '', 'diar'), B('Vocabulário personalizado', 'Nomes e termos que o Whisper deve reconhecer · 12 termos', 'Editar', null)])],
+      ia: [G('', [T('Gerar resumo automaticamente', '', 'autoSum'), T('Extrair tarefas e decisões', '', 'tasks'), S('Estilo do resumo', '', 'tone'), S('Tamanho', '', 'length'), S('Modelo', '', 'aiModel')]),
+        G('Privacidade', [T('Não enviar notas da pasta Pessoal', 'Essas notas ficam só com a transcrição local', 'skipPersonal'), T('Mascarar dados sensíveis', 'CPF, telefones e números de cartão são ocultados antes do envio', 'redact')],
+          'O Claude recebe apenas o texto transcrito. O áudio nunca sai do seu Mac.')],
+      conta: [G('', [R({ isProfile: true, label: userName, sub: userEmail, fs: '15px', fw: '600', isBtn: true, value: 'Editar', btnFg: 'var(--tx,#1D1D1F)' })]),
+        G('Plano', [B('RbNotes Pro', 'Renova em 12 de novembro de 2026', 'Gerenciar', null), R({ label: 'Resumos com IA neste mês', sub: '312 de 1.000', isMeter: true, pct: '31%' })]),
+        G('Sincronização', [T('Sincronizar entre dispositivos', 'Texto criptografado de ponta a ponta', 'sync'), ST('Última sincronização', '', 'há 2 minutos')]),
+        G('', [B('Sessão neste Mac', userEmail, 'Sair', logout, true)])],
+      atalhos: [G('', [K('Nova gravação', ['⌘', 'R']), K('Gravar de qualquer app', ['⌥', 'Espaço']), K('Perguntar às notas', ['⌘', 'K']), K('Tocar ou pausar', ['Espaço']), K('Buscar', ['⌘', 'F']), K('Ajustes', ['⌘', ','])])],
+      privacidade: [G('', [T('Bloquear com Touch ID', '', 'touchid'), S('Manter áudios originais', '', 'retention'), T('Apagar áudio após transcrever', 'Mantém apenas o texto e o resumo', 'delAudio')]),
+        G('Seus dados', [B('Exportar todas as notas', 'Markdown + áudio, em um arquivo .zip', 'Exportar', null), B('Apagar todos os dados', 'Remove notas deste Mac e da nuvem', 'Apagar…', null, true)])],
+    };
+    return {
+      isLogin: s.screen === 'login', authSignup: signup, authLogin: !signup,
+      authTitle: signup ? 'Crie sua conta' : 'Entre na sua conta', authBtn: s.authLoading ? (signup ? 'Criando conta…' : 'Entrando…') : (signup ? 'Criar conta' : 'Entrar'),
+      authQ: signup ? 'Já tem uma conta?' : 'Não tem uma conta?', authA: signup ? 'Entrar' : 'Criar conta',
+      toggleAuth: () => this.setState(x => ({ authMode: x.authMode === 'login' ? 'signup' : 'login' })), submitAuth: this.submitAuth,
+      email: s.email, pass: s.pass, name: s.name,
+      onEmail: e => this.setState({ email: e.target.value }), onPass: e => this.setState({ pass: e.target.value }), onName: e => this.setState({ name: e.target.value }),
+      onPassKey: e => { if (e.key === 'Enter') this.submitAuth(); },
+      loginBars: s.live.map((h, i) => ({ h: h + 'px', c: `rgba(255,255,255,${(.25 + .75 * i / 63).toFixed(2)})` })),
+      userName, userIni, modelLabel: MODELS.find(m => m.id === p.model).label,
+      openSettings: () => this.setState({ settings: true, ask: false }), closeSettings: () => this.setState({ settings: false }), settingsOpen: s.settings,
+      paneTitle: STABS.find(t => t.id === s.sTab).label,
+      sTabs: STABS.map(t => ({ ...t, bg: s.sTab === t.id ? 'rgba(var(--k,0,0,0),.08)' : 'transparent', fg: s.sTab === t.id ? 'var(--acc,#E0512E)' : 'rgba(var(--s,60,60,67),.8)', onClick: () => this.setState({ sTab: t.id }) })),
+      sGroups: panes[s.sTab],
+    };
+  }
+
+  renderVals() {
+    const s = this.state, P = this.props;
+    const showTs = P.showTimestamps ?? true, compact = (P.density ?? 'Detalhada') === 'Compacta';
+    const fol = id => FOLDERS.find(f => f.id === id);
+    const all = s.notes;
+    const q = s.search.trim().toLowerCase();
+    const notDiary = all.filter(x => x.folder !== 'diario'), forgot = this.forgotten();
+    const coll = this.allColls().find(c => c.id === s.folder);
+    const inFolder = s.folder === 'all' ? notDiary : s.folder === 'fav' ? all.filter(x => x.fav) : s.folder === 'diario' ? all.filter(x => x.folder === 'diario')
+      : coll ? notDiary.filter(x => coll.kind === 'tasks' ? forgot.some(f => f.nid === x.id) : coll.test(x)) : all.filter(x => x.folder === s.folder);
+    const visible = inFolder.filter(n => !q || (n.title + ' ' + n.tldr + ' ' + n.transcript.map(t => t[2]).join(' ')).toLowerCase().includes(q));
+    const n = this.cur();
+    const selBg = id => s.folder === id ? 'rgba(var(--k,0,0,0),.08)' : 'transparent';
+    const libDefs = [{ id: 'all', label: 'Todas as notas', glyph: '◉', count: notDiary.length }, { id: 'fav', label: 'Favoritas', glyph: '★', count: all.filter(x => x.fav).length }, { id: 'diario', label: 'Diário', glyph: '◐', count: all.filter(x => x.folder === 'diario').length }];
+    const library = libDefs.map(f => ({ ...f, bg: selBg(f.id), onClick: () => this.setFolder(f.id) }));
+    const folders = FOLDERS.filter(f => !f.hidden).map(f => ({ ...f, count: all.filter(x => x.folder === f.id).length, bg: selBg(f.id), onClick: () => this.setFolder(f.id) }));
+    const colls = this.allColls().map(c => { const cnt = c.kind === 'tasks' ? forgot.length : notDiary.filter(c.test).length, badge = c.kind === 'tasks' && cnt > 0;
+      return { label: c.label, count: cnt, badgeBg: badge ? 'var(--acc,#E0512E)' : 'transparent', badgeFg: badge ? '#fff' : 'rgba(var(--s,60,60,67),.55)', bg: selBg(c.id), onClick: () => this.setFolder(c.id) }; });
+
+    const groups = ['Hoje', 'Ontem', 'Esta semana', 'Semana passada'].map(g => ({ label: g, items: visible.filter(x => x.group === g).map(x => {
+      const on = s.view === 'note' && x.id === n.id;
+      return { title: this.titleOf(x), excerpt: x.tldr, meta: `${x.time}  ·  ${fmt(x.dur)}`, showExcerpt: !compact,
+        bg: on ? 'var(--acc,#E0512E)' : 'transparent', fg: on ? '#fff' : 'var(--tx,#1D1D1F)', sub: on ? 'rgba(255,255,255,.85)' : 'rgba(var(--s,60,60,67),.62)',
+        dot: on ? 'rgba(255,255,255,.9)' : fol(x.folder).color, onClick: () => this.select(x.id) };
+    }) })).filter(g => g.items.length);
+    const listTitle = coll ? coll.label : s.folder === 'all' ? 'Todas as notas' : s.folder === 'fav' ? 'Favoritas' : fol(s.folder).label;
+
+    if (!this.barCache[n.id]) this.barCache[n.id] = seedBars(n.id, 84);
+    const frac = n.dur ? s.pos / n.dur : 0;
+    const bars = this.barCache[n.id].map((h, i) => ({ h: h + 'px', c: (i + .5) / 84 <= frac ? 'var(--acc,#E0512E)' : 'rgba(var(--s,60,60,67),.24)' }));
+
+    let active = -1; n.transcript.forEach((t, i) => { if (t[0] <= s.pos) active = i; });
+    const tracking = s.playing || s.pos > 0;
+    const segs = n.transcript.map((t, i) => ({ ts: fmt(t[0]), sp: n.speakers[t[1]], ini: n.speakers[t[1]].replace('Dra. ', '').replace('Prof. ', '').slice(0, 1), text: t[2], parts: this.parts(t[2]),
+      color: SPK_COLORS[t[1]], bg: tracking && i === active ? 'color-mix(in srgb, var(--acc,#E0512E) 9%, transparent)' : 'transparent',
+      fg: tracking && i !== active ? 'rgba(var(--t,29,29,31),.6)' : 'var(--tx,#1D1D1F)',
+      onClick: () => this.setState({ pos: t[0] + 0.01, playing: true }) }));
+
+    const qt = n.transcript[n.quote] || n.transcript[0];
+    const tabDefs = [['resumo', 'Resumo'], ['trans', 'Transcrição'], ['ins', 'Insights'], ['chat', 'Conversa']];
+    const tabs = tabDefs.map(([id, label]) => ({ label, bg: s.tab === id ? 'var(--seg,#fff)' : 'transparent', shadow: s.tab === id ? '0 1px 2px rgba(var(--k,0,0,0),.12),0 0 0 .5px rgba(var(--k,0,0,0),.06)' : 'none', onClick: () => this.setState({ tab: id }) }));
+    const hasFlag = n.transcript.some(t => t[2].includes(WRONG));
+    const tabNote = s.tab === 'trans' ? (hasFlag ? 'Clique na palavra destacada para corrigir' : 'Whisper · transcrito no seu Mac') : s.tab === 'chat' ? 'Respostas baseadas só nesta nota' : 'Gerado por Claude a partir da transcrição';
+    const actions = n.actions.map((a, i) => ({ ...a, boxBg: a.done ? 'var(--acc,#E0512E)' : 'transparent', boxRing: a.done ? 'none' : 'inset 0 0 0 1.5px rgba(var(--s,60,60,67),.3)', fg: a.done ? 'rgba(var(--s,60,60,67),.5)' : 'var(--tx,#1D1D1F)', deco: a.done ? 'line-through' : 'none', toggle: () => this.toggleAction(n.id, i) }));
+
+    const isRec = s.rec === 'rec' || s.rec === 'paused';
+    const shown = this.liveWords().slice(0, s.words);
+    const liveBars = s.live.map((h, i) => ({ h: h + 'px', c: s.rec === 'paused' ? 'rgba(255,255,255,.25)' : `rgba(255,255,255,${(.25 + .75 * i / 63).toFixed(2)})` }));
+    const steps = STEPS.map((st, i) => ({ ...st, done: i < s.step, active: i === s.step, pct: Math.round(s.stepP * 100) + '%',
+      dotBg: i < s.step ? 'var(--acc,#E0512E)' : 'transparent', ring: i < s.step ? 'none' : i === s.step ? 'inset 0 0 0 1.5px rgba(255,255,255,.8)' : 'inset 0 0 0 1.5px rgba(255,255,255,.25)',
+      fg: i > s.step ? 'rgba(255,255,255,.45)' : '#fff' }));
+
+    const ans = this.answerText();
+    const sugg = ['O que ficou pendente esta semana?', 'Resuma minhas reuniões de trabalho', 'O que eu já pensei sobre o podcast?'];
+
+    const ev = this.extraVals();
+    return {
+      ...ev, ...this.featVals(n, ev), colls,
+      rootRef: this.rootRef, askRef: this.askRef,
+      library, folders, groups, listTitle, listCount: `${visible.length} ${visible.length === 1 ? 'nota' : 'notas'}`,
+      listEmpty: visible.length === 0 && s.folder !== 'c-forgot' && s.folder !== 'diario', emptyText: q ? `Nada encontrado para “${s.search}”.` : 'Nenhuma nota nesta coleção ainda.',
+      search: s.search, onSearch: e => this.setState({ search: e.target.value }),
+      cur: { ...n, title: this.titleOf(n), dot: fol(n.folder).color, folderLabel: fol(n.folder).label, durLabel: fmt(n.dur), speakersLabel: n.speakers.length > 1 ? n.speakers.join(', ') : 'Nota pessoal',
+        hasQuote: n.transcript.length > 1, quote: { text: qt[2], sp: n.speakers[qt[1]], ts: fmt(qt[0]) }, quoteJump: () => this.setState({ tab: 'trans', pos: qt[0] + .01, playing: true }), noDecisions: !n.decisions.length },
+      playing: s.playing, paused: !s.playing, togglePlay: this.togglePlay, posLabel: fmt(s.pos), bars,
+      seek: e => { const r = e.currentTarget.getBoundingClientRect(); this.setState({ pos: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * n.dur }); },
+      speedLabel: s.speed + '×', toggleSpeed: () => this.setState(x => ({ speed: x.speed === 1 ? 1.5 : x.speed === 1.5 ? 2 : 1 })),
+      tabs, tabNote, tabResumo: s.tab === 'resumo', tabTrans: s.tab === 'trans', tabIns: s.tab === 'ins', segs, showTs, actions,
+      startRec: this.startRec, isRec, isProc: s.rec === 'proc', recTime: fmt(s.recT),
+      recDot: s.rec === 'paused' ? '#FEBC2E' : '#FF453A', recAnim: s.rec === 'paused' ? 'none' : 'rbpulse 1.2s ease-in-out infinite', recLabel: s.rec === 'paused' ? 'Pausado' : 'Gravando',
+      liveBars, liveText: shown.slice(0, -3).join(' '), liveTail: shown.slice(-3).join(' '),
+      pauseLabel: s.rec === 'paused' ? 'Continuar' : 'Pausar', pauseRec: () => this.setState(x => ({ rec: x.rec === 'paused' ? 'rec' : 'paused' })),
+      stopRec: () => this.setState({ rec: 'proc', step: 0, stepP: 0 }), discardRec: () => this.setState({ rec: null }), steps,
+      askOpen: s.ask, openAsk: this.openAsk, closeAsk: this.closeAsk, stop: e => e.stopPropagation(),
+      q: s.q, onQ: e => this.setState({ q: e.target.value, askPhase: 'idle' }), onQKey: e => { if (e.key === 'Enter' && s.q.trim()) this.submitAsk(); },
+      askIdle: s.askPhase === 'idle', askThinking: s.askPhase === 'think', askAnswer: s.askPhase === 'stream' || s.askPhase === 'done', answerDone: s.askPhase === 'done',
+      answer: ans.slice(0, s.ansLen),
+      suggestions: sugg.map(l => ({ label: l, onClick: () => this.submitAsk(l) })),
+      cites: ['n1', 'n3', 'n2'].map(id => { const x = all.find(y => y.id === id); return { title: x.title, dot: fol(x.folder).color, onClick: () => this.setState({ sel: id, ask: false, folder: 'all', view: 'note', tab: 'ins', pos: 0, playing: false }) }; }),
+    };
+  }
+}
+</script>
+</body>
+</html>

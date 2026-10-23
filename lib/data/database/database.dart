@@ -13,8 +13,18 @@ enum NoteStatus { recording, transcribing, ready, failed }
 /// Origem da nota.
 enum NoteSource { recording, dictation }
 
+/// Tipo de gravação: nota comum ou entrada de diário (fluxo e privacidade
+/// diferentes — ver design v3, `recKind`).
+enum NoteKind { note, diary }
+
+/// Estado do enriquecimento por IA (resumo/insights/título).
+enum AiStatus { none, pending, ready, failed }
+
 /// Falante de um segmento (mic = eu, sistema = outros).
 enum SegmentSpeaker { me, others }
+
+/// Papel de uma mensagem do chat da nota.
+enum ChatRole { user, ai }
 
 @DataClassName('NoteRow')
 class Notes extends Table {
@@ -29,6 +39,23 @@ class Notes extends Table {
   TextColumn get status => textEnum<NoteStatus>()();
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
   TextColumn get source => textEnum<NoteSource>()();
+
+  // ---- v3 ----
+  /// Pasta da nota (`folders.id`). Diário usa `'diario'`. Null = sem pasta.
+  TextColumn get folderId => text().nullable()();
+  BoolColumn get favorite => boolean().withDefault(const Constant(false))();
+  TextColumn get kind =>
+      textEnum<NoteKind>().withDefault(const Constant('note'))();
+
+  /// Título gerado automaticamente pela IA (mostra o chip "Título gerado").
+  BoolColumn get autoTitle => boolean().withDefault(const Constant(false))();
+  TextColumn get aiStatus =>
+      textEnum<AiStatus>().withDefault(const Constant('none'))();
+
+  /// Nomes dos falantes, serializados (`["Você","Camila"]`); null até a IA
+  /// inferir. A grade completa (índice→nome, inferido) fica em `note_ai`.
+  TextColumn get speakersJson => text().nullable()();
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -67,6 +94,156 @@ class NoteTags extends Table {
   Set<Column<Object>> get primaryKey => {noteId, tagId};
 }
 
+/// Pastas do usuário (cores e contagem na sidebar). Seed v3:
+/// Trabalho/Pessoal/Estudos/Ideias/Diário.
+@DataClassName('FolderRow')
+class Folders extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text()();
+  TextColumn get colorHex => text()();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  /// Diário fica oculto da lista de pastas (tem sua própria seção).
+  BoolColumn get hidden => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get updatedAt => dateTime()();
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+/// Enriquecimento por IA de uma nota (JSON `NoteAi` do contrato), 1:1 com a
+/// nota. Guardado como blob para acompanhar o contrato sem explodir em colunas.
+@DataClassName('NoteAiRow')
+class NoteAiTable extends Table {
+  @override
+  String get tableName => 'note_ai';
+
+  TextColumn get noteId =>
+      text().references(Notes, #id, onDelete: KeyAction.cascade)();
+  TextColumn get json => text()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {noteId};
+}
+
+/// Ações extraídas da nota (Insights) e que alimentam "Tarefas esquecidas".
+@DataClassName('ActionRow')
+class Actions extends Table {
+  TextColumn get id => text()();
+  TextColumn get noteId =>
+      text().references(Notes, #id, onDelete: KeyAction.cascade)();
+  TextColumn get content => text()();
+  TextColumn get owner => text().nullable()();
+  DateTimeColumn get due => dateTime().nullable()();
+  BoolColumn get done => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get snoozedUntil => dateTime().nullable()();
+  BoolColumn get dismissed => boolean().withDefault(const Constant(false))();
+  IntColumn get orderIndex => integer().withDefault(const Constant(0))();
+  DateTimeColumn get updatedAt => dateTime()();
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+/// Mensagens do chat "Conversa" de uma nota.
+@DataClassName('ChatMessageRow')
+class ChatMessages extends Table {
+  TextColumn get id => text()();
+  TextColumn get noteId =>
+      text().references(Notes, #id, onDelete: KeyAction.cascade)();
+  TextColumn get role => textEnum<ChatRole>()();
+  TextColumn get content => text()();
+
+  /// Citações de tempo (lista de ms em JSON), para os chips "ouvir em …".
+  TextColumn get citesJson => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+/// Coleções inteligentes (regra em JSON, avaliada localmente).
+@DataClassName('CollectionRow')
+class Collections extends Table {
+  TextColumn get id => text()();
+  TextColumn get label => text()();
+  TextColumn get ruleText => text()();
+
+  /// Regra estruturada: `{keywords, folders?, minSpeakers?, openActions?}`.
+  TextColumn get ruleJson => text()();
+
+  /// Coleção embutida com lógica especial (ex.: `'tasks'`), ou null.
+  TextColumn get kind => text().nullable()();
+  BoolColumn get builtin => boolean().withDefault(const Constant(false))();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  DateTimeColumn get updatedAt => dateTime()();
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+/// Vocabulário do Whisper (`initial_prompt`) — nomes/termos a reconhecer.
+@DataClassName('VocabularyRow')
+class Vocabulary extends Table {
+  TextColumn get id => text()();
+  TextColumn get term => text()();
+  DateTimeColumn get updatedAt => dateTime()();
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+/// Perguntas do diário (pergunta do dia + "outra pergunta").
+@DataClassName('DiaryPromptRow')
+class DiaryPrompts extends Table {
+  TextColumn get id => text()();
+  TextColumn get question => text()();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+/// Entradas de diário por dia (para o calendário e a sequência).
+@DataClassName('DiaryEntryRow')
+class DiaryEntries extends Table {
+  /// Dia no formato `yyyy-MM-dd`.
+  TextColumn get day => text()();
+  TextColumn get noteId => text().nullable()();
+  TextColumn get promptId => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {day};
+}
+
+/// Estado de sync por entidade (LWW por `updatedAt`), para o push/pull futuro.
+@DataClassName('SyncMetaRow')
+class SyncMeta extends Table {
+  @override
+  String get tableName => 'sync_meta';
+
+  TextColumn get entity => text()();
+  TextColumn get entityId => text()();
+  DateTimeColumn get updatedAt => dateTime()();
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+
+  /// Mudou localmente e ainda não foi empurrado para o servidor.
+  BoolColumn get dirty => boolean().withDefault(const Constant(true))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {entity, entityId};
+}
+
 /// Linha de resultado da busca FTS: nota + trecho destacado + ranking bm25.
 class NoteSearchHit {
   const NoteSearchHit({
@@ -80,20 +257,13 @@ class NoteSearchHit {
   final double rank;
 }
 
-/// Índice FTS5 cujo `rowid` espelha o `rowid` de `notes`. Sem a coluna
-/// `note_id UNINDEXED`: o join de volta usa `rowid`, e o corpo (`body`) é
-/// recomposto numa única passada por nota (ver
-/// [AppDatabase.recomposeSearchBody]), em vez de um `group_concat` por segmento
-/// inserido (custo quadrático na transcrição).
+/// Índice FTS5 cujo `rowid` espelha o `rowid` de `notes`.
 const _createFtsTable = '''
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
   title, body,
   tokenize = 'unicode61 remove_diacritics 2'
 )''';
 
-/// Gatilhos mínimos: criar/apagar a linha do índice e refletir o título.
-/// O corpo (transcrição) é mantido por [AppDatabase.recomposeSearchBody], nunca
-/// por gatilhos em `transcript_segments`.
 const _ftsTriggers = <String>[
   '''
 CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
@@ -109,7 +279,6 @@ CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE OF title ON notes BEGIN
 END''',
 ];
 
-/// Nomes de gatilhos (v1 e v2) a derrubar antes de recriar o índice.
 const _legacyFtsTriggers = <String>[
   'notes_ai',
   'notes_ad',
@@ -119,7 +288,6 @@ const _legacyFtsTriggers = <String>[
   'seg_ad',
 ];
 
-/// Recompõe o corpo do índice de uma nota a partir dos seus segmentos atuais.
 const _recomposeBodySql = '''
 UPDATE notes_fts
 SET body = (
@@ -128,7 +296,6 @@ SET body = (
 )
 WHERE rowid = (SELECT rowid FROM notes WHERE id = ?1)''';
 
-/// Repopula todo o índice a partir de `notes` + `transcript_segments`.
 const _rebuildIndexSql = '''
 INSERT INTO notes_fts(rowid, title, body)
 SELECT n.rowid, n.title, COALESCE((
@@ -137,9 +304,6 @@ SELECT n.rowid, n.title, COALESCE((
 ), '')
 FROM notes n''';
 
-/// `snippet` do corpo (coluna 1) e do título (coluna 0). Quando o match está só
-/// no título, o trecho do corpo não traz destaque (`[`), então o app usa o do
-/// título como fallback (ver [AppDatabase.search]).
 const _searchSql = '''
 SELECT n.*,
        bm25(notes_fts, 10.0, 1.0) AS rank,
@@ -149,7 +313,40 @@ FROM notes_fts JOIN notes n ON n.rowid = notes_fts.rowid
 WHERE notes_fts MATCH ?
 ORDER BY n.pinned DESC, rank''';
 
-@DriftDatabase(tables: [Notes, TranscriptSegments, Tags, NoteTags])
+/// Pastas semente (ids batem com `RbTokens.folderColors` e o design).
+const seedFolders = <(String, String, String, int, bool)>[
+  ('trabalho', 'Trabalho', '#2F6BEB', 0, false),
+  ('pessoal', 'Pessoal', '#1E8C5A', 1, false),
+  ('estudos', 'Estudos', '#B7791F', 2, false),
+  ('ideias', 'Ideias', '#D9472B', 3, false),
+  ('diario', 'Diário', '#8A7A66', 4, true),
+];
+
+/// Perguntas do diário (design v3, `PROMPTS`).
+const seedDiaryPrompts = <String>[
+  'O que te deixou com energia hoje?',
+  'O que você faria diferente amanhã?',
+  'Pelo que você é grato hoje?',
+  'O que ocupou sua cabeça hoje?',
+];
+
+@DriftDatabase(
+  tables: [
+    Notes,
+    TranscriptSegments,
+    Tags,
+    NoteTags,
+    Folders,
+    NoteAiTable,
+    Actions,
+    ChatMessages,
+    Collections,
+    Vocabulary,
+    DiaryPrompts,
+    DiaryEntries,
+    SyncMeta,
+  ],
+)
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
@@ -157,20 +354,19 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
       await _createSearchIndex();
+      await _seedV3();
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
     },
     onUpgrade: (m, from, to) async {
-      // v2: FTS reestruturado (rowid = notes.rowid, sem gatilhos por segmento).
-      // Derruba o índice/gatilhos antigos e reconstrói do zero.
       if (from < 2) {
         for (final name in _legacyFtsTriggers) {
           await customStatement('DROP TRIGGER IF EXISTS $name');
@@ -179,10 +375,30 @@ class AppDatabase extends _$AppDatabase {
         await _createSearchIndex();
         await rebuildSearchIndex();
       }
+      if (from < 3) {
+        // Novas colunas em `notes`.
+        await m.addColumn(notes, notes.folderId);
+        await m.addColumn(notes, notes.favorite);
+        await m.addColumn(notes, notes.kind);
+        await m.addColumn(notes, notes.autoTitle);
+        await m.addColumn(notes, notes.aiStatus);
+        await m.addColumn(notes, notes.speakersJson);
+        await m.addColumn(notes, notes.deleted);
+        // Novas tabelas.
+        await m.createTable(folders);
+        await m.createTable(noteAiTable);
+        await m.createTable(actions);
+        await m.createTable(chatMessages);
+        await m.createTable(collections);
+        await m.createTable(vocabulary);
+        await m.createTable(diaryPrompts);
+        await m.createTable(diaryEntries);
+        await m.createTable(syncMeta);
+        await _seedV3();
+      }
     },
   );
 
-  /// Cria a tabela FTS5 (título + transcrição) e os gatilhos mínimos.
   Future<void> _createSearchIndex() async {
     await customStatement(_createFtsTable);
     for (final sql in _ftsTriggers) {
@@ -190,14 +406,42 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  /// Recompõe o corpo do índice FTS de [noteId] a partir dos seus segmentos.
-  /// Chamado uma vez por `NoteRepository.replaceSegments`, na transação.
+  /// Semeia pastas e perguntas do diário (idempotente).
+  Future<void> _seedV3() async {
+    final now = DateTime.now();
+    await batch((b) {
+      for (final (id, name, color, order, hidden) in seedFolders) {
+        b.insert(
+          folders,
+          FoldersCompanion.insert(
+            id: id,
+            name: name,
+            colorHex: color,
+            sortOrder: Value(order),
+            hidden: Value(hidden),
+            updatedAt: now,
+          ),
+          mode: InsertMode.insertOrIgnore,
+        );
+      }
+      for (var i = 0; i < seedDiaryPrompts.length; i++) {
+        b.insert(
+          diaryPrompts,
+          DiaryPromptsCompanion.insert(
+            id: 'prompt_$i',
+            question: seedDiaryPrompts[i],
+            sortOrder: Value(i),
+          ),
+          mode: InsertMode.insertOrIgnore,
+        );
+      }
+    });
+  }
+
   Future<void> recomposeSearchBody(String noteId) async {
     await customStatement(_recomposeBodySql, [noteId]);
   }
 
-  /// Reconstrói todo o índice de busca a partir de `notes`/`transcript_segments`
-  /// (recuperação de inconsistências e migração).
   Future<void> rebuildSearchIndex() async {
     await transaction(() async {
       await customStatement('DELETE FROM notes_fts');
@@ -205,9 +449,6 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
-  /// Transforma o texto do usuário numa expressão MATCH de FTS5 segura:
-  /// cada termo vira um prefixo entre aspas (AND implícito). Retorna `null`
-  /// quando não há termo pesquisável.
   static String? buildMatchQuery(String raw) {
     final terms = raw
         .toLowerCase()
@@ -219,9 +460,6 @@ class AppDatabase extends _$AppDatabase {
     return terms.join(' ');
   }
 
-  /// Busca FTS com ranking bm25 (título pesa mais) e trecho destacado.
-  /// Pinned primeiro, depois por relevância. O trecho usa o corpo quando há
-  /// match nele; senão, cai para o título destacado.
   Future<List<NoteSearchHit>> search(String query) async {
     final match = buildMatchQuery(query);
     if (match == null) return [];
