@@ -122,4 +122,66 @@ void main() {
 
     expect(service.calls, greaterThan(0));
   });
+
+  test(
+    'aplicar um pull NÃO redispara o trigger (sem loop de sync a cada ~4s)',
+    () async {
+      // Spy que conta requestSync mas mantém o syncNow/pull reais herdados.
+      final spyService = _SpySyncService(
+        client: _OneChangeClient(),
+        store: SyncLocalStore(db),
+        settings: SettingsStore(prefs),
+        prefs: prefs,
+      );
+      final spyTrigger = SyncTrigger(db: db, sync: spyService)..start();
+
+      await spyService.syncNow();
+      // Deixa a notificação de tableUpdates + o dreno da flag rodarem.
+      await tick();
+      await tick();
+
+      // A nota foi mesmo aplicada localmente (o pull escreveu em `notes`)...
+      expect(await notes.getNote('remote1'), isNotNull);
+      // ...e mesmo assim o trigger não reagiu a essa escrita.
+      expect(spyService.calls, 0);
+
+      await spyTrigger.dispose();
+      await spyService.dispose();
+    },
+  );
+}
+
+/// Cliente de pull que devolve exatamente uma mudança (uma nota) na primeira
+/// chamada e nada depois, para exercitar a aplicação de um pull.
+class _OneChangeClient implements SyncClient {
+  bool _served = false;
+
+  @override
+  Future<PullResult> pull({String? since}) async {
+    if (_served) return PullResult(changes: const [], cursor: since ?? '1');
+    _served = true;
+    return PullResult(
+      changes: [
+        SyncChange(
+          entity: 'note',
+          id: 'remote1',
+          updatedAt: DateTime(2026, 10, 23, 12),
+          deleted: false,
+          data: const {
+            'id': 'remote1',
+            'title': 'Vinda do servidor',
+            'createdAt': '2026-10-23T12:00:00.000Z',
+            'durationMs': 0,
+            'status': 'ready',
+            'source': 'recording',
+          },
+        ),
+      ],
+      cursor: '1',
+    );
+  }
+
+  @override
+  Future<PushResult> push(List<SyncChange> changes) async =>
+      const PushResult(applied: [], conflicts: []);
 }

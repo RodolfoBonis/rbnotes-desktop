@@ -47,7 +47,12 @@ class SyncTrigger {
             for (final t in _syncable) TableUpdateQuery.onTableName(t),
           ]),
         )
-        .listen((_) => _sync.requestSync());
+        .listen((_) {
+          // Ignora o eco das escritas que o próprio pull/push aplica — senão o
+          // sync se auto-dispara em loop (ver SyncService.isApplyingRemote).
+          if (_sync.isApplyingRemote) return;
+          _sync.requestSync();
+        });
   }
 
   Future<void> dispose() async {

@@ -55,6 +55,13 @@ class SyncService {
   bool _queued = false;
   int _failures = 0;
   DateTime? _lastSyncAt;
+  bool _applyingRemote = false;
+
+  /// `true` enquanto o serviço aplica mudanças vindas do servidor (pull ou
+  /// conflitos do push). O `SyncTrigger` consulta isto para nao reagir às
+  /// escritas que o próprio sync faz — senão o eco do pull dispararia um novo
+  /// sync em loop (o bug do `GET /v1/sync/pull` a cada ~4 s em produção).
+  bool get isApplyingRemote => _applyingRemote;
 
   Stream<SyncStatus> get status async* {
     yield _status;
@@ -128,12 +135,27 @@ class SyncService {
     }
   }
 
+  /// Executa [op] (que escreve mudanças remotas no banco) com o gatilho de
+  /// sync suprimido. A flag permanece ativa por mais um "turno" do event loop
+  /// (`Future.delayed(Duration.zero)`) para que as notificações de
+  /// `tableUpdates` (entregues em microtask) já encontrem a flag ligada e sejam
+  /// ignoradas pelo `SyncTrigger`.
+  Future<void> _applyRemote(Future<void> Function() op) async {
+    _applyingRemote = true;
+    try {
+      await op();
+    } finally {
+      await Future<void>.delayed(Duration.zero);
+      _applyingRemote = false;
+    }
+  }
+
   Future<void> _pull() async {
     var cursor = _prefs.getString(_kCursor) ?? '';
     while (true) {
       final res = await _client.pull(since: cursor.isEmpty ? null : cursor);
       if (res.changes.isNotEmpty) {
-        await _store.applyAll(res.changes);
+        await _applyRemote(() => _store.applyAll(res.changes));
       }
       final advanced = res.cursor != cursor;
       cursor = res.cursor;
@@ -149,7 +171,7 @@ class SyncService {
       if (changes.isEmpty) break;
       final result = await _client.push(changes);
       if (result.conflicts.isNotEmpty) {
-        await _store.applyAll(result.conflicts);
+        await _applyRemote(() => _store.applyAll(result.conflicts));
       }
       final maxUp = _store.maxUpdatedAt(changes);
       if (maxUp == null || (watermark != null && !maxUp.isAfter(watermark))) {
