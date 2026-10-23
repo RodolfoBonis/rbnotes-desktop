@@ -28,6 +28,8 @@ Construído em Flutter (bloc + get_it + forma_ui + sentry), com o plugin nativo
 - **Configurações** (⌘,) com 7 abas; **atalhos** ⌘R/⌘K/⌘,/espaço/Esc.
 - **Observabilidade**: Sentry (via `--dart-define=SENTRY_DSN`).
 
+> **Build macOS:** o plugin `rbnotes_native` vendoriza o `whisper.xcframework` e só funciona via CocoaPods. Desligue o Swift Package Manager do Flutter antes do primeiro build: `fvm flutter config --no-enable-swift-package-manager` (o CI faz o mesmo).
+
 ## IA, sync e privacidade
 
 Auth, sync e IA são **interfaces** (`AuthService`, `SyncClient`, `AiClient`) com

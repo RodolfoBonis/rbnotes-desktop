@@ -52,6 +52,11 @@ jobs:
       # whisper.cpp é compilado do fonte pelo Podfile (scripts/build_whisper.sh).
       - name: Install cmake (whisper.cpp)
         run: brew install cmake
+      # O rbnotes_native (whisper.xcframework vendorizado) só é suportado via CocoaPods; com o Swift
+      # Package Manager ligado (default do Flutter no runner) o grafo de build fica misto e o Swift do
+      # plugin compila sem achar o módulo `whisper`. Mesma config usada localmente.
+      - name: Use CocoaPods for plugins
+        run: flutter config --no-enable-swift-package-manager
       - run: flutter pub get
       # Compila o whisper.xcframework ANTES do pod install (o hook do Podfile vira no-op) e deixa a
       # saída visível no log; o flutter build esconde a saída do pod install.
@@ -62,17 +67,7 @@ jobs:
           find packages/rbnotes_native/macos/Frameworks -maxdepth 3 | sort
           lipo -info packages/rbnotes_native/macos/Frameworks/whisper.xcframework/*/whisper.framework/whisper
       - name: Build macOS (debug)
-        run: |
-          set -o pipefail
-          if ! flutter build macos --debug -t lib/main_production.dart -v > build-debug.log 2>&1; then
-            echo "::group::xcodebuild diagnostics (rbnotes_native / whisper)"
-            grep -nE "SwiftExplicit|scan-dependencies|ScanDependencies|SwiftDriver.*rbnotes_native|CompileSwiftSources.*rbnotes_native|Copy XCFrameworks|XCFrameworkIntermediates|whisper" build-debug.log | head -80
-            grep -oE "(-F|-Fsystem) [^ ]+" build-debug.log | sort -u | head -40
-            echo "::endgroup::"
-            tail -60 build-debug.log
-            exit 1
-          fi
-          tail -5 build-debug.log
+        run: flutter build macos --debug -t lib/main_production.dart
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
       - name: Build macOS (release)
