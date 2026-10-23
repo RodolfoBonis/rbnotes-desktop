@@ -38,11 +38,12 @@ local whisper.cpp (Metal) transcription and global dictation for RbNotes.
     # Link the vendored whisper framework (CocoaPods copies the matching slice
     # into PODS_XCFRAMEWORKS_BUILD_DIR, already on FRAMEWORK_SEARCH_PATHS).
     'OTHER_LDFLAGS' => '-framework whisper',
-    # Xcode with explicit Swift modules scans `import whisper` before the
-    # "[CP] Copy XCFrameworks" phase runs, so on a fresh build (CI) the module
-    # is not found. Point the search path at the extracted slice explicitly and
-    # keep implicit modules for this target.
-    'FRAMEWORK_SEARCH_PATHS' => '$(inherited) "${PODS_XCFRAMEWORKS_BUILD_DIR}/rbnotes_native"',
+    # On a fresh build Xcode may compile this target's Swift before the
+    # "[CP] Copy XCFrameworks" phase extracts whisper into
+    # PODS_XCFRAMEWORKS_BUILD_DIR (seen on Xcode 26.6 CI: "Unable to resolve
+    # module dependency: 'whisper'"). Also search the source slice, which exists
+    # before the build starts (scripts/build_whisper.sh runs at pod install).
+    'FRAMEWORK_SEARCH_PATHS' => '$(inherited) "${PODS_XCFRAMEWORKS_BUILD_DIR}/rbnotes_native" "${PODS_TARGET_SRCROOT}/Frameworks/whisper.xcframework/macos-arm64_x86_64" "${PODS_TARGET_SRCROOT}/Frameworks/whisper.xcframework/macos-arm64"',
     'SWIFT_ENABLE_EXPLICIT_MODULES' => 'NO',
   }
 
