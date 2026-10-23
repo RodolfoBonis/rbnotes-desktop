@@ -67,6 +67,7 @@ class ShellHarness {
       native: native,
       repository: notes,
       settings: settings,
+      vocabulary: VocabularyRepository(db),
     );
     di
       ..registerSingleton<SharedPreferences>(prefs)

@@ -6,6 +6,7 @@ import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/dictation/data/dictation_service.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
+import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/native/fake_rb_native.dart';
 import 'package:rbnotes/native/rb_native.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,6 +30,7 @@ void main() {
       native: native,
       repository: repo,
       settings: store,
+      vocabulary: VocabularyRepository(db),
     );
   });
 
@@ -99,6 +101,7 @@ void main() {
       native: failNative,
       repository: repo,
       settings: store,
+      vocabulary: VocabularyRepository(db),
     );
     final notices = <String>[];
     final sub = svc.notices.listen(notices.add);
@@ -121,6 +124,7 @@ void main() {
       native: failNative,
       repository: repo,
       settings: store,
+      vocabulary: VocabularyRepository(db),
     );
     await svc.start();
     expect(svc.hotkeyStatus.registered, isFalse);

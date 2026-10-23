@@ -6,6 +6,7 @@ import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
+import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/transcription/domain/transcription_logic.dart';
 import 'package:rbnotes/native/rb_native.dart';
 
@@ -58,13 +59,16 @@ class TranscriptionQueue {
     required RbNative native,
     required NoteRepository repository,
     required SettingsStore settings,
+    required VocabularyRepository vocabulary,
   }) : _native = native,
        _repository = repository,
-       _settings = settings;
+       _settings = settings,
+       _vocabulary = vocabulary;
 
   final RbNative _native;
   final NoteRepository _repository;
   final SettingsStore _settings;
+  final VocabularyRepository _vocabulary;
 
   final _queue = Queue<String>();
   final _controller = StreamController<TranscriptionProgress>.broadcast();
@@ -171,12 +175,14 @@ class TranscriptionQueue {
       _emit(noteId, 0);
 
       final model = _settings.model;
+      final initialPrompt = await _vocabulary.initialPrompt();
       final systemPath = note.systemWavPath;
       final hasSystem = systemPath != null;
 
       final mic = await _native.transcribe(
         wavPath: micPath,
         model: model,
+        initialPrompt: initialPrompt,
         onProgress: (p) => _emit(noteId, hasSystem ? p * 0.5 : p),
       );
 
@@ -187,6 +193,7 @@ class TranscriptionQueue {
           system = await _native.transcribe(
             wavPath: systemPath,
             model: model,
+            initialPrompt: initialPrompt,
             onProgress: (p) => _emit(noteId, 0.5 + p * 0.5),
           );
         } on RbNativeException catch (e, st) {

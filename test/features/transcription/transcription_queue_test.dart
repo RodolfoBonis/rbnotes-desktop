@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
+import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:rbnotes/native/fake_rb_native.dart';
 import 'package:rbnotes/native/rb_native.dart';
@@ -63,6 +64,23 @@ void main() {
     final segments = await h.repo.getSegments('n1');
     expect(segments, isNotEmpty);
     expect(segments.every((s) => s.speaker == SegmentSpeaker.me), isTrue);
+  });
+
+  test('passa o vocabulário salvo como initialPrompt do Whisper', () async {
+    // Mesmo banco do harness: o termo fica visível para o vocab da fila.
+    await VocabularyRepository(db).add('v1', 'Thaís');
+    await seedRecording('nv');
+    h.queue.enqueue('nv');
+    await h.queue.progress.firstWhere((p) => p.isTerminal);
+    expect(h.native.lastInitialPrompt, isNotNull);
+    expect(h.native.lastInitialPrompt, contains('Thaís'));
+  });
+
+  test('sem vocabulário o initialPrompt é nulo', () async {
+    await seedRecording('nn');
+    h.queue.enqueue('nn');
+    await h.queue.progress.firstWhere((p) => p.isTerminal);
+    expect(h.native.lastInitialPrompt, isNull);
   });
 
   test('com áudio do sistema junta falantes eu/outros', () async {
@@ -160,6 +178,7 @@ void main() {
         native: native,
         repository: repo,
         settings: settings,
+        vocabulary: VocabularyRepository(db2),
       );
       await seed('c');
       queue.enqueue('c');
@@ -193,6 +212,7 @@ void main() {
         native: native,
         repository: repo,
         settings: settings,
+        vocabulary: VocabularyRepository(db2),
       );
       await seed('p', withSystem: true);
       queue.enqueue('p');
@@ -213,6 +233,7 @@ void main() {
         native: native,
         repository: repo,
         settings: settings,
+        vocabulary: VocabularyRepository(db2),
       );
       await seed('d');
       queue.enqueue('d'); // começa e trava no gate
@@ -264,6 +285,7 @@ class NoteRepositoryQueueHarness {
       native: native,
       repository: repo,
       settings: settings,
+      vocabulary: VocabularyRepository(db),
     );
   }
 

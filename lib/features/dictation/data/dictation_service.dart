@@ -7,6 +7,7 @@ import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/domain/note_models.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
+import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/native/rb_native.dart';
 import 'package:uuid/uuid.dart';
 
@@ -32,15 +33,18 @@ class DictationService {
     required RbNative native,
     required NoteRepository repository,
     required SettingsStore settings,
+    required VocabularyRepository vocabulary,
     Uuid? uuid,
   }) : _native = native,
        _repository = repository,
        _settings = settings,
+       _vocabulary = vocabulary,
        _uuid = uuid ?? const Uuid();
 
   final RbNative _native;
   final NoteRepository _repository;
   final SettingsStore _settings;
+  final VocabularyRepository _vocabulary;
   final Uuid _uuid;
 
   StreamSubscription<DictationEvent>? _sub;
@@ -136,6 +140,7 @@ class DictationService {
       segments = await _native.transcribe(
         wavPath: wavPath,
         model: _settings.model,
+        initialPrompt: await _vocabulary.initialPrompt(),
         // Ditado é interativo: prioridade alta para não ficar atrás de uma nota
         // longa na fila nativa.
         priority: TranscriptionPriority.high,

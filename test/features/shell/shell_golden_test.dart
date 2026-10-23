@@ -67,6 +67,7 @@ void main() {
       native: native,
       repository: notes,
       settings: settings,
+      vocabulary: vocab,
     );
 
     di

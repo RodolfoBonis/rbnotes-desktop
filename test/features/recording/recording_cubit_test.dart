@@ -7,6 +7,7 @@ import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
+import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:rbnotes/native/fake_rb_native.dart';
 import 'package:rbnotes/native/rb_native.dart';
@@ -33,6 +34,7 @@ void main() {
       native: native,
       repository: repo,
       settings: settings,
+      vocabulary: VocabularyRepository(db),
     );
     tmp = await Directory.systemTemp.createTemp('rbnotes_rec');
     paths = AppPaths.forTesting(tmp);

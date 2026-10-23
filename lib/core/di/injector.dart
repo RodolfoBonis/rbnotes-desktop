@@ -47,11 +47,13 @@ Future<void> configureDependencies(AppConfig config) async {
     native: native,
     repository: repository,
     settings: settings,
+    vocabulary: vocabulary,
   );
   final dictation = DictationService(
     native: native,
     repository: repository,
     settings: settings,
+    vocabulary: vocabulary,
   );
   final diagnostics = DiagnosticsMonitor(native);
 

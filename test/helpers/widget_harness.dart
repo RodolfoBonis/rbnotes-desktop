@@ -9,6 +9,7 @@ import 'package:rbnotes/features/dictation/data/dictation_service.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/presentation/audio_player_controller.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
+import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:rbnotes/native/fake_rb_native.dart';
 import 'package:rbnotes/native/rb_native.dart';
@@ -51,11 +52,13 @@ class WidgetHarness {
       native: native,
       repository: repo,
       settings: settings,
+      vocabulary: VocabularyRepository(db),
     );
     final dictation = DictationService(
       native: native,
       repository: repo,
       settings: settings,
+      vocabulary: VocabularyRepository(db),
     );
     final tmp = await Directory.systemTemp.createTemp('rbnotes_widget');
 
