@@ -35,8 +35,9 @@ class _PulseDotState extends State<PulseDot>
     if (widget.animate && !reduce) {
       if (!_c.isAnimating) _c.repeat(reverse: true);
     } else {
-      _c.stop();
-      _c.value = 0;
+      _c
+        ..stop()
+        ..value = 0;
     }
   }
 

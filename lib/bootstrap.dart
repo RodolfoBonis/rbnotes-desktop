@@ -31,12 +31,19 @@ Future<void> bootstrap(
   await windowManager.waitUntilReadyToShow(
     const WindowOptions(
       title: 'RbNotes',
-      size: Size(1180, 820),
-      minimumSize: Size(960, 640),
+      size: Size(1280, 800),
+      minimumSize: Size(1040, 680),
       center: true,
-      titleBarStyle: TitleBarStyle.normal,
+      backgroundColor: Colors.transparent,
+      titleBarStyle: TitleBarStyle.hidden,
     ),
     () async {
+      // Esconde os botões nativos: o app desenha os próprios traffic lights
+      // (ver TrafficLights), posicionados como no design.
+      await windowManager.setTitleBarStyle(
+        TitleBarStyle.hidden,
+        windowButtonVisibility: false,
+      );
       await windowManager.show();
       await windowManager.focus();
     },

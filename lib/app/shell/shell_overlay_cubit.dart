@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 
-/// Estado dos overlays do shell (⌘K, ⌘,, corrigir palavra, nova coleção, toast).
+/// Estado dos overlays do shell: ⌘K (perguntar), ⌘, (ajustes),
+/// corrigir palavra, nova coleção e toast.
 class ShellOverlayState extends Equatable {
   const ShellOverlayState({
     this.askOpen = false,
