@@ -180,15 +180,13 @@ class _DiaryContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _CalendarCard(state: state)),
-              const SizedBox(width: 16),
-              Expanded(child: _MonthCard(state: state)),
-            ],
-          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _CalendarCard(state: state)),
+            const SizedBox(width: 16),
+            Expanded(child: _MonthCard(state: state)),
+          ],
         ),
       ],
     );

@@ -618,7 +618,6 @@ class _SegmentRow extends StatelessWidget {
       onTap: onSeek,
       behavior: HitTestBehavior.opaque,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: -12),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
           color: isActive ? rb.accentWash(0.09) : Colors.transparent,
