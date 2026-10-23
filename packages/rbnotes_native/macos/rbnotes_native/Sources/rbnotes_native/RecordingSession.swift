@@ -2,16 +2,19 @@ import AVFoundation
 import Foundation
 
 /// Orchestrates a single recording: mic capture (+ optional system audio),
-/// two incremental wav writers, ~20 Hz level events, pause/resume and the
-/// stop-time `.m4a` stereo mix.
+/// two incremental wav writers, ~20 Hz level events, pause/resume, optional
+/// live (in-recording) transcription and the stop-time `.m4a` stereo mix.
 final class RecordingSession {
   let id: String
   let startedAt: Date
   private let directory: URL
   private let captureSystemAudio: Bool
+  private let liveTranscriptionEnabled: Bool
+  private let inputDeviceUid: String?
 
   private let micCapture = AudioCapture()
   private var systemCapture: AnyObject?  // SystemAudioCapture (macOS 13+)
+  private var liveTranscriber: LiveTranscriber?
 
   private let micWriter: WavWriter
   private var systemWriter: WavWriter?
@@ -33,15 +36,23 @@ final class RecordingSession {
   /// Emits asynchronous, non-fatal failures (write errors, device changes,
   /// system-audio drops) for the diagnostics channel.
   var onDiagnostic: ((NativeDiagnostic) -> Void)?
+  /// Emits `(accumulated text, isFinal)` live-transcript updates (only when
+  /// live transcription is enabled).
+  var onLiveTranscript: ((String, Bool) -> Void)?
 
   var micWavURL: URL { directory.appendingPathComponent("\(id).mic.wav") }
   var systemWavURL: URL { directory.appendingPathComponent("\(id).system.wav") }
   var playbackURL: URL { directory.appendingPathComponent("\(id).m4a") }
 
-  init(id: String, directory: URL, captureSystemAudio: Bool) throws {
+  init(
+    id: String, directory: URL, captureSystemAudio: Bool,
+    liveTranscription: Bool = false, inputDeviceId: String? = nil
+  ) throws {
     self.id = id
     self.directory = directory
     self.captureSystemAudio = captureSystemAudio
+    self.liveTranscriptionEnabled = liveTranscription
+    self.inputDeviceUid = inputDeviceId
     self.startedAt = Date()
     try FileManager.default.createDirectory(
       at: directory, withIntermediateDirectories: true)
@@ -52,6 +63,14 @@ final class RecordingSession {
   /// deleted); system-audio failure is swallowed so the recording continues
   /// mic-only (`systemAudioActive == false`).
   func start() async throws {
+    if liveTranscriptionEnabled {
+      let live = LiveTranscriber(
+        language: "pt",
+        emit: { [weak self] text, isFinal in self?.onLiveTranscript?(text, isFinal) })
+      liveTranscriber = live
+      live.start()
+    }
+
     micCapture.onData = { [weak self] data in
       self?.writeQueue.async { self?.appendMic(data) }
     }
@@ -60,8 +79,17 @@ final class RecordingSession {
     }
     micCapture.onError = { [weak self] diag in self?.forwardDiagnostic(diag) }
 
+    // Resolve the requested input device (nil / unknown → system default).
+    var resolvedDeviceId: AudioDeviceID?
+    if let inputDeviceUid {
+      resolvedDeviceId = AudioDevices.resolve(uid: inputDeviceUid)
+      if resolvedDeviceId == nil {
+        RbLog.recording.error("input device \(inputDeviceUid, privacy: .public) not found")
+      }
+    }
+
     do {
-      try micCapture.start()
+      try micCapture.start(deviceId: resolvedDeviceId)
     } catch {
       cleanupFiles()
       throw error
@@ -103,6 +131,8 @@ final class RecordingSession {
     } catch {
       reportWriteFailure(&micWriteFailureReported, source: "mic", error: error)
     }
+    // Feed live transcription AFTER the wav write so it never delays writing.
+    liveTranscriber?.appendMic(data)
   }
 
   private func appendSystem(_ data: Data, writer: WavWriter?) {
@@ -112,6 +142,7 @@ final class RecordingSession {
     } catch {
       reportWriteFailure(&systemWriteFailureReported, source: "system", error: error)
     }
+    liveTranscriber?.appendSystem(data)
   }
 
   private func reportWriteFailure(_ reported: inout Bool, source: String, error: Error) {
@@ -161,12 +192,14 @@ final class RecordingSession {
     levelLock.lock(); paused = true; levelLock.unlock()
     micCapture.pause()
     if #available(macOS 13.0, *) { (systemCapture as? SystemAudioCapture)?.pause() }
+    liveTranscriber?.pause()
   }
 
   func resume() {
     levelLock.lock(); paused = false; levelLock.unlock()
     micCapture.resume()
     if #available(macOS 13.0, *) { (systemCapture as? SystemAudioCapture)?.resume() }
+    liveTranscriber?.resume()
   }
 
   /// Stops capture, finalizes wavs, aligns the two sources, writes the `.m4a`
@@ -189,6 +222,11 @@ final class RecordingSession {
 
     // Drain pending writes before finalizing headers.
     writeQueue.sync {}
+
+    // Emit the final live transcript (also frees the tiny whisper context).
+    liveTranscriber?.stop()
+    liveTranscriber = nil
+
     try micWriter.finalize()
     try systemWriter?.finalize()
 

@@ -80,12 +80,13 @@ final class Transcriber {
   private var cancelledJobs: Set<Int> = []
 
   /// Transcribes [wavPath] using [model]. [onProgress] is invoked with 0..1.
-  /// Throws `RbNativeError` (`model_missing`, `transcription_cancelled`,
-  /// `transcription_failed`).
+  /// [initialPrompt] seeds the decoder vocabulary. Throws `RbNativeError`
+  /// (`model_missing`, `transcription_cancelled`, `transcription_failed`).
   func transcribe(
     wavPath: String,
     model: WhisperModelKind,
     language: String,
+    initialPrompt: String?,
     priority: TranscriptionPriority,
     onProgress: @escaping (Double) -> Void
   ) async throws -> [[String: Any]] {
@@ -115,12 +116,12 @@ final class Transcriber {
           let segments = try context.run(
             samples: samples,
             language: language,
+            initialPrompt: initialPrompt,
+            wordTimestamps: true,
             onProgress: onProgress,
             isCancelled: { self.isCancelled(jobId) })
 
-          let mapped = segments.map { seg in
-            ["startMs": seg.startMs, "endMs": seg.endMs, "text": seg.text] as [String: Any]
-          }
+          let mapped = segments.map { Self.wire(segment: $0) }
           continuation.resume(returning: mapped)
         } catch {
           continuation.resume(throwing: error)
@@ -134,6 +135,26 @@ final class Transcriber {
     if let jobId = activeJobs[wavPath] { cancelledJobs.insert(jobId) }
     lock.unlock()
     RbLog.whisper.info("cancel requested for \(wavPath, privacy: .public)")
+  }
+
+  /// Serializes a segment (plus its optional per-word list) for the channel.
+  private static func wire(segment: WhisperSegment) -> [String: Any] {
+    var map: [String: Any] = [
+      "startMs": segment.startMs,
+      "endMs": segment.endMs,
+      "text": segment.text,
+    ]
+    if !segment.words.isEmpty {
+      map["words"] = segment.words.map { word in
+        [
+          "text": word.text,
+          "startMs": word.startMs,
+          "endMs": word.endMs,
+          "probability": Double(word.probability),
+        ] as [String: Any]
+      }
+    }
+    return map
   }
 
   // MARK: - Job bookkeeping

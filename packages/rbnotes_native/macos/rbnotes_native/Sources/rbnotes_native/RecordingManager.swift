@@ -18,9 +18,10 @@ final class RecordingManager {
     return sessions[id]
   }
 
-  func start(id: String, directory: String, captureSystemAudio: Bool) async throws
-    -> [String: Any]
-  {
+  func start(
+    id: String, directory: String, captureSystemAudio: Bool,
+    liveTranscription: Bool, inputDeviceId: String?
+  ) async throws -> [String: Any] {
     // Atomic check-then-reserve.
     lock.lock()
     if sessions[id] != nil || reserving.contains(id) {
@@ -38,7 +39,8 @@ final class RecordingManager {
     let session: RecordingSession
     do {
       session = try RecordingSession(
-        id: id, directory: dirURL, captureSystemAudio: captureSystemAudio)
+        id: id, directory: dirURL, captureSystemAudio: captureSystemAudio,
+        liveTranscription: liveTranscription, inputDeviceId: inputDeviceId)
       session.onDiagnostic = { [weak self] diag in self?.onDiagnostic?(diag) }
       try await session.start()
     } catch {

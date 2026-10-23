@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import Foundation
 import QuartzCore
 
@@ -8,6 +9,9 @@ import QuartzCore
 /// from `AVAudioEngineConfigurationChange` (e.g. default device swap) by
 /// reinstalling the tap and restarting the engine while keeping the same
 /// `onData` sink (and therefore the same wav writer).
+///
+/// An optional explicit input device (`AudioDeviceID`) can be selected; it is
+/// re-applied across configuration-change restarts.
 final class AudioCapture {
   private let engine = AVAudioEngine()
   private var converter: PCMConverter?
@@ -16,6 +20,7 @@ final class AudioCapture {
   private var _isRunning = false
   private var _firstBufferHostTime: Double?
   private var configObserver: NSObjectProtocol?
+  private var inputDeviceId: AudioDeviceID?
 
   /// Called on the audio thread with converted s16le bytes to persist.
   var onData: ((Data) -> Void)?
@@ -36,13 +41,17 @@ final class AudioCapture {
     return _firstBufferHostTime
   }
 
-  func start() throws {
+  /// Starts capture, optionally on an explicit [deviceId] (nil = system
+  /// default input).
+  func start(deviceId: AudioDeviceID? = nil) throws {
+    inputDeviceId = deviceId
     try startEngine()
     observeConfigurationChanges()
   }
 
   private func startEngine() throws {
     let input = engine.inputNode
+    applyInputDeviceIfNeeded(input)
     let inputFormat = input.inputFormat(forBus: 0)
     guard inputFormat.sampleRate > 0 else {
       throw RbNativeError.notRecording("microphone input unavailable")
@@ -67,6 +76,23 @@ final class AudioCapture {
     }
     lock.lock(); _isRunning = true; lock.unlock()
     RbLog.recording.info("mic capture started @ \(inputFormat.sampleRate, privacy: .public) Hz")
+  }
+
+  /// Points the engine's input node at the chosen device. Falls back to the
+  /// system default (logging a diagnostic) if the device cannot be selected, so
+  /// a missing/unplugged device never aborts the recording.
+  private func applyInputDeviceIfNeeded(_ input: AVAudioInputNode) {
+    guard let inputDeviceId else { return }
+    do {
+      try input.auAudioUnit.setDeviceID(inputDeviceId)
+    } catch {
+      RbLog.recording.error(
+        "could not select input device \(inputDeviceId): \(error.localizedDescription)")
+      onError?(
+        NativeDiagnostic(
+          DiagnosticCode.audioConfigChanged,
+          "selected microphone unavailable; using the default input"))
+    }
   }
 
   /// Reinstalls the tap and restarts the engine after a device/route change.

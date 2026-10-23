@@ -29,7 +29,7 @@ local whisper.cpp (Metal) transcription and global dictation for RbNotes.
   # System frameworks used by the Swift sources.
   s.frameworks = [
     'AVFoundation', 'ScreenCaptureKit', 'CoreGraphics', 'CoreMedia',
-    'Carbon', 'AppKit', 'Accelerate', 'Metal'
+    'Carbon', 'AppKit', 'Accelerate', 'Metal', 'CoreAudio', 'AudioToolbox'
   ]
 
   s.pod_target_xcconfig = {

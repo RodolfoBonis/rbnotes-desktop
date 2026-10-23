@@ -2,11 +2,13 @@ import AVFoundation
 import Foundation
 import whisper
 
-/// A transcribed segment with start/end in milliseconds.
+/// A transcribed segment with start/end in milliseconds and optional per-word
+/// timing/confidence (populated only when word timestamps were requested).
 struct WhisperSegment {
   let startMs: Int
   let endMs: Int
   let text: String
+  let words: [AggregatedWord]
 }
 
 /// Shared state passed to whisper.cpp C callbacks via `user_data`.
@@ -51,11 +53,19 @@ final class WhisperContext {
 
   /// Runs `whisper_full` on 16 kHz mono float samples. Treats near-silence as
   /// an empty result. Throws `transcription_cancelled`/`transcription_failed`.
+  ///
+  /// - Parameters:
+  ///   - initialPrompt: seeds the decoder with vocabulary/context
+  ///     (`whisper_full_params.initial_prompt`).
+  ///   - wordTimestamps: when true, enables token-level timestamps and
+  ///     aggregates tokens back into `WhisperSegment.words`.
   func run(
     samples: [Float],
     language: String,
-    onProgress: @escaping (Double) -> Void,
-    isCancelled: @escaping () -> Bool
+    initialPrompt: String? = nil,
+    wordTimestamps: Bool = false,
+    onProgress: @escaping (Double) -> Void = { _ in },
+    isCancelled: @escaping () -> Bool = { false }
   ) throws -> [WhisperSegment] {
     lastUsed = Date()
     guard !samples.isEmpty else { return [] }
@@ -82,6 +92,7 @@ final class WhisperContext {
     params.single_segment = false
     params.suppress_blank = true
     params.no_speech_thold = 0.6  // skip segments whisper flags as non-speech
+    params.token_timestamps = wordTimestamps
 
     params.progress_callback = { _, _, progress, userData in
       guard let userData else { return }
@@ -97,10 +108,15 @@ final class WhisperContext {
     }
     params.abort_callback_user_data = boxPtr
 
-    // `language` must outlive the whisper_full call.
+    // `language` and `initial_prompt` must outlive the whisper_full call.
     let langCString = strdup(language)
     defer { free(langCString) }
     params.language = UnsafePointer(langCString)
+
+    let promptCString: UnsafeMutablePointer<CChar>? =
+      (initialPrompt?.isEmpty == false) ? strdup(initialPrompt!) : nil
+    defer { if let promptCString { free(promptCString) } }
+    if let promptCString { params.initial_prompt = UnsafePointer(promptCString) }
 
     let result = samples.withUnsafeBufferPointer { buffer -> Int32 in
       whisper_full(ctx, params, buffer.baseAddress, Int32(buffer.count))
@@ -120,13 +136,33 @@ final class WhisperContext {
       let t0 = whisper_full_get_segment_t0(ctx, i)  // 10ms units
       let t1 = whisper_full_get_segment_t1(ctx, i)
       let text = String(cString: whisper_full_get_segment_text(ctx, i))
+      let words = wordTimestamps ? aggregateWords(segment: i) : []
       segments.append(
         WhisperSegment(
           startMs: Int(t0 * 10),
           endMs: Int(t1 * 10),
-          text: text.trimmingCharacters(in: .whitespaces)))
+          text: text.trimmingCharacters(in: .whitespaces),
+          words: words))
     }
     return segments
+  }
+
+  /// Reads the tokens of [segment], drops whisper special tokens and aggregates
+  /// the rest into words via `WordAggregator`.
+  private func aggregateWords(segment i: Int32) -> [AggregatedWord] {
+    let eot = whisper_token_eot(ctx)
+    let nTokens = whisper_full_n_tokens(ctx, i)
+    var tokens: [WhisperTokenLite] = []
+    tokens.reserveCapacity(Int(nTokens))
+    for j in 0..<nTokens {
+      let data = whisper_full_get_token_data(ctx, i, j)
+      if data.id >= eot { continue }  // special token (eot/sot/timestamps/…)
+      let text = String(cString: whisper_full_get_token_text(ctx, i, j))
+      tokens.append(
+        WhisperTokenLite(
+          text: text, t0Ms: Int(data.t0 * 10), t1Ms: Int(data.t1 * 10), p: data.p))
+    }
+    return WordAggregator.aggregate(tokens)
   }
 
   private static func rms(_ samples: [Float]) -> Double {

@@ -6,8 +6,11 @@ import Foundation
 /// SHA-256 (git-LFS oid) so downloads can be verified and `modelState` can
 /// require an exact size match.
 enum WhisperModelKind: String {
-  case largeV3TurboQ5
+  case tiny
   case smallQ5
+  case medium
+  case largeV3TurboQ5
+  case largeV3
 
   init(wire: String) throws {
     guard let value = WhisperModelKind(rawValue: wire) else {
@@ -18,26 +21,38 @@ enum WhisperModelKind: String {
 
   var fileName: String {
     switch self {
-    case .largeV3TurboQ5: return "ggml-large-v3-turbo-q5_0.bin"
+    case .tiny: return "ggml-tiny.bin"
     case .smallQ5: return "ggml-small-q5_1.bin"
+    case .medium: return "ggml-medium-q5_0.bin"
+    case .largeV3TurboQ5: return "ggml-large-v3-turbo-q5_0.bin"
+    case .largeV3: return "ggml-large-v3-q5_0.bin"
     }
   }
 
   /// Exact file size in bytes (Hugging Face `x-linked-size`).
   var expectedSize: Int64 {
     switch self {
-    case .largeV3TurboQ5: return 574_041_195
+    case .tiny: return 77_691_713
     case .smallQ5: return 190_085_487
+    case .medium: return 539_212_467
+    case .largeV3TurboQ5: return 574_041_195
+    case .largeV3: return 1_081_140_203
     }
   }
 
   /// SHA-256 of the file (Hugging Face `x-linked-etag` / git-LFS oid).
   var expectedSHA256: String {
     switch self {
-    case .largeV3TurboQ5:
-      return "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
+    case .tiny:
+      return "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"
     case .smallQ5:
       return "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb"
+    case .medium:
+      return "19fea4b380c3a618ec4723c3eef2eb785ffba0d0538cf43f8f235e7b3b34220f"
+    case .largeV3TurboQ5:
+      return "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
+    case .largeV3:
+      return "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1"
     }
   }
 
@@ -74,6 +89,20 @@ final class ModelManager: NSObject, URLSessionDownloadDelegate {
       "downloaded": downloaded,
       "sizeBytes": downloaded ? (Int(size ?? 0) as Any?) : nil as Any?,
     ]
+  }
+
+  /// Deletes the on-disk file for [model]. No-op if it is not present. Throws
+  /// `model_download_failed` only if an existing file cannot be removed.
+  func delete(_ model: WhisperModelKind) throws {
+    let url = modelURL(model)
+    guard FileManager.default.fileExists(atPath: url.path) else { return }
+    do {
+      try FileManager.default.removeItem(at: url)
+      RbLog.whisper.info("deleted model \(model.fileName, privacy: .public)")
+    } catch {
+      throw RbNativeError.modelDownloadFailed(
+        "cannot delete \(model.fileName): \(error.localizedDescription)")
+    }
   }
 
   // MARK: - Download bookkeeping

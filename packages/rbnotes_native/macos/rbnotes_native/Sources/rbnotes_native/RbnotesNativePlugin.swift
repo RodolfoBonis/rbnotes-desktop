@@ -20,6 +20,8 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
   private var diagnosticsSink: FlutterEventSink?
   // Single, permanent transcription-progress stream: emits {wavPath, progress}.
   private var progressSink: FlutterEventSink?
+  // Single, permanent live-transcript stream: emits {recordingId, text, isFinal}.
+  private var liveTranscriptSink: FlutterEventSink?
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let messenger = registrar.messenger
@@ -109,6 +111,19 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
             self?.progressSink = nil
             return nil
           }))
+
+    // Live transcript: single permanent stream, emits {recordingId, text, isFinal}.
+    FlutterEventChannel(name: "rbnotes_native/live_transcript", binaryMessenger: messenger)
+      .setStreamHandler(
+        ClosureStreamHandler(
+          onListen: { [weak self] _, sink in
+            self?.liveTranscriptSink = sink
+            return nil
+          },
+          onCancel: { [weak self] _ in
+            self?.liveTranscriptSink = nil
+            return nil
+          }))
   }
 
   // MARK: - Method dispatch
@@ -135,8 +150,14 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
       } catch {
         reply(result, FlutterError.from(error))
       }
+    case "inputDevices":
+      reply(result, AudioDevices.inputDevices())
+    case "waveformPeaks":
+      handleWaveformPeaks(args, result)
     case "modelState":
       handleModelState(args, result)
+    case "deleteModel":
+      handleDeleteModel(args, result)
     case "transcribe":
       handleTranscribe(args, result)
     case "cancelTranscription":
@@ -180,13 +201,20 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     guard let captureSystemAudio = args["captureSystemAudio"] as? Bool else {
       return reply(result, RbNativeError.invalidArgument("captureSystemAudio must be a bool").flutterError)
     }
+    let liveTranscription = (args["liveTranscription"] as? Bool) ?? false
+    let inputDeviceId = args["inputDeviceId"] as? String
     Task {
       do {
         let map = try await recordingManager.start(
-          id: id, directory: directory, captureSystemAudio: captureSystemAudio)
-        // Wire levels forwarding for this session (read sinks on main only).
+          id: id, directory: directory, captureSystemAudio: captureSystemAudio,
+          liveTranscription: liveTranscription, inputDeviceId: inputDeviceId)
+        // Wire levels + live-transcript forwarding for this session (sinks read
+        // on main only).
         recordingManager.session(for: id)?.onLevels = { [weak self] payload in
           self?.forwardLevels(id: id, payload: payload)
+        }
+        recordingManager.session(for: id)?.onLiveTranscript = { [weak self] text, isFinal in
+          self?.emitLiveTranscript(id: id, text: text, isFinal: isFinal)
         }
         reply(result, map)
       } catch {
@@ -209,6 +237,20 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     }
   }
 
+  private func handleWaveformPeaks(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    guard let path = args["path"] as? String, let buckets = args["buckets"] as? Int else {
+      return reply(result, RbNativeError.invalidArgument("waveformPeaks requires path, buckets").flutterError)
+    }
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      do {
+        let peaks = try Waveform.peaks(path: path, buckets: buckets)
+        self?.reply(result, peaks)
+      } catch {
+        self?.reply(result, FlutterError.from(error))
+      }
+    }
+  }
+
   private func handleModelState(_ args: [String: Any], _ result: @escaping FlutterResult) {
     do {
       let model = try WhisperModelKind(wire: requireString(args, "model"))
@@ -218,17 +260,26 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     }
   }
 
+  private func handleDeleteModel(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    runSync(result) {
+      let model = try WhisperModelKind(wire: self.requireString(args, "model"))
+      try ModelManager.shared.delete(model)
+    }
+  }
+
   private func handleTranscribe(_ args: [String: Any], _ result: @escaping FlutterResult) {
     guard let wavPath = args["wavPath"] as? String, let modelRaw = args["model"] as? String else {
       return reply(result, RbNativeError.invalidArgument("transcribe requires wavPath, model").flutterError)
     }
     let language = (args["language"] as? String) ?? "pt"
+    let initialPrompt = args["initialPrompt"] as? String
     Task {
       do {
         let model = try WhisperModelKind(wire: modelRaw)
         let priority = try TranscriptionPriority(wire: args["priority"] as? String)
         let segments = try await transcriber.transcribe(
-          wavPath: wavPath, model: model, language: language, priority: priority,
+          wavPath: wavPath, model: model, language: language, initialPrompt: initialPrompt,
+          priority: priority,
           onProgress: { [weak self] progress in
             self?.emitProgress(wavPath: wavPath, progress: progress)
           })
@@ -277,6 +328,13 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     onMain { [weak self] in
       guard let self, self.levelsId == id, let sink = self.levelsSink else { return }
       sink(payload)
+    }
+  }
+
+  private func emitLiveTranscript(id: String, text: String, isFinal: Bool) {
+    onMain { [weak self] in
+      guard let self, let sink = self.liveTranscriptSink else { return }
+      sink(["recordingId": id, "text": text, "isFinal": isFinal])
     }
   }
 
