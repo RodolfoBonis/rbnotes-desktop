@@ -4,6 +4,7 @@ import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/traffic_lights.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/library/presentation/library_cubit.dart';
+import 'package:rbnotes/features/library/presentation/sidebar_icons.dart';
 
 /// Sidebar translúcida (228px): biblioteca, pastas, coleções, status e perfil.
 class Sidebar extends StatelessWidget {
@@ -77,21 +78,21 @@ class Sidebar extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   children: [
                     _LibRow(
-                      glyph: '◉',
+                      icon: SidebarIcon.allNotes,
                       label: 'Todas as notas',
                       count: state.allCount,
                       selected: state.section == LibrarySection.all,
                       onTap: () => cubit.selectSection(LibrarySection.all),
                     ),
                     _LibRow(
-                      glyph: '★',
+                      icon: SidebarIcon.favorites,
                       label: 'Favoritas',
                       count: state.favCount,
                       selected: state.section == LibrarySection.fav,
                       onTap: () => cubit.selectSection(LibrarySection.fav),
                     ),
                     _LibRow(
-                      glyph: '◐',
+                      icon: SidebarIcon.diary,
                       label: 'Diário',
                       count: state.diaryCount,
                       selected: state.section == LibrarySection.diary,
@@ -137,14 +138,14 @@ class Sidebar extends StatelessWidget {
 
 class _LibRow extends StatelessWidget {
   const _LibRow({
-    required this.glyph,
+    required this.icon,
     required this.label,
     required this.count,
     required this.selected,
     required this.onTap,
   });
 
-  final String glyph;
+  final SidebarIcon icon;
   final String label;
   final int count;
   final bool selected;
@@ -161,10 +162,7 @@ class _LibRow extends StatelessWidget {
           SizedBox(
             width: 16,
             child: Center(
-              child: Text(
-                glyph,
-                style: TextStyle(color: rb.accent, fontSize: 13),
-              ),
+              child: SidebarGlyph(icon: icon, color: rb.accent),
             ),
           ),
           const SizedBox(width: 9),
@@ -255,9 +253,10 @@ class _CollectionRow extends StatelessWidget {
           SizedBox(
             width: 16,
             child: Center(
-              child: Text(
-                '◇',
-                style: TextStyle(color: rb.accent, fontSize: 12),
+              child: SidebarGlyph(
+                icon: SidebarIcon.collection,
+                color: rb.accent,
+                size: 12,
               ),
             ),
           ),
