@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -15,7 +16,41 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   Intl.defaultLocale = 'pt_BR';
   await initializeDateFormatting('pt_BR');
   await _loadFonts();
+  _useTolerantGoldens();
   await testMain();
+}
+
+/// Diferença máxima de pixels aceita num golden. O anti-aliasing de texto varia
+/// entre versões do macOS (máquina local × runner do CI) em ~0,1–0,5%; uma
+/// mudança real de layout passa bem de 1%.
+const _goldenTolerance = 0.01;
+
+void _useTolerantGoldens() {
+  final current = goldenFileComparator;
+  if (current is LocalFileComparator) {
+    goldenFileComparator = _TolerantGoldenComparator(
+      Uri.parse('${current.basedir}flutter_test_config.dart'),
+    );
+  }
+}
+
+class _TolerantGoldenComparator extends LocalFileComparator {
+  _TolerantGoldenComparator(super.testFile);
+
+  @override
+  Future<bool> compare(Uint8List imageBytes, Uri golden) async {
+    final result = await GoldenFileComparator.compareLists(
+      imageBytes,
+      await getGoldenBytes(golden),
+    );
+    if (result.passed || result.diffPercent <= _goldenTolerance) {
+      result.dispose();
+      return true;
+    }
+    final error = await generateFailureOutput(result, golden, basedir);
+    result.dispose();
+    throw FlutterError(error);
+  }
 }
 
 Future<void> _loadFonts() async {
