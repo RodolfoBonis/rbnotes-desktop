@@ -14,6 +14,7 @@ import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/core/observability/diagnostics_monitor.dart';
 import 'package:rbnotes/core/observability/file_log_sink.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
+import 'package:rbnotes/features/ai/data/enrichment_service.dart';
 import 'package:rbnotes/features/dictation/data/dictation_service.dart';
 import 'package:rbnotes/features/settings/data/retention_service.dart';
 import 'package:rbnotes/features/sync/data/audio_upload_queue.dart';
@@ -79,6 +80,8 @@ Future<void> bootstrap(
   unawaited(
     di<TranscriptionQueue>().recoverFailedNotes(di<SharedPreferences>()),
   );
+  // Nunca deixa um "Resumo em preparação…" sem job: re-enriquece pendentes.
+  unawaited(di<EnrichmentService>().requeuePending());
   // Aplica retenção e "apagar áudio após transcrever" (boot + a cada 24h).
   di<RetentionService>().start();
   // Diagnósticos assíncronos do nativo → Sentry com contexto.

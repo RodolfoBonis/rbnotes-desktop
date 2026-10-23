@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:rbnotes/app/shell/detail_toolbar.dart';
+import 'package:rbnotes/core/di/injector.dart';
 import 'package:rbnotes/core/format/formatters.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/motion.dart';
@@ -13,8 +14,10 @@ import 'package:rbnotes/core/ui/pulse_dot.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/notes/domain/note_export.dart';
 import 'package:rbnotes/features/notes/domain/note_models.dart';
+import 'package:rbnotes/features/notes/domain/note_summary_status.dart';
 import 'package:rbnotes/features/notes/presentation/note_view_cubit.dart';
 import 'package:rbnotes/features/notes/presentation/widgets/waveform_player.dart';
+import 'package:rbnotes/features/settings/data/settings_store.dart';
 
 /// Limite de confiança abaixo do qual a palavra é sublinhada (baixa confiança).
 const _lowConfidence = 0.55;
@@ -339,11 +342,19 @@ class _ResumoTab extends StatelessWidget {
     final rb = context.rb;
     final ai = state.ai;
     final cubit = context.read<NoteViewCubit>();
+    final skipPersonal =
+        di.isRegistered<SettingsStore>() && di<SettingsStore>().skipPersonal;
+    final status = state.summaryStatus(skipPersonal: skipPersonal);
+    // Estados honestos (bug 6): só mostramos o resumo quando ele existe de
+    // verdade; caso contrário, um card com o estado real e a ação certa.
+    if (!status.showsSummary) {
+      return _SummaryStatusCard(status: status);
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          ai?.tldr ?? 'Resumo em preparação…',
+          ai?.tldr ?? '',
           style: context.serif(
             size: 18,
             weight: FontWeight.w400,
@@ -433,6 +444,165 @@ class _ResumoTab extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Card de estado honesto do Resumo (bug 6): transcrição falha, resumo
+/// desativado (privacidade), em preparação (com status real do SSE) ou falha
+/// do resumo — cada um com a ação certa.
+class _SummaryStatusCard extends StatelessWidget {
+  const _SummaryStatusCard({required this.status});
+
+  final SummaryStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final rb = context.rb;
+    final cubit = context.read<NoteViewCubit>();
+
+    final (icon, title, sub, actionLabel, onAction) = switch (status.kind) {
+      SummaryStatusKind.transcriptionFailed => (
+        Icons.error_outline,
+        'Não foi possível transcrever',
+        'A transcrição falhou. Você pode tentar de novo.',
+        'Tentar de novo',
+        cubit.retryTranscription,
+      ),
+      SummaryStatusKind.transcribing => (
+        Icons.graphic_eq,
+        'Transcrevendo a nota…',
+        'O resumo começa assim que a transcrição terminar.',
+        null,
+        null,
+      ),
+      SummaryStatusKind.disabledPersonal => (
+        Icons.lock_outline,
+        'Resumo desativado para a pasta Pessoal',
+        'Pela sua configuração de privacidade, estas notas ficam só com a '
+            'transcrição local.',
+        null,
+        null,
+      ),
+      SummaryStatusKind.disabled => (
+        Icons.auto_awesome_outlined,
+        'Resumo desativado para esta nota',
+        'Gere um resumo com a IA quando quiser.',
+        'Gerar resumo',
+        cubit.retrySummary,
+      ),
+      SummaryStatusKind.pending => (
+        Icons.hourglass_empty,
+        'Resumo em preparação…',
+        status.detail ?? 'Na fila…',
+        null,
+        null,
+      ),
+      SummaryStatusKind.summaryFailed => (
+        Icons.error_outline,
+        'Não foi possível gerar o resumo',
+        'A geração do resumo falhou. Tente novamente.',
+        'Tentar de novo',
+        cubit.retrySummary,
+      ),
+      SummaryStatusKind.ready => (
+        Icons.check,
+        '',
+        '',
+        null,
+        null,
+      ),
+    };
+
+    final isError =
+        status.kind == SummaryStatusKind.transcriptionFailed ||
+        status.kind == SummaryStatusKind.summaryFailed;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: isError ? RbTokens.destructive : rb.secondary(0.7),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: context.serif(size: 17, weight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.only(left: 28),
+            child: Text(
+              sub,
+              style: context.bodyText(
+                size: 13.5,
+                height: 1.5,
+                color: rb.secondary(0.7),
+              ),
+            ),
+          ),
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.only(left: 28),
+              child: _RetryButton(
+                label: actionLabel,
+                onTap: onAction,
+                destructive: isError,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Botão pill "Tentar de novo"/"Gerar resumo" do card de estado.
+class _RetryButton extends StatelessWidget {
+  const _RetryButton({
+    required this.label,
+    required this.onTap,
+    this.destructive = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final rb = context.rb;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        decoration: BoxDecoration(
+          color: destructive
+              ? RbTokens.destructive.withValues(alpha: 0.12)
+              : rb.fill,
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Text(
+          label,
+          style: context.bodyText(
+            size: 13,
+            weight: FontWeight.w600,
+            color: destructive ? RbTokens.destructive : rb.accent,
+          ),
+        ),
+      ),
     );
   }
 }

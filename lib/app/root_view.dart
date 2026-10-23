@@ -61,6 +61,9 @@ class RootView extends StatelessWidget {
                       ? di<AudioSync>()
                       : null,
                   paths: di(),
+                  queue: di(),
+                  enrichment: di(),
+                  aiActivity: di(),
                 ),
               ),
               BlocProvider(

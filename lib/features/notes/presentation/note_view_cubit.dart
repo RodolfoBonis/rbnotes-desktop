@@ -8,12 +8,16 @@ import 'package:rbnotes/core/network/api_error.dart';
 import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/data/database/database.dart';
+import 'package:rbnotes/features/ai/data/ai_activity.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
+import 'package:rbnotes/features/ai/data/enrichment_service.dart';
 import 'package:rbnotes/features/ai/domain/note_ai.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
+import 'package:rbnotes/features/notes/domain/note_summary_status.dart';
 import 'package:rbnotes/features/notes/presentation/audio_player_controller.dart';
 import 'package:rbnotes/features/sync/data/audio_sync.dart';
+import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:rbnotes/native/rb_native.dart';
 import 'package:uuid/uuid.dart';
 
@@ -37,6 +41,7 @@ class NoteViewState extends Equatable {
     this.streamingText,
     this.streamingCites = const [],
     this.audioDownloadProgress,
+    this.aiPhase = AiPhase.idle,
   });
 
   final NoteRow? note;
@@ -60,6 +65,10 @@ class NoteViewState extends Equatable {
   /// download em andamento.
   final double? audioDownloadProgress;
 
+  /// Fase atual da IA (fila/gerando/limite/erro), vinda do SSE via [AiActivity].
+  /// Alimenta o detalhe do estado "Resumo em preparação…".
+  final AiPhase aiPhase;
+
   int get durationMs => note?.durationMs ?? 0;
 
   NoteViewState copyWith({
@@ -81,6 +90,7 @@ class NoteViewState extends Equatable {
     List<int>? streamingCites,
     double? audioDownloadProgress,
     bool clearAudioDownload = false,
+    AiPhase? aiPhase,
   }) => NoteViewState(
     note: note ?? this.note,
     ai: clearAi ? null : (ai ?? this.ai),
@@ -101,6 +111,7 @@ class NoteViewState extends Equatable {
     audioDownloadProgress: clearAudioDownload
         ? null
         : (audioDownloadProgress ?? this.audioDownloadProgress),
+    aiPhase: aiPhase ?? this.aiPhase,
   );
 
   @override
@@ -120,7 +131,19 @@ class NoteViewState extends Equatable {
     streamingText,
     streamingCites,
     audioDownloadProgress,
+    aiPhase,
   ];
+
+  /// Estado honesto do Resumo (bug 6), derivado dos fatos da nota + IA.
+  /// [skipPersonal] vem do `SettingsStore` (privacidade da pasta Pessoal).
+  SummaryStatus summaryStatus({required bool skipPersonal}) =>
+      computeSummaryStatus(
+        noteStatus: note?.status ?? NoteStatus.ready,
+        aiStatus: note?.aiStatus ?? AiStatus.none,
+        folderId: note?.folderId,
+        skipPersonal: skipPersonal,
+        aiPhase: aiPhase,
+      );
 }
 
 /// Detalhe da nota: metadados, player (waveform/seek/velocidade) e as abas
@@ -134,6 +157,9 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     required AudioPlayerController player,
     AudioSync? audioSync,
     AppPaths? paths,
+    TranscriptionQueue? queue,
+    EnrichmentService? enrichment,
+    AiActivity? aiActivity,
     Uuid? uuid,
   }) : _notes = notes,
        _noteAi = noteAi,
@@ -142,6 +168,9 @@ class NoteViewCubit extends Cubit<NoteViewState> {
        _player = player,
        _audioSync = audioSync,
        _paths = paths,
+       _queue = queue,
+       _enrichment = enrichment,
+       _aiActivity = aiActivity,
        _uuid = uuid ?? const Uuid(),
        super(const NoteViewState()) {
     _posSub = _player.positionStream.listen(
@@ -150,6 +179,12 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     _playSub = _player.playingStream.listen(
       (playing) => emit(state.copyWith(playing: playing)),
     );
+    final activity = _aiActivity;
+    if (activity != null) {
+      _aiPhaseSub = activity.stream.listen(
+        (phase) => emit(state.copyWith(aiPhase: phase)),
+      );
+    }
   }
 
   final NoteRepository _notes;
@@ -159,6 +194,9 @@ class NoteViewCubit extends Cubit<NoteViewState> {
   final AudioPlayerController _player;
   final AudioSync? _audioSync;
   final AppPaths? _paths;
+  final TranscriptionQueue? _queue;
+  final EnrichmentService? _enrichment;
+  final AiActivity? _aiActivity;
   final Uuid _uuid;
 
   String? _noteId;
@@ -170,6 +208,7 @@ class NoteViewCubit extends Cubit<NoteViewState> {
   StreamSubscription<Duration>? _posSub;
   StreamSubscription<bool>? _playSub;
   StreamSubscription<AiDelta>? _streamSub;
+  StreamSubscription<AiPhase>? _aiPhaseSub;
 
   final _notices = StreamController<String>.broadcast();
   Stream<String> get notices => _notices.stream;
@@ -434,6 +473,24 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     _notices.add('“$to” corrigido em ${result.notes} $noun$vocab');
   }
 
+  /// "Tentar de novo" após uma transcrição falha: reenfileira a nota.
+  Future<void> retryTranscription() async {
+    final noteId = _noteId;
+    final queue = _queue;
+    if (noteId == null || queue == null) return;
+    await _notes.setStatus(noteId, NoteStatus.transcribing);
+    queue.retry(noteId);
+  }
+
+  /// "Tentar de novo" após um resumo falho (ou "Gerar resumo de novo"):
+  /// re-enriquece a nota pela IA.
+  Future<void> retrySummary() async {
+    final noteId = _noteId;
+    final enrichment = _enrichment;
+    if (noteId == null || enrichment == null) return;
+    await enrichment.enrichNote(noteId, force: true);
+  }
+
   /// Renomeia o título da nota atual (ação "Renomear"). Marca como título
   /// manual (não gerado pela IA).
   Future<void> renameTitle(String title) async {
@@ -457,6 +514,7 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     await _cancelSubs();
     await _posSub?.cancel();
     await _playSub?.cancel();
+    await _aiPhaseSub?.cancel();
     await _player.dispose();
     await _notices.close();
     return super.close();

@@ -48,9 +48,12 @@ class EnrichmentService {
   /// Enriquece uma nota: título, resumo, pontos, citação, ações, decisões,
   /// perguntas e nomes de falantes. Silencioso em caso de falha (marca
   /// `aiStatus = failed`, nunca derruba o app).
-  Future<void> enrichNote(String noteId) async {
+  ///
+  /// [force] (ação manual "Gerar resumo"/"Tentar de novo") ignora o auto-resumo
+  /// desligado, mas continua respeitando a privacidade da pasta Pessoal.
+  Future<void> enrichNote(String noteId, {bool force = false}) async {
     try {
-      if (!_settings.autoSummary) return;
+      if (!force && !_settings.autoSummary) return;
       final note = await _notes.getNote(noteId);
       if (note == null) return;
 
@@ -119,6 +122,25 @@ class EnrichmentService {
       } on Object catch (_) {
         // nota apagada no meio-tempo; ignore.
       }
+    }
+  }
+
+  /// No boot, re-enriquece as notas presas em `aiStatus = pending` de uma
+  /// sessão anterior (o app pode ter fechado no meio). Garante que nunca haja
+  /// um "Resumo em preparação…" sem um job real por trás (bug 6).
+  Future<void> requeuePending() async {
+    try {
+      final pending = await _notes.notesWithAiStatus(AiStatus.pending);
+      for (final note in pending) {
+        unawaited(enrichNote(note.id, force: true));
+      }
+    } on Object catch (e, st) {
+      await AppLogger.error(
+        e,
+        st,
+        reason: 'requeue_pending_enrich',
+        category: 'ai',
+      );
     }
   }
 

@@ -104,6 +104,12 @@ class NoteRepository {
   Future<List<NoteRow>> notesWithStatus(NoteStatus status) =>
       (_db.select(_db.notes)..where((n) => n.status.equalsValue(status))).get();
 
+  Future<List<NoteRow>> notesWithAiStatus(AiStatus status) =>
+      (_db.select(_db.notes)
+            ..where((n) => n.aiStatus.equalsValue(status))
+            ..where((n) => n.deleted.equals(false)))
+          .get();
+
   // ---------- Escrita de notas ----------
 
   Future<void> insertNote(NotesCompanion note) =>
