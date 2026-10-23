@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Lido pelo `dart pub token add --env-var` em cada `pub get`.
+  PUB_TOKEN: ${{ secrets.PUB_TOKEN }}
+
+jobs:
+  check:
+    name: Analyze & test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: kuhnroyal/flutter-fvm-config-action/setup@v3
+      - name: Authenticate private pub
+        run: dart pub token add https://pub.rodolfodebonis.com.br --env-var PUB_TOKEN
+      - run: flutter pub get
+      - run: dart format --set-exit-if-changed lib test
+      - run: flutter analyze
+      - run: flutter test --coverage
+
+  build:
+    name: Build macOS
+    needs: check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: kuhnroyal/flutter-fvm-config-action/setup@v3
+      - name: Authenticate private pub
+        run: dart pub token add https://pub.rodolfodebonis.com.br --env-var PUB_TOKEN
+      # whisper.cpp é compilado do fonte pelo Podfile (scripts/build_whisper.sh).
+      - name: Install cmake (whisper.cpp)
+        run: brew install cmake
+      - run: flutter pub get
+      - name: Build macOS (debug)
+        run: flutter build macos --debug -t lib/main_production.dart
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
