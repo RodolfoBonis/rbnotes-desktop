@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:rbnotes/app/shell/detail_toolbar.dart';
 import 'package:rbnotes/core/format/formatters.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/pulse_dot.dart';
@@ -34,7 +35,7 @@ class NoteDetailPane extends StatelessWidget {
       color: rb.bg,
       child: Column(
         children: [
-          _Toolbar(
+          DetailToolbar(
             onOpenAsk: onOpenAsk,
             onStartRecording: onStartRecording,
             onExport: onExport,
@@ -57,121 +58,6 @@ class NoteDetailPane extends StatelessWidget {
                   ),
                 );
               },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Toolbar extends StatelessWidget {
-  const _Toolbar({
-    required this.onOpenAsk,
-    required this.onStartRecording,
-    required this.onExport,
-  });
-
-  final VoidCallback onOpenAsk;
-  final VoidCallback onStartRecording;
-  final VoidCallback onExport;
-
-  @override
-  Widget build(BuildContext context) {
-    final rb = context.rb;
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: rb.onSurface(0.07), width: 0.5),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          GestureDetector(
-            onTap: onOpenAsk,
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              height: 28,
-              padding: const EdgeInsets.fromLTRB(11, 0, 10, 0),
-              decoration: BoxDecoration(
-                color: rb.controlFill,
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: Row(
-                children: [
-                  Text(
-                    'Perguntar às notas',
-                    style: context.bodyText(
-                      size: 12.5,
-                      weight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '⌘K',
-                    style: context.bodyText(size: 11, color: rb.secondary(0.5)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: onExport,
-            behavior: HitTestBehavior.opaque,
-            child: SizedBox(
-              width: 28,
-              height: 28,
-              child: Icon(
-                Icons.ios_share,
-                size: 15,
-                color: rb.secondary(0.75),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: onStartRecording,
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              height: 30,
-              padding: const EdgeInsets.fromLTRB(10, 0, 13, 0),
-              decoration: BoxDecoration(
-                color: rb.accent,
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Gravar',
-                    style: context.bodyText(
-                      size: 12.5,
-                      weight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '⌘R',
-                    style: context.bodyText(
-                      size: 11,
-                      color: Colors.white.withValues(alpha: 0.75),
-                    ),
-                  ),
-                ],
-              ),
             ),
           ),
         ],
@@ -235,7 +121,12 @@ class _NoteBody extends StatelessWidget {
         const SizedBox(height: 10),
         Text(
           note.title,
-          style: context.serif(size: 30, height: 1.15, letterSpacing: -0.5),
+          style: context.serif(
+            size: 30,
+            weight: FontWeight.w500,
+            height: 1.15,
+            letterSpacing: -0.5,
+          ),
         ),
         if (note.autoTitle) ...[
           const SizedBox(height: 10),

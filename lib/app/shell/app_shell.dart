@@ -210,11 +210,17 @@ class _MainColumn extends StatelessWidget {
               onSnooze: (t) => _taskAction(context, t, _TaskOp.snooze),
               onDismiss: (t) => _taskAction(context, t, _TaskOp.dismiss),
               onOpenNote: context.read<LibraryCubit>().selectNote,
+              onOpenAsk: context.read<ShellOverlayCubit>().openAsk,
+              onStartRecording: () =>
+                  unawaited(context.read<RecordingCubit>().start()),
             );
           case MainView.diary:
             return DiaryPane(
               onRecord: () =>
                   unawaited(context.read<RecordingCubit>().startDiary()),
+              onOpenAsk: context.read<ShellOverlayCubit>().openAsk,
+              onStartRecording: () =>
+                  unawaited(context.read<RecordingCubit>().start()),
             );
           case MainView.note:
             return NoteDetailPane(

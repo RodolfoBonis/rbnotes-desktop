@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:rbnotes/app/shell/detail_toolbar.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/rb_lottie.dart';
 import 'package:rbnotes/features/collections/domain/forgotten_tasks.dart';
@@ -12,6 +13,8 @@ class TasksPane extends StatelessWidget {
     required this.onSnooze,
     required this.onDismiss,
     required this.onOpenNote,
+    required this.onOpenAsk,
+    required this.onStartRecording,
     super.key,
   });
 
@@ -19,6 +22,8 @@ class TasksPane extends StatelessWidget {
   final ValueChanged<ForgottenTask> onSnooze;
   final ValueChanged<ForgottenTask> onDismiss;
   final ValueChanged<String> onOpenNote;
+  final VoidCallback onOpenAsk;
+  final VoidCallback onStartRecording;
 
   static String _intro(int count) {
     if (count == 0) return 'Nenhuma tarefa parada há mais de 3 dias.';
@@ -29,86 +34,104 @@ class TasksPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final rb = context.rb;
-    return BlocBuilder<LibraryCubit, LibraryState>(
-      builder: (context, state) {
-        final tasks = state.forgotten(DateTime.now());
-        return SingleChildScrollView(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 640),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(40, 34, 40, 80),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Coleção inteligente',
-                      style: context.bodyText(
-                        size: 12,
-                        color: rb.secondary(0.65),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Tarefas esquecidas',
-                      style: context.serif(
-                        size: 30,
-                        height: 1.15,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      _intro(tasks.length),
-                      style: context.bodyText(
-                        size: 14,
-                        height: 1.5,
-                        color: rb.secondary(0.7),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    if (tasks.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 40),
+    return ColoredBox(
+      color: rb.bg,
+      child: Column(
+        children: [
+          DetailToolbar(
+            onOpenAsk: onOpenAsk,
+            onStartRecording: onStartRecording,
+          ),
+          Expanded(
+            child: BlocBuilder<LibraryCubit, LibraryState>(
+              builder: (context, state) {
+                final tasks = state.forgotten(DateTime.now());
+                return SingleChildScrollView(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 640),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(40, 34, 40, 80),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const RbLottie(
-                              asset: 'assets/lottie/pulse.json',
-                              size: 64,
-                            ),
-                            const SizedBox(height: 10),
                             Text(
-                              'Nada esquecido.',
-                              style: context.serif(size: 20),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Todas as tarefas das suas notas estão em dia.',
+                              'Coleção inteligente',
                               style: context.bodyText(
-                                size: 13,
+                                size: 12,
                                 color: rb.secondary(0.65),
                               ),
                             ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Tarefas esquecidas',
+                              style: context.serif(
+                                size: 30,
+                                weight: FontWeight.w500,
+                                height: 1.15,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              _intro(tasks.length),
+                              style: context.bodyText(
+                                size: 14,
+                                height: 1.5,
+                                color: rb.secondary(0.7),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            if (tasks.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 40,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const RbLottie(
+                                      asset: 'assets/lottie/pulse.json',
+                                      size: 64,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      'Nada esquecido.',
+                                      style: context.serif(size: 20),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Todas as tarefas das suas notas '
+                                      'estão em dia.',
+                                      style: context.bodyText(
+                                        size: 13,
+                                        color: rb.secondary(0.65),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else
+                              for (final t in tasks)
+                                _TaskCard(
+                                  task: t,
+                                  onDone: () => onDone(t),
+                                  onSnooze: () => onSnooze(t),
+                                  onDismiss: () => onDismiss(t),
+                                  onOpenNote: () => onOpenNote(t.noteId),
+                                ),
                           ],
                         ),
-                      )
-                    else
-                      for (final t in tasks)
-                        _TaskCard(
-                          task: t,
-                          onDone: () => onDone(t),
-                          onSnooze: () => onSnooze(t),
-                          onDismiss: () => onDismiss(t),
-                          onOpenNote: () => onOpenNote(t.noteId),
-                        ),
-                  ],
-                ),
-              ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 }

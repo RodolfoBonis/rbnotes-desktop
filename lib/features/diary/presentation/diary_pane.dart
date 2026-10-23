@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:rbnotes/app/shell/detail_toolbar.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/features/diary/domain/diary_calendar.dart';
 import 'package:rbnotes/features/diary/presentation/diary_cubit.dart';
@@ -8,27 +9,49 @@ import 'package:rbnotes/features/diary/presentation/diary_cubit.dart';
 /// Painel do Diário: pergunta do dia, gravar resposta, calendário com sequência
 /// e "seu mês até agora". Protegido por Touch ID.
 class DiaryPane extends StatelessWidget {
-  const DiaryPane({required this.onRecord, super.key});
+  const DiaryPane({
+    required this.onRecord,
+    required this.onOpenAsk,
+    required this.onStartRecording,
+    super.key,
+  });
 
+  /// Grava uma resposta para a pergunta do dia (modo diário).
   final VoidCallback onRecord;
+  final VoidCallback onOpenAsk;
+  final VoidCallback onStartRecording;
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<DiaryCubit, DiaryState>(
-      builder: (context, state) {
-        if (state.locked) return _LockScreen();
-        return SingleChildScrollView(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 640),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(40, 34, 40, 80),
-                child: _DiaryContent(state: state, onRecord: onRecord),
-              ),
+    return ColoredBox(
+      color: context.rb.bg,
+      child: Column(
+        children: [
+          DetailToolbar(
+            onOpenAsk: onOpenAsk,
+            onStartRecording: onStartRecording,
+          ),
+          Expanded(
+            child: BlocBuilder<DiaryCubit, DiaryState>(
+              builder: (context, state) {
+                if (state.locked) return _LockScreen();
+                return SingleChildScrollView(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 640),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(40, 34, 40, 80),
+                        child: _DiaryContent(state: state, onRecord: onRecord),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 }
@@ -96,7 +119,12 @@ class _DiaryContent extends StatelessWidget {
         const SizedBox(height: 10),
         Text(
           'Diário',
-          style: context.serif(size: 30, height: 1.15, letterSpacing: -0.5),
+          style: context.serif(
+            size: 30,
+            weight: FontWeight.w500,
+            height: 1.15,
+            letterSpacing: -0.5,
+          ),
         ),
         const SizedBox(height: 22),
         Container(
@@ -349,7 +377,6 @@ class _MonthCard extends StatelessWidget {
                 Container(
                   height: 24,
                   padding: const EdgeInsets.symmetric(horizontal: 10),
-                  alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: rb.bg,
                     borderRadius: BorderRadius.circular(12),
