@@ -16,9 +16,13 @@ depois do deploy. A fonte da verdade do contrato é `rbnotes-api/api/openapi.yam
   O botão Google usa `kc_idp_hint=google`.
 - **Redirect loopback fixo** `http://127.0.0.1:53682/callback` (porta fixa
   porque o client registra um redirect exato). O servidor sobe só durante o
-  login, com `state`+`nonce` verificados e timeout de 5 min.
+  login, escuta **apenas** em `127.0.0.1`, com `state`+`nonce` verificados e
+  timeout de 5 min. Se o navegador não abrir, o socket é fechado na hora (não
+  fica ouvindo até o timeout).
 - **Refresh rotaciona** (`revoke_refresh_token`): o novo par é sempre salvo no
-  Keychain; o refresh é single-flight (sem renovações concorrentes).
+  Keychain; o refresh é single-flight (sem renovações concorrentes). Uma falha
+  **de rede** no refresh **não** derruba a sessão nem apaga o refresh token —
+  só um refresh inválido/revogado (erro do provider) encerra a sessão.
 - **`403 not_allowed`** (allowlist do backend) → `AuthException`/`AccessRevoked`,
   aviso "Esta conta não tem acesso ao RbNotes" e logout.
 
@@ -33,10 +37,39 @@ depois do deploy. A fonte da verdade do contrato é `rbnotes-api/api/openapi.yam
   `updatedAt > watermark` (persistida), em vez de usar `sync_meta.dirty`. É
   correto porque reenviar uma linha idêntica (mesmo `updatedAt`+`data`) é
   **idempotente** no servidor, então um eventual eco de algo recém-aplicado no
-  pull não causa conflito. `sync_meta` segue disponível para um dirty-tracking
-  mais fino no futuro.
+  pull não causa conflito.
+- **`segment_set` tem marca d'água própria** no `sync_meta` (`entity =
+  'segment_set'`), independente de `note.updatedAt`. `NoteRepository`
+  (`replaceSegments`/`fixWord`) bumpa essa marca a cada edição de segmentos, e o
+  `SyncLocalStore` a usa no push (coleta) e no LWW (aplicação). Assim: (a) uma
+  edição só de segmentos sincroniza mesmo sem tocar a nota; (b) uma edição da
+  nota em outro dispositivo **não** arrasta segmentos stale por cima de uma
+  versão mais nova — convergência LWW correta.
+- **Gatilho de sync em toda mutação local**: o `SyncTrigger` observa as escritas
+  do drift (`tableUpdates`) nas 8 tabelas sincronizáveis e chama `requestSync`
+  (debounced) em qualquer mudança relevante (título, pasta, favorito, ações,
+  coleções, vocabulário, chat, note_ai, segmentos, exclusões). Centraliza o
+  gatilho num ponto só, sem espalhar `requestSync()` pelos repositórios nem
+  depender da cadência de 2 min. `sync_meta`/FTS/tags ficam de fora para não
+  gerar sync espúrio.
 - Conflitos devolvidos pelo servidor são aplicados localmente (a versão do
   servidor vence). Cursor persistido em `SharedPreferences`.
+
+### Áudio
+- **Upload após a transcrição**: ao terminar de transcrever (fluxo normal ou
+  recuperação de crash — ambos emitem `done`), o `AudioUploadCoordinator`
+  enfileira o `.m4a` na `AudioUploadQueue` (se o sync estiver ligado). A fila é
+  persistente, com retomada no boot e backoff.
+- **Coordenação com "Apagar áudio após transcrever"**: o arquivo local só é
+  apagado **depois** do upload concluído (a própria fila remove e zera os
+  caminhos ao terminar) quando o sync está ligado; com o sync desligado, o
+  `RetentionService` apaga na hora. A varredura de retenção, com sync ligado e
+  delete-after, enfileira o áudio pendente em vez de apagá-lo antes de subir.
+- **Download sob demanda**: quando a nota não tem áudio local (veio de outro
+  Mac, ou o `.m4a` foi apagado localmente), o player baixa via
+  `GET /notes/{id}/audio` com `Range` para `audio_cache/` (em blocos, com
+  progresso e retomada). Uma vez em cache, toca offline. `404` vira o aviso
+  "Áudio não disponível.".
 
 ### IA
 - Todo pedido é assíncrono (`202 + id`) e o resultado vem por SSE
@@ -44,34 +77,29 @@ depois do deploy. A fonte da verdade do contrato é `rbnotes-api/api/openapi.yam
   também responde 202 — ver `CHANGES.md` item 2). O objeto estruturado cresce
   nos eventos `json`; o `text` é o streaming do chat/ask.
 - Reconexão por `Last-Event-ID` e timeout de heartbeat (sem `ping` por N s →
-  reconecta). `429 ai_daily_limit` → `AiDailyLimitException` e card "Claude" em
-  "Limite diário atingido".
+  reconecta), **limitada** a `maxRetries` (sem reconexão infinita). `429
+  ai_daily_limit` → `AiDailyLimitException` e card "Claude" em "Limite diário
+  atingido".
 - O `model` enviado vem da preferência de Inteligência (`Claude Sonnet/Opus/
   Haiku` → `sonnet|opus|haiku`); se não mapear, é omitido (backend usa
   `AI_MODEL`).
 
-## Limitações conhecidas / follow-ups
+## Follow-ups fechados
 
-1. **segment_set sem timestamp próprio** — a tabela `transcript_segments` não
-   tem `updatedAt`. O `segment_set` é empurrado junto quando o `updatedAt` da
-   nota muda. No fluxo normal isso basta (ao transcrever, a nota é tocada:
-   `setStatus`/`updateTitle`/`setAiStatus` bumpam `updatedAt`). Uma edição de
-   segmento que **não** toque a nota só sincroniza no próximo toque da nota.
-   Follow-up: bumpar `note.updatedAt` em `replaceSegments`/`fixWord`.
-2. **Fila de upload de áudio não é auto-enfileirada** pelo pipeline de gravação
-   ainda. A `AudioUploadQueue` (persistente, com retomada e backoff) e o
-   `AudioSync` (chunks + download com Range) estão prontos e testados, mas falta
-   o gancho `queue.enqueue(noteId, path)` ao finalizar a transcrição e a
-   coordenação com "Apagar áudio após transcrever"/retenção (subir antes de
-   apagar). Hoje a fila sobe o que estiver em disco e descarta itens cujo
-   arquivo sumiu.
-3. **Gatilho de sync após mudanças locais** está ligado na criação de nota
-   (debounce via `requestSync`). Outras edições dependem da cadência de 2 min e
-   do "Sincronizar agora". Follow-up: chamar `requestSync` nos demais pontos de
-   escrita (repos) ou observar o drift.
-4. **Download de áudio sob demanda** (outro Mac) existe em `AudioSync.
-   downloadToFile` (com Range/retomada), mas ainda não está ligado ao
-   `AudioPlayerController` para buscar quando o arquivo local não existe.
+Os quatro follow-ups abaixo foram implementados (cada um com teste); o texto
+acima descreve o comportamento final.
+
+1. ✅ **segment_set com timestamp próprio** — resolvido via marca d'água no
+   `sync_meta` (melhor que bumpar `note.updatedAt`, que arrastaria segmentos
+   stale entre dispositivos). Teste: `segment_set_convergence_test.dart`.
+2. ✅ **Fila de upload auto-enfileirada** — `AudioUploadCoordinator` no fim da
+   transcrição + coordenação retenção/delete-after. Testes:
+   `audio_upload_coordinator_test.dart`, `retention_service_test.dart`.
+3. ✅ **Gatilho de sync em toda edição** — `SyncTrigger` sobre `tableUpdates`.
+   Teste: `sync_trigger_test.dart`.
+4. ✅ **Download de áudio sob demanda** — ligado ao `NoteViewCubit` com
+   progresso, cache offline e 404. Testes: `note_audio_download_test.dart`,
+   `audio_sync_test.dart`.
 
 ## Divergências de contrato encontradas
 
@@ -91,6 +119,8 @@ em `rbnotes-api/api/CHANGES.md` (item 2) e é tratado pelo cliente.
 > Não foi possível rodar um E2E local contra a `rbnotes-api`: a API exige
 > Postgres + Redis + MinIO e **não há `postgres`/`redis-server` no Homebrew**
 > desta máquina (nem Docker garantido). Os testes cobrem auth/PKCE, refresh
-> single-flight com rotação, ApiClient (problem+json), sync (mapeamento, cursor,
-> conflito, backoff), upload de áudio e SSE usando um `HttpServer` loopback
-> local como fake do backend.
+> single-flight com rotação (inclusive falha de rede preservando a sessão),
+> ApiClient (problem+json), sync (mapeamento, cursor, conflito, backoff,
+> convergência de segment_set, gatilho por mutação), upload de áudio (enfileirar
+> + delete-after), download com Range/progresso/404 e SSE usando um `HttpServer`
+> loopback local como fake do backend.
