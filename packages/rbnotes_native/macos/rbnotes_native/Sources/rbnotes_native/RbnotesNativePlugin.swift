@@ -22,6 +22,10 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
   private var progressSink: FlutterEventSink?
   // Single, permanent live-transcript stream: emits {recordingId, text, isFinal}.
   private var liveTranscriptSink: FlutterEventSink?
+  // Single, permanent overlay-actions stream: emits a wire action name string.
+  private var overlayActionsSink: FlutterEventSink?
+  // Notch activity overlay controller (macOS 13+); created lazily on first use.
+  private var _overlay: AnyObject?
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let messenger = registrar.messenger
@@ -124,6 +128,19 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
             self?.liveTranscriptSink = nil
             return nil
           }))
+
+    // Overlay actions: single permanent stream, emits a wire action name string.
+    FlutterEventChannel(name: "rbnotes_native/overlay_actions", binaryMessenger: messenger)
+      .setStreamHandler(
+        ClosureStreamHandler(
+          onListen: { [weak self] _, sink in
+            self?.overlayActionsSink = sink
+            return nil
+          },
+          onCancel: { [weak self] _ in
+            self?.overlayActionsSink = nil
+            return nil
+          }))
   }
 
   // MARK: - Method dispatch
@@ -171,6 +188,12 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
       runSync(result) { try self.dictation.pasteText(self.requireString(args, "text")) }
     case "playDictationSound":
       handlePlayDictationSound(args, result)
+    case "showActivityOverlay":
+      handleShowOverlay(args, result)
+    case "updateActivityOverlay":
+      handleUpdateOverlay(args, result)
+    case "hideActivityOverlay":
+      handleHideOverlay(args, result)
     default:
       reply(result, FlutterMethodNotImplemented)
     }
@@ -316,6 +339,76 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     }
     dictation.playSound(sound)
     reply(result, nil)
+  }
+
+  // MARK: - Activity overlay
+
+  /// Lazily-created overlay controller (macOS 13+). Returns nil on older
+  /// systems, where the overlay methods become no-ops.
+  @available(macOS 13.0, *)
+  private var overlay: ActivityOverlayController {
+    if let existing = _overlay as? ActivityOverlayController { return existing }
+    let controller = ActivityOverlayController()
+    controller.onAction = { [weak self] name in self?.emitOverlayAction(name) }
+    _overlay = controller
+    return controller
+  }
+
+  private func handleShowOverlay(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    guard let modeRaw = args["mode"] as? String, let mode = OverlayMode(rawValue: modeRaw),
+      let startedMs = args["startedAtMs"] as? Int
+    else {
+      return reply(result, RbNativeError.invalidArgument("showActivityOverlay requires mode, startedAtMs").flutterError)
+    }
+    let startedAt = Date(timeIntervalSince1970: Double(startedMs) / 1000)
+    onMain { [weak self] in
+      if #available(macOS 13.0, *) {
+        self?.overlay.show(mode: mode, startedAt: startedAt)
+      }
+      self?.reply(result, nil)
+    }
+  }
+
+  private func handleUpdateOverlay(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    // All fields optional; an unknown phase string is an invalid argument.
+    var phase: OverlayPhase?
+    if let raw = args["phase"] as? String {
+      guard let p = OverlayPhase(rawValue: raw) else {
+        return reply(result, RbNativeError.invalidArgument("unknown overlay phase '\(raw)'").flutterError)
+      }
+      phase = p
+    }
+    let mic = (args["micLevel"] as? NSNumber)?.doubleValue
+    let sys = (args["systemLevel"] as? NSNumber)?.doubleValue
+    let liveText = args["liveText"] as? String
+    let progress = (args["progress"] as? NSNumber)?.doubleValue
+    let message = args["message"] as? String
+    let paused = args["paused"] as? Bool
+    onMain { [weak self] in
+      if #available(macOS 13.0, *) {
+        self?.overlay.update(
+          micLevel: mic, systemLevel: sys, liveText: liveText, phase: phase,
+          progress: progress, message: message, paused: paused)
+      }
+      self?.reply(result, nil)
+    }
+  }
+
+  private func handleHideOverlay(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    let delayMs = (args["delayMs"] as? Int) ?? 0
+    onMain { [weak self] in
+      if #available(macOS 13.0, *) {
+        self?.overlay.hide(delayMs: delayMs)
+      }
+      self?.reply(result, nil)
+    }
+  }
+
+  private func emitOverlayAction(_ name: String) {
+    onMain { [weak self] in
+      guard let self, let sink = self.overlayActionsSink else { return }
+      sink(name)
+    }
   }
 
   // MARK: - Emit helpers (main-thread confined)
