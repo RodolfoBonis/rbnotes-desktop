@@ -7,6 +7,8 @@ import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/traffic_lights.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
+import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
+import 'package:rbnotes/features/settings/presentation/vocabulary_editor.dart';
 import 'package:rbnotes/native/rb_native.dart';
 
 /// Rótulos, tamanhos e descrições dos 5 modelos Whisper (design v3).
@@ -49,21 +51,28 @@ class SettingsModal extends StatefulWidget {
   const SettingsModal({
     required this.store,
     required this.native,
+    required this.vocabulary,
     required this.userName,
     required this.userEmail,
     required this.userInitials,
     required this.onClose,
     required this.onLogout,
+    required this.onEraseAllData,
     super.key,
   });
 
   final SettingsStore store;
   final RbNative native;
+  final VocabularyRepository vocabulary;
   final String userName;
   final String userEmail;
   final String userInitials;
   final VoidCallback onClose;
   final VoidCallback onLogout;
+
+  /// Apaga todas as notas, áudios e dados locais (ação destrutiva da aba
+  /// Privacidade).
+  final Future<void> Function() onEraseAllData;
 
   @override
   State<SettingsModal> createState() => _SettingsModalState();
@@ -71,6 +80,7 @@ class SettingsModal extends StatefulWidget {
 
 class _SettingsModalState extends State<SettingsModal> {
   SettingsTab _tab = SettingsTab.geral;
+  int _vocabCount = 0;
   final _downloaded = <WhisperModel>{};
   final _downloading = <WhisperModel, double>{};
   final _subs = <WhisperModel, StreamSubscription<double>>{};
@@ -81,6 +91,12 @@ class _SettingsModalState extends State<SettingsModal> {
   void initState() {
     super.initState();
     unawaited(_refreshModels());
+    unawaited(_refreshVocabCount());
+  }
+
+  Future<void> _refreshVocabCount() async {
+    final terms = await widget.vocabulary.getTerms();
+    if (mounted) setState(() => _vocabCount = terms.length);
   }
 
   Future<void> _refreshModels() async {
@@ -300,8 +316,10 @@ class _SettingsModalState extends State<SettingsModal> {
         ),
         _button(
           'Vocabulário personalizado',
-          'Nomes e termos que o Whisper deve reconhecer · 12 termos',
+          'Nomes e termos que o Whisper deve reconhecer · '
+              '$_vocabCount ${_vocabCount == 1 ? 'termo' : 'termos'}',
           'Editar',
+          onTap: _openVocabularyEditor,
         ),
       ],
     ),
@@ -447,10 +465,48 @@ class _SettingsModalState extends State<SettingsModal> {
           'Remove notas deste Mac e da nuvem',
           'Apagar…',
           destructive: true,
+          onTap: _confirmEraseAllData,
         ),
       ],
     ),
   ]);
+
+  Future<void> _openVocabularyEditor() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => VocabularyEditorDialog(repository: widget.vocabulary),
+    );
+    await _refreshVocabCount();
+  }
+
+  Future<void> _confirmEraseAllData() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Apagar todos os dados?'),
+        content: const Text(
+          'Isso remove todas as notas e os áudios deste Mac. '
+          'Esta ação não pode ser desfeita.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: RbTokens.destructive,
+            ),
+            child: const Text('Apagar tudo'),
+          ),
+        ],
+      ),
+    );
+    if (ok ?? false) {
+      await widget.onEraseAllData();
+    }
+  }
 
   // ---------------- row builders ----------------
 

@@ -337,6 +337,15 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     _notices.add('“$to” corrigido em ${result.notes} $noun$vocab');
   }
 
+  /// Renomeia o título da nota atual (ação "Renomear"). Marca como título
+  /// manual (não gerado pela IA).
+  Future<void> renameTitle(String title) async {
+    final noteId = _noteId;
+    final clean = title.trim();
+    if (noteId == null || clean.isEmpty) return;
+    await _notes.updateTitle(noteId, clean);
+  }
+
   Future<void> _cancelSubs() async {
     await _noteSub?.cancel();
     await _segSub?.cancel();

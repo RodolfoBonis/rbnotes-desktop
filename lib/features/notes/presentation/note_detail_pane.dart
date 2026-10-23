@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
@@ -6,6 +10,7 @@ import 'package:rbnotes/core/format/formatters.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/pulse_dot.dart';
 import 'package:rbnotes/data/database/database.dart';
+import 'package:rbnotes/features/notes/domain/note_export.dart';
 import 'package:rbnotes/features/notes/domain/note_models.dart';
 import 'package:rbnotes/features/notes/presentation/note_view_cubit.dart';
 import 'package:rbnotes/features/notes/presentation/widgets/waveform_player.dart';
@@ -18,14 +23,12 @@ class NoteDetailPane extends StatelessWidget {
   const NoteDetailPane({
     required this.onOpenAsk,
     required this.onStartRecording,
-    required this.onExport,
     required this.onFixWord,
     super.key,
   });
 
   final VoidCallback onOpenAsk;
   final VoidCallback onStartRecording;
-  final VoidCallback onExport;
   final ValueChanged<String> onFixWord;
 
   @override
@@ -38,7 +41,7 @@ class NoteDetailPane extends StatelessWidget {
           DetailToolbar(
             onOpenAsk: onOpenAsk,
             onStartRecording: onStartRecording,
-            onExport: onExport,
+            onExport: () => exportCurrentNote(context),
           ),
           Expanded(
             child: BlocBuilder<NoteViewCubit, NoteViewState>(
@@ -148,9 +151,16 @@ class _NoteBody extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Text(
-                'Renomear',
-                style: context.bodyText(size: 11.5, color: rb.secondary(0.65)),
+              GestureDetector(
+                onTap: () => renameCurrentNote(context, note),
+                behavior: HitTestBehavior.opaque,
+                child: Text(
+                  'Renomear',
+                  style: context.bodyText(
+                    size: 11.5,
+                    color: rb.secondary(0.65),
+                  ),
+                ),
               ),
             ],
           ),
@@ -365,8 +375,10 @@ class _ResumoTab extends StatelessWidget {
                 onTap: () => cubit.jumpToTime(quote.atMs),
                 behavior: HitTestBehavior.opaque,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                   decoration: BoxDecoration(
                     color: rb.fill,
                     borderRadius: BorderRadius.circular(12),
@@ -389,7 +401,8 @@ class _ResumoTab extends StatelessWidget {
                           children: [
                             TextSpan(text: '${quote.speaker} · '),
                             TextSpan(
-                              text: 'ouvir em '
+                              text:
+                                  'ouvir em '
                                   '${Formatters.durationMs(quote.atMs)}',
                               style: TextStyle(color: rb.accent),
                             ),
@@ -1084,9 +1097,121 @@ class _SectionCaps extends StatelessWidget {
 abstract final class NoteAiRepositoryCites {
   static List<int> of(String? raw) {
     if (raw == null || raw.isEmpty) return const [];
-    return raw.replaceAll(
-      RegExp(r'[\[\] ]'),
-      '',
-    ).split(',').where((s) => s.isNotEmpty).map(int.parse).toList();
+    return raw
+        .replaceAll(
+          RegExp(r'[\[\] ]'),
+          '',
+        )
+        .split(',')
+        .where((s) => s.isNotEmpty)
+        .map(int.parse)
+        .toList();
   }
+}
+
+/// Formatos de exportação oferecidos pela nota.
+enum _ExportFormat { markdown, txt, zip }
+
+/// Mostra um diálogo de renomear o título da nota atual.
+Future<void> renameCurrentNote(BuildContext context, NoteRow note) async {
+  final cubit = context.read<NoteViewCubit>();
+  final controller = TextEditingController(text: note.title);
+  final newTitle = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Renomear nota'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        decoration: const InputDecoration(hintText: 'Título da nota'),
+        onSubmitted: (v) => Navigator.of(ctx).pop(v),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('Cancelar'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(controller.text),
+          child: const Text('Salvar'),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  if (newTitle != null && newTitle.trim().isNotEmpty) {
+    await cubit.renameTitle(newTitle);
+  }
+}
+
+/// Exporta a nota atual: escolhe o formato e grava o arquivo via file_selector.
+Future<void> exportCurrentNote(BuildContext context) async {
+  final cubit = context.read<NoteViewCubit>();
+  final state = cubit.state;
+  final note = state.note;
+  if (note == null) return;
+
+  final format = await showDialog<_ExportFormat>(
+    context: context,
+    builder: (ctx) => SimpleDialog(
+      title: const Text('Exportar nota'),
+      children: [
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(ctx).pop(_ExportFormat.markdown),
+          child: const Text('Transcrição (.md)'),
+        ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(ctx).pop(_ExportFormat.txt),
+          child: const Text('Transcrição (.txt)'),
+        ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(ctx).pop(_ExportFormat.zip),
+          child: const Text('Pacote .zip (áudio + transcrição + resumo)'),
+        ),
+      ],
+    ),
+  );
+  if (format == null) return;
+
+  final base = _safeFileName(note.title.isEmpty ? 'nota' : note.title);
+  switch (format) {
+    case _ExportFormat.markdown:
+      await _saveBytes(
+        '$base.md',
+        utf8.encode(noteMarkdown(note, state.segments, const [])),
+      );
+    case _ExportFormat.txt:
+      await _saveBytes('$base.txt', utf8.encode(noteTxt(note, state.segments)));
+    case _ExportFormat.zip:
+      final entries = <ZipEntry>[
+        (
+          name: 'transcricao.md',
+          bytes: utf8.encode(noteMarkdown(note, state.segments, const [])),
+        ),
+        (
+          name: 'resumo.md',
+          bytes: utf8.encode(summaryMarkdown(note, state.ai)),
+        ),
+      ];
+      final audioPath = note.playbackPath;
+      if (audioPath != null && File(audioPath).existsSync()) {
+        entries.add((
+          name: '$base.m4a',
+          bytes: File(audioPath).readAsBytesSync(),
+        ));
+      }
+      await _saveBytes('$base.zip', buildZip(entries));
+  }
+}
+
+Future<void> _saveBytes(String suggestedName, List<int> bytes) async {
+  final location = await getSaveLocation(suggestedName: suggestedName);
+  if (location == null) return;
+  await File(location.path).writeAsBytes(bytes);
+}
+
+/// Deixa o título seguro para nome de arquivo.
+String _safeFileName(String title) {
+  final cleaned = title.replaceAll(RegExp('[^a-zA-Z0-9À-ÿ _-]'), '').trim();
+  return cleaned.isEmpty ? 'nota' : cleaned;
 }

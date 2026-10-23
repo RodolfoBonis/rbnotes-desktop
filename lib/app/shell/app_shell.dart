@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:rbnotes/app/shell/shell_overlay_cubit.dart';
 import 'package:rbnotes/app/shell/tray_controller.dart';
 import 'package:rbnotes/app/theme_mode_cubit.dart';
 import 'package:rbnotes/core/di/injector.dart';
+import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/auth/data/auth_service.dart';
@@ -227,7 +229,6 @@ class _MainColumn extends StatelessWidget {
               onOpenAsk: context.read<ShellOverlayCubit>().openAsk,
               onStartRecording: () =>
                   unawaited(context.read<RecordingCubit>().start()),
-              onExport: () {},
               onFixWord: context.read<ShellOverlayCubit>().openFix,
             );
         }
@@ -383,6 +384,7 @@ class _SettingsLayer extends StatelessWidget {
     return SettingsModal(
       store: di<SettingsStore>(),
       native: di(),
+      vocabulary: di(),
       userName: user?.name ?? 'Você',
       userEmail: user?.email ?? '',
       userInitials: user?.initials ?? 'V',
@@ -391,6 +393,55 @@ class _SettingsLayer extends StatelessWidget {
         overlay.closeSettings();
         await di<AuthService>().signOut();
       },
+      onEraseAllData: () async {
+        await _eraseAllData();
+        overlay.closeSettings();
+        await di<AuthService>().signOut();
+      },
     );
   }
+}
+
+/// Apaga todas as notas, diário, vocabulário e arquivos de áudio locais.
+///
+/// "Apagar todos os dados" da aba Privacidade. Mantém o schema (as coleções
+/// embutidas são recriadas no próximo boot pelo seeder).
+Future<void> _eraseAllData() async {
+  final db = di<AppDatabase>();
+  // Remove os arquivos de áudio antes de perder as referências no banco.
+  final notes = await di<NoteRepository>().getAllNotes();
+  for (final note in notes) {
+    for (final path in [
+      note.playbackPath,
+      note.micWavPath,
+      note.systemWavPath,
+    ]) {
+      if (path == null) continue;
+      try {
+        final file = File(path);
+        if (file.existsSync()) await file.delete();
+      } on Object {
+        // Arquivo ausente ou inacessível: segue apagando o resto.
+      }
+    }
+  }
+  // Limpa os diretórios de gravação que tenham sobrado.
+  try {
+    final dir = Directory(di<AppPaths>().recordingsDir);
+    if (dir.existsSync()) {
+      for (final entity in dir.listSync()) {
+        try {
+          entity.deleteSync(recursive: true);
+        } on Object {
+          // ignore
+        }
+      }
+    }
+  } on Object {
+    // ignore
+  }
+  // Zera as tabelas de conteúdo do usuário.
+  await db.delete(db.notes).go();
+  await db.delete(db.diaryEntries).go();
+  await db.delete(db.vocabulary).go();
 }
