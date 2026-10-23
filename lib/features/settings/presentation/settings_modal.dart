@@ -7,6 +7,7 @@ import 'package:rbnotes/app/theme_mode_cubit.dart';
 import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
+import 'package:rbnotes/core/ui/rb_select.dart';
 import 'package:rbnotes/core/ui/traffic_lights.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
@@ -577,11 +578,11 @@ class _SettingsModalState extends State<SettingsModal> {
     ValueChanged<String> onChanged,
   ) => _SettingRow(
     label: label,
-    trailing: _SelectPill(
+    trailing: RbSelect<String>(
       value: value,
-      onTap: () {
-        final i = options.indexOf(value);
-        onChanged(options[(i + 1) % options.length]);
+      options: options,
+      onChanged: (v) {
+        onChanged(v);
         setState(() {});
       },
     ),
@@ -1150,38 +1151,6 @@ class _Toggle extends StatelessWidget {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SelectPill extends StatelessWidget {
-  const _SelectPill({required this.value, required this.onTap});
-  final String value;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final rb = context.rb;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        height: 24,
-        padding: const EdgeInsets.fromLTRB(10, 0, 7, 0),
-        decoration: BoxDecoration(
-          color: rb.card,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: rb.onSurface(0.2), width: 0.5),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(value, style: context.bodyText(size: 12.5)),
-            const SizedBox(width: 8),
-            Icon(Icons.unfold_more, size: 12, color: rb.secondary(0.7)),
-          ],
         ),
       ),
     );
