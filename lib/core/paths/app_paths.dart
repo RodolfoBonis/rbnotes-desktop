@@ -6,7 +6,10 @@ import 'package:path_provider/path_provider.dart';
 
 /// Diretórios do app em Application Support/RbNotes.
 ///
-/// `recordings/` guarda os `.m4a`/`.wav`; `models/` os modelos whisper.
+/// `recordings/` guarda os `.m4a`/`.wav`. Os modelos whisper NÃO ficam aqui: o
+/// lado nativo os gerencia em `Application Support/RbNotes/models` (ver
+/// `docs/native-contract.md`), então o app não cria nem referencia esse
+/// diretório.
 class AppPaths {
   AppPaths._(this.root);
 
@@ -22,11 +25,8 @@ class AppPaths {
     await root.create(recursive: true);
     final paths = AppPaths._(root);
     await Directory(paths.recordingsDir).create(recursive: true);
-    await Directory(paths.modelsDir).create(recursive: true);
     return paths;
   }
 
   String get recordingsDir => p.join(root.path, 'recordings');
-
-  String get modelsDir => p.join(root.path, 'models');
 }
