@@ -5,6 +5,7 @@ import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
+import 'package:rbnotes/features/sync/data/audio_upload_queue.dart';
 
 /// Aplica as políticas de privacidade de dados do usuário:
 ///
@@ -18,11 +19,17 @@ class RetentionService {
   RetentionService({
     required SettingsStore settings,
     required NoteRepository notes,
+    AudioUploadQueue? audioQueue,
   }) : _settings = settings,
-       _notes = notes;
+       _notes = notes,
+       _audioQueue = audioQueue;
 
   final SettingsStore _settings;
   final NoteRepository _notes;
+
+  /// Opcional (só com backend): quando o sync está ligado, o áudio precisa
+  /// subir antes de ser apagado, então a remoção é delegada à fila.
+  final AudioUploadQueue? _audioQueue;
 
   Timer? _timer;
 
@@ -88,6 +95,17 @@ class RetentionService {
           note.micWavPath != null ||
           note.systemWavPath != null;
       if (!hasAudio) continue;
+
+      // Sync ligado + há `.m4a`: sobe antes de apagar. Enfileira (idempotente)
+      // e deixa a fila remover o arquivo local após o upload concluir, para não
+      // perder o áudio que ainda não está no servidor.
+      final playback = note.playbackPath;
+      if (_settings.syncEnabled && _audioQueue != null && playback != null) {
+        await _audioQueue.enqueue(note.id, playback);
+        continue;
+      }
+
+      // Sync desligado (ou sem áudio para subir): apaga imediatamente.
       await _deleteFiles(note);
       await _notes.clearAudioPaths(note.id);
     }
