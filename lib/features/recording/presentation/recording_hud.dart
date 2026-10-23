@@ -8,6 +8,9 @@ import 'package:rbnotes/core/ui/wave_bars.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 
 /// HUD flutuante de gravação e de processamento (fundo escuro, base da janela).
+/// Início do painel de detalhe (largura da sidebar + da lista de notas).
+const double _detailPaneLeft = 228 + 304;
+
 class RecordingHud extends StatelessWidget {
   const RecordingHud({super.key});
 
@@ -30,14 +33,19 @@ class RecordingHud extends StatelessWidget {
           transitionBuilder: fadeScaleTransition,
           child: !state.isActive
               ? const SizedBox.shrink()
-              : Align(
+              : Padding(
+                  // Centraliza o HUD sobre o painel de detalhe (à direita da
+                  // sidebar + lista), não sobre a janela inteira.
                   key: ValueKey(state.isProcessing),
-                  alignment: Alignment.bottomCenter,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 24),
-                    child: state.isProcessing
-                        ? _ProcessingCard(state: state)
-                        : _RecordingCard(state: state),
+                  padding: const EdgeInsets.only(left: _detailPaneLeft),
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: state.isProcessing
+                          ? _ProcessingCard(state: state)
+                          : _RecordingCard(state: state),
+                    ),
                   ),
                 ),
         );
@@ -322,9 +330,9 @@ class _DarkCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x59000000),
-            blurRadius: 50,
-            offset: Offset(0, 20),
+            color: Color(0x1F000000),
+            blurRadius: 40,
+            offset: Offset(0, 18),
           ),
         ],
       ),

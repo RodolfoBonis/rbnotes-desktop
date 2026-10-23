@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/traffic_lights.dart';
 import 'package:rbnotes/data/database/database.dart';
+import 'package:rbnotes/features/ai/data/ai_activity.dart';
 import 'package:rbnotes/features/library/presentation/library_cubit.dart';
 import 'package:rbnotes/features/library/presentation/sidebar_icons.dart';
 
@@ -15,6 +16,7 @@ class Sidebar extends StatelessWidget {
     required this.onOpenNewCollection,
     required this.onOpenSettings,
     required this.onToggleAppearance,
+    this.aiStatus,
     super.key,
   });
 
@@ -24,6 +26,10 @@ class Sidebar extends StatelessWidget {
   final VoidCallback onOpenNewCollection;
   final VoidCallback onOpenSettings;
   final VoidCallback onToggleAppearance;
+
+  /// Fase da IA (real): muda o card "Claude" para refletir fila/erro/limite.
+  /// Null = local-first (sempre "pronto").
+  final Stream<AiPhase>? aiStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -121,7 +127,7 @@ class Sidebar extends StatelessWidget {
                   ],
                 ),
               ),
-              _StatusCard(modelLabel: modelLabel),
+              _StatusCard(modelLabel: modelLabel, aiStatus: aiStatus),
               _ProfileRow(
                 name: userName,
                 initials: userInitials,
@@ -392,8 +398,9 @@ class _CollectionsHeader extends StatelessWidget {
 }
 
 class _StatusCard extends StatelessWidget {
-  const _StatusCard({required this.modelLabel});
+  const _StatusCard({required this.modelLabel, this.aiStatus});
   final String modelLabel;
+  final Stream<AiPhase>? aiStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -415,20 +422,48 @@ class _StatusCard extends StatelessWidget {
             subtitle: 'Local · Neural Engine · 1,6 GB',
           ),
           const SizedBox(height: 8),
-          _statusLine(
-            context,
-            title: 'Claude',
-            subtitle: 'Só recebe o texto, nunca o áudio',
-          ),
+          if (aiStatus == null)
+            _statusLine(
+              context,
+              title: 'Claude',
+              subtitle: 'Só recebe o texto, nunca o áudio',
+            )
+          else
+            StreamBuilder<AiPhase>(
+              stream: aiStatus,
+              initialData: AiPhase.idle,
+              builder: (context, snap) {
+                final phase = snap.data ?? AiPhase.idle;
+                final (subtitle, dot) = _claudeStatus(phase);
+                return _statusLine(
+                  context,
+                  title: 'Claude',
+                  subtitle: subtitle,
+                  dotColor: dot,
+                );
+              },
+            ),
         ],
       ),
     );
   }
 
+  static (String, Color) _claudeStatus(AiPhase phase) => switch (phase) {
+    AiPhase.idle => (
+      'Só recebe o texto, nunca o áudio',
+      RbTokens.statusGreen,
+    ),
+    AiPhase.queued => ('Na fila…', const Color(0xFFB7791F)),
+    AiPhase.streaming => ('Processando…', const Color(0xFFB7791F)),
+    AiPhase.error => ('Erro na IA', const Color(0xFFD70015)),
+    AiPhase.dailyLimit => ('Limite diário atingido', const Color(0xFFD70015)),
+  };
+
   Widget _statusLine(
     BuildContext context, {
     required String title,
     required String subtitle,
+    Color dotColor = RbTokens.statusGreen,
   }) {
     final rb = context.rb;
     return Row(
@@ -438,8 +473,8 @@ class _StatusCard extends StatelessWidget {
           margin: const EdgeInsets.only(top: 3),
           width: 7,
           height: 7,
-          decoration: const BoxDecoration(
-            color: RbTokens.statusGreen,
+          decoration: BoxDecoration(
+            color: dotColor,
             shape: BoxShape.circle,
           ),
         ),

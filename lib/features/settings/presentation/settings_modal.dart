@@ -9,6 +9,8 @@ import 'package:rbnotes/features/ai/data/ai_client.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/settings/presentation/vocabulary_editor.dart';
+import 'package:rbnotes/features/sync/data/sync_service.dart';
+import 'package:rbnotes/features/sync/data/sync_status.dart';
 import 'package:rbnotes/native/rb_native.dart';
 
 /// Rótulos, tamanhos e descrições dos 5 modelos Whisper (design v3).
@@ -58,6 +60,7 @@ class SettingsModal extends StatefulWidget {
     required this.onClose,
     required this.onLogout,
     required this.onEraseAllData,
+    this.sync,
     super.key,
   });
 
@@ -73,6 +76,10 @@ class SettingsModal extends StatefulWidget {
   /// Apaga todas as notas, áudios e dados locais (ação destrutiva da aba
   /// Privacidade).
   final Future<void> Function() onEraseAllData;
+
+  /// Sync real (quando o backend está ligado): habilita o status ao vivo e o
+  /// botão "Sincronizar agora" na aba Conta. Null = local-first (estático).
+  final SyncService? sync;
 
   @override
   State<SettingsModal> createState() => _SettingsModalState();
@@ -400,7 +407,10 @@ class _SettingsModalState extends State<SettingsModal> {
           _s.syncEnabled,
           (v) => _s.setSyncEnabled(value: v),
         ),
-        _status('Última sincronização', 'há 2 minutos'),
+        if (widget.sync != null)
+          _syncStatusRow(widget.sync!)
+        else
+          _status('Última sincronização', 'há 2 minutos'),
       ],
     ),
     _Group(
@@ -595,6 +605,55 @@ class _SettingsModalState extends State<SettingsModal> {
     sub: sub,
     meter: pct,
   );
+
+  Widget _syncStatusRow(SyncService sync) => StreamBuilder<SyncStatus>(
+    stream: sync.status,
+    initialData: sync.current,
+    builder: (context, snap) {
+      final status = snap.data ?? const SyncStatus();
+      final text = switch (status.phase) {
+        SyncPhase.syncing => 'Sincronizando…',
+        SyncPhase.offline => 'Sem conexão',
+        SyncPhase.error => status.message ?? 'Falha ao sincronizar',
+        SyncPhase.disabled => 'Desligado',
+        SyncPhase.idle => status.lastSyncAt == null
+            ? 'Nunca sincronizado'
+            : _ago(status.lastSyncAt!),
+      };
+      return _SettingRow(
+        label: 'Última sincronização',
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              text,
+              style: context.bodyText(
+                size: 12,
+                color: status.hasError
+                    ? const Color(0xFFD70015)
+                    : context.rb.secondary(0.65),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _PillButton(
+              label: 'Sincronizar agora',
+              onTap: status.isSyncing
+                  ? null
+                  : () => unawaited(sync.syncNow(manual: true)),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+
+  static String _ago(DateTime at) {
+    final diff = DateTime.now().difference(at);
+    if (diff.inMinutes < 1) return 'agora mesmo';
+    if (diff.inMinutes < 60) return 'há ${diff.inMinutes} min';
+    if (diff.inHours < 24) return 'há ${diff.inHours} h';
+    return 'há ${diff.inDays} d';
+  }
 
   Widget _modelRow(WhisperModel model) {
     final info = whisperModelInfo[model]!;

@@ -347,6 +347,10 @@ class _PermRow extends StatelessWidget {
   final bool topBorder;
   final VoidCallback onTap;
 
+  /// Permissões pedidas dentro do app (macOS mostra o diálogo nativo):
+  /// microfone e notificações. As demais só dá para abrir em Ajustes.
+  bool get _inApp => def.$1 == OnbPerm.mic || def.$1 == OnbPerm.notif;
+
   @override
   Widget build(BuildContext context) {
     final rb = context.rb;
@@ -441,7 +445,7 @@ class _PermRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(7),
             ),
             child: Text(
-              required ? 'Permitir' : 'Abrir Ajustes',
+              _inApp ? 'Permitir' : 'Abrir Ajustes',
               style: context.bodyText(size: 12.5, weight: FontWeight.w500),
             ),
           ),
