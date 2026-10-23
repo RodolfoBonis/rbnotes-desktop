@@ -80,53 +80,72 @@ class NoteSearchHit {
   final double rank;
 }
 
+/// Índice FTS5 cujo `rowid` espelha o `rowid` de `notes`. Sem a coluna
+/// `note_id UNINDEXED`: o join de volta usa `rowid`, e o corpo (`body`) é
+/// recomposto numa única passada por nota (ver
+/// [AppDatabase.recomposeSearchBody]), em vez de um `group_concat` por segmento
+/// inserido (custo quadrático na transcrição).
 const _createFtsTable = '''
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
-  note_id UNINDEXED, title, body,
+  title, body,
   tokenize = 'unicode61 remove_diacritics 2'
 )''';
 
+/// Gatilhos mínimos: criar/apagar a linha do índice e refletir o título.
+/// O corpo (transcrição) é mantido por [AppDatabase.recomposeSearchBody], nunca
+/// por gatilhos em `transcript_segments`.
 const _ftsTriggers = <String>[
   '''
 CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
-  INSERT INTO notes_fts(note_id, title, body) VALUES (new.id, new.title, '');
+  INSERT INTO notes_fts(rowid, title, body) VALUES (new.rowid, new.title, '');
 END''',
   '''
 CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
-  DELETE FROM notes_fts WHERE note_id = old.id;
+  DELETE FROM notes_fts WHERE rowid = old.rowid;
 END''',
   '''
 CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE OF title ON notes BEGIN
-  UPDATE notes_fts SET title = new.title WHERE note_id = new.id;
-END''',
-  '''
-CREATE TRIGGER IF NOT EXISTS seg_ai AFTER INSERT ON transcript_segments BEGIN
-  UPDATE notes_fts SET body = (
-    SELECT COALESCE(group_concat(content, ' '), '')
-    FROM transcript_segments WHERE note_id = new.note_id
-  ) WHERE note_id = new.note_id;
-END''',
-  '''
-CREATE TRIGGER IF NOT EXISTS seg_au AFTER UPDATE ON transcript_segments BEGIN
-  UPDATE notes_fts SET body = (
-    SELECT COALESCE(group_concat(content, ' '), '')
-    FROM transcript_segments WHERE note_id = new.note_id
-  ) WHERE note_id = new.note_id;
-END''',
-  '''
-CREATE TRIGGER IF NOT EXISTS seg_ad AFTER DELETE ON transcript_segments BEGIN
-  UPDATE notes_fts SET body = (
-    SELECT COALESCE(group_concat(content, ' '), '')
-    FROM transcript_segments WHERE note_id = old.note_id
-  ) WHERE note_id = old.note_id;
+  UPDATE notes_fts SET title = new.title WHERE rowid = new.rowid;
 END''',
 ];
 
+/// Nomes de gatilhos (v1 e v2) a derrubar antes de recriar o índice.
+const _legacyFtsTriggers = <String>[
+  'notes_ai',
+  'notes_ad',
+  'notes_au',
+  'seg_ai',
+  'seg_au',
+  'seg_ad',
+];
+
+/// Recompõe o corpo do índice de uma nota a partir dos seus segmentos atuais.
+const _recomposeBodySql = '''
+UPDATE notes_fts
+SET body = (
+  SELECT COALESCE(group_concat(content, ' '), '')
+  FROM transcript_segments WHERE note_id = ?1
+)
+WHERE rowid = (SELECT rowid FROM notes WHERE id = ?1)''';
+
+/// Repopula todo o índice a partir de `notes` + `transcript_segments`.
+const _rebuildIndexSql = '''
+INSERT INTO notes_fts(rowid, title, body)
+SELECT n.rowid, n.title, COALESCE((
+  SELECT group_concat(s.content, ' ')
+  FROM transcript_segments s WHERE s.note_id = n.id
+), '')
+FROM notes n''';
+
+/// `snippet` do corpo (coluna 1) e do título (coluna 0). Quando o match está só
+/// no título, o trecho do corpo não traz destaque (`[`), então o app usa o do
+/// título como fallback (ver [AppDatabase.search]).
 const _searchSql = '''
 SELECT n.*,
-       bm25(notes_fts, 0.0, 10.0, 1.0) AS rank,
-       snippet(notes_fts, 2, '[', ']', '…', 12) AS snippet
-FROM notes_fts JOIN notes n ON n.id = notes_fts.note_id
+       bm25(notes_fts, 10.0, 1.0) AS rank,
+       snippet(notes_fts, 1, '[', ']', '…', 12) AS snippet_body,
+       snippet(notes_fts, 0, '[', ']', '…', 12) AS snippet_title
+FROM notes_fts JOIN notes n ON n.rowid = notes_fts.rowid
 WHERE notes_fts MATCH ?
 ORDER BY n.pinned DESC, rank''';
 
@@ -138,7 +157,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -149,19 +168,41 @@ class AppDatabase extends _$AppDatabase {
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
     },
-    // Migrações futuras entram aqui, versionadas por [schemaVersion].
     onUpgrade: (m, from, to) async {
-      // schemaVersion 1 — ainda sem upgrades.
+      // v2: FTS reestruturado (rowid = notes.rowid, sem gatilhos por segmento).
+      // Derruba o índice/gatilhos antigos e reconstrói do zero.
+      if (from < 2) {
+        for (final name in _legacyFtsTriggers) {
+          await customStatement('DROP TRIGGER IF EXISTS $name');
+        }
+        await customStatement('DROP TABLE IF EXISTS notes_fts');
+        await _createSearchIndex();
+        await rebuildSearchIndex();
+      }
     },
   );
 
-  /// Cria a tabela FTS5 (título + transcrição) e os gatilhos que a mantêm
-  /// em sincronia com `notes` e `transcript_segments`.
+  /// Cria a tabela FTS5 (título + transcrição) e os gatilhos mínimos.
   Future<void> _createSearchIndex() async {
     await customStatement(_createFtsTable);
     for (final sql in _ftsTriggers) {
       await customStatement(sql);
     }
+  }
+
+  /// Recompõe o corpo do índice FTS de [noteId] a partir dos seus segmentos.
+  /// Chamado uma vez por `NoteRepository.replaceSegments`, na transação.
+  Future<void> recomposeSearchBody(String noteId) async {
+    await customStatement(_recomposeBodySql, [noteId]);
+  }
+
+  /// Reconstrói todo o índice de busca a partir de `notes`/`transcript_segments`
+  /// (recuperação de inconsistências e migração).
+  Future<void> rebuildSearchIndex() async {
+    await transaction(() async {
+      await customStatement('DELETE FROM notes_fts');
+      await customStatement(_rebuildIndexSql);
+    });
   }
 
   /// Transforma o texto do usuário numa expressão MATCH de FTS5 segura:
@@ -179,7 +220,8 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// Busca FTS com ranking bm25 (título pesa mais) e trecho destacado.
-  /// Pinned primeiro, depois por relevância.
+  /// Pinned primeiro, depois por relevância. O trecho usa o corpo quando há
+  /// match nele; senão, cai para o título destacado.
   Future<List<NoteSearchHit>> search(String query) async {
     final match = buildMatchQuery(query);
     if (match == null) return [];
@@ -188,15 +230,15 @@ class AppDatabase extends _$AppDatabase {
       variables: [Variable<String>(match)],
       readsFrom: {notes, transcriptSegments},
     ).get();
-    return rows
-        .map(
-          (row) => NoteSearchHit(
-            note: notes.map(row.data),
-            snippet: row.read<String>('snippet'),
-            rank: row.read<double>('rank'),
-          ),
-        )
-        .toList();
+    return rows.map((row) {
+      final body = row.read<String>('snippet_body');
+      final title = row.read<String>('snippet_title');
+      return NoteSearchHit(
+        note: notes.map(row.data),
+        snippet: body.contains('[') ? body : title,
+        rank: row.read<double>('rank'),
+      );
+    }).toList();
   }
 }
 

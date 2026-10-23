@@ -95,4 +95,53 @@ void main() {
     expect(await repo.search('antigo'), isEmpty);
     expect((await repo.search('novo')).single.note.id, 'a');
   });
+
+  test('match só no título destaca o título (snippet fallback)', () async {
+    final repo = memoryRepo(db);
+    await seedNote(db, id: 'a', title: 'Reunião de planejamento');
+    await seedSegment(db, noteId: 'a', content: 'conteúdo sem o termo buscado');
+    final hit = (await repo.search('planejamento')).single;
+    expect(hit.note.id, 'a');
+    // Sem match no corpo → o snippet cai para o título destacado.
+    expect(hit.snippet, contains('['));
+    expect(hit.snippet.toLowerCase(), contains('planejamento'));
+  });
+
+  test('replaceSegments repetido recompõe o corpo a cada chamada', () async {
+    final repo = memoryRepo(db);
+    await seedNote(db, id: 'a', title: 'Nota');
+    for (final word in ['alpha', 'beta', 'gamma']) {
+      await repo.replaceSegments('a', [
+        DraftSegment(
+          speaker: SegmentSpeaker.me,
+          startMs: 0,
+          endMs: 1000,
+          content: 'palavra $word',
+        ),
+      ]);
+    }
+    expect(await repo.search('alpha'), isEmpty);
+    expect(await repo.search('beta'), isEmpty);
+    expect((await repo.search('gamma')).single.note.id, 'a');
+  });
+
+  test('rebuildSearchIndex repopula o índice do zero', () async {
+    final repo = memoryRepo(db);
+    await seedNote(db, id: 'a', title: 'Título');
+    await repo.replaceSegments('a', const [
+      DraftSegment(
+        speaker: SegmentSpeaker.me,
+        startMs: 0,
+        endMs: 1000,
+        content: 'corpo pesquisável',
+      ),
+    ]);
+    // Corrompe o índice.
+    await db.customStatement('DELETE FROM notes_fts');
+    expect(await repo.search('pesquisável'), isEmpty);
+    // Reconstrói e volta a encontrar por título e por corpo.
+    await db.rebuildSearchIndex();
+    expect((await repo.search('título')).single.note.id, 'a');
+    expect((await repo.search('pesquisável')).single.note.id, 'a');
+  });
 }

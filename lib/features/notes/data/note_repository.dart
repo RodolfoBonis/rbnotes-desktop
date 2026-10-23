@@ -85,6 +85,11 @@ class NoteRepository {
   Future<NoteRow?> getNote(String id) =>
       (_db.select(_db.notes)..where((n) => n.id.equals(id))).getSingleOrNull();
 
+  /// Todas as notas num dado [status] (ex.: `recording`/`transcribing`
+  /// pendentes após um crash, para recuperação no boot).
+  Future<List<NoteRow>> notesWithStatus(NoteStatus status) =>
+      (_db.select(_db.notes)..where((n) => n.status.equalsValue(status))).get();
+
   // ---------- Escrita de notas ----------
 
   Future<void> insertNote(NotesCompanion note) =>
@@ -129,13 +134,34 @@ class NoteRepository {
     );
   }
 
+  /// Atualiza uma nota órfã (status `recording` após crash) com os caminhos dos
+  /// `.wav` recuperados e a marca como `transcribing`. Diferente de
+  /// [finalizeRecording], não exige `playbackPath` (pode não haver `.m4a`).
+  Future<void> recoverRecording(
+    String id, {
+    required int durationMs,
+    required String micWavPath,
+    String? systemWavPath,
+  }) {
+    return (_db.update(_db.notes)..where((n) => n.id.equals(id))).write(
+      NotesCompanion(
+        durationMs: Value(durationMs),
+        micWavPath: Value(micWavPath),
+        systemWavPath: Value(systemWavPath),
+        status: const Value(NoteStatus.transcribing),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
   Future<void> deleteNote(String id) =>
       (_db.delete(_db.notes)..where((n) => n.id.equals(id))).go();
 
   // ---------- Segmentos ----------
 
   /// Substitui todos os segmentos de uma nota (ordem por [DraftSegment.startMs]
-  /// fica a cargo de quem monta a lista).
+  /// fica a cargo de quem monta a lista) e recompõe o índice de busca numa
+  /// única passada, dentro da mesma transação.
   Future<void> replaceSegments(
     String noteId,
     List<DraftSegment> segments,
@@ -158,6 +184,7 @@ class NoteRepository {
           ),
         );
       });
+      await _db.recomposeSearchBody(noteId);
     });
   }
 

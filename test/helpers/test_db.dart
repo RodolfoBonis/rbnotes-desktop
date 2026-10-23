@@ -58,4 +58,7 @@ Future<void> seedSegment(
           content: content,
         ),
       );
+  // Mantém o índice FTS em sincronia (em produção isso é feito por
+  // NoteRepository.replaceSegments; aqui inserimos segmentos crus).
+  await db.recomposeSearchBody(noteId);
 }
