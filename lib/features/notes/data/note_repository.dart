@@ -246,6 +246,23 @@ class NoteRepository {
         .get();
   }
 
+  /// Conta as ocorrências de [word] e em quantas notas aparece (prévia do
+  /// modal "Corrigir palavra").
+  Future<WordFixResult> countWord(String word) async {
+    if (word.isEmpty) return const WordFixResult(notes: 0, occurrences: 0);
+    final segments = await _db.select(_db.transcriptSegments).get();
+    final notesSet = <String>{};
+    var occ = 0;
+    for (final s in segments) {
+      final n = word.allMatches(s.content).length;
+      if (n > 0) {
+        occ += n;
+        notesSet.add(s.noteId);
+      }
+    }
+    return WordFixResult(notes: notesSet.length, occurrences: occ);
+  }
+
   /// Corrige uma palavra na transcrição: substitui [from] por [to] na nota
   /// [onlyNoteId] (se dado) ou em todas as notas. Recompõe o índice FTS das
   /// notas afetadas. Retorna quantas notas e ocorrências mudaram.
