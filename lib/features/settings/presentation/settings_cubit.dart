@@ -12,6 +12,7 @@ class SettingsState extends Equatable {
     required this.dictationMode,
     required this.hotkey,
     this.permissions = const {},
+    this.hotkeyStatus = DictationHotkeyStatus.disabled,
   });
 
   final WhisperModel model;
@@ -20,6 +21,10 @@ class SettingsState extends Equatable {
   final DictationMode dictationMode;
   final Hotkey hotkey;
   final Map<RbPermission, PermissionStatus> permissions;
+
+  /// Estado do registro do atalho (ex.: falta de Acessibilidade), para avisar
+  /// na UI em vez de reportar erro ao Sentry a cada boot.
+  final DictationHotkeyStatus hotkeyStatus;
 
   PermissionStatus statusOf(RbPermission p) =>
       permissions[p] ?? PermissionStatus.notDetermined;
@@ -31,6 +36,7 @@ class SettingsState extends Equatable {
     DictationMode? dictationMode,
     Hotkey? hotkey,
     Map<RbPermission, PermissionStatus>? permissions,
+    DictationHotkeyStatus? hotkeyStatus,
   }) => SettingsState(
     model: model ?? this.model,
     captureSystemAudio: captureSystemAudio ?? this.captureSystemAudio,
@@ -38,6 +44,7 @@ class SettingsState extends Equatable {
     dictationMode: dictationMode ?? this.dictationMode,
     hotkey: hotkey ?? this.hotkey,
     permissions: permissions ?? this.permissions,
+    hotkeyStatus: hotkeyStatus ?? this.hotkeyStatus,
   );
 
   @override
@@ -48,6 +55,7 @@ class SettingsState extends Equatable {
     dictationMode,
     hotkey,
     permissions,
+    hotkeyStatus,
   ];
 }
 
@@ -68,6 +76,7 @@ class SettingsCubit extends Cubit<SettingsState> {
            dictationEnabled: store.dictationEnabled,
            dictationMode: store.dictationMode,
            hotkey: store.hotkey,
+           hotkeyStatus: dictation.hotkeyStatus,
          ),
        );
 
@@ -80,7 +89,12 @@ class SettingsCubit extends Cubit<SettingsState> {
     for (final p in RbPermission.values) {
       entries[p] = await _native.permissionStatus(p);
     }
-    emit(state.copyWith(permissions: entries));
+    emit(
+      state.copyWith(
+        permissions: entries,
+        hotkeyStatus: _dictation.hotkeyStatus,
+      ),
+    );
   }
 
   Future<void> requestPermission(RbPermission p) async {
@@ -104,17 +118,20 @@ class SettingsCubit extends Cubit<SettingsState> {
     await _store.setDictationEnabled(value: value);
     emit(state.copyWith(dictationEnabled: value));
     await _dictation.applySettings();
+    emit(state.copyWith(hotkeyStatus: _dictation.hotkeyStatus));
   }
 
   Future<void> setDictationMode(DictationMode mode) async {
     await _store.setDictationMode(mode);
     emit(state.copyWith(dictationMode: mode));
     await _dictation.applySettings();
+    emit(state.copyWith(hotkeyStatus: _dictation.hotkeyStatus));
   }
 
   Future<void> setHotkey(Hotkey hotkey) async {
     await _store.setHotkey(hotkey);
     emit(state.copyWith(hotkey: hotkey));
     await _dictation.applySettings();
+    emit(state.copyWith(hotkeyStatus: _dictation.hotkeyStatus));
   }
 }

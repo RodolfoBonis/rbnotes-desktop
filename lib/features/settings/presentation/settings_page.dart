@@ -87,6 +87,9 @@ class _SettingsBody extends StatelessWidget {
                 ),
                 _HotkeyRow(state: state),
                 _DictationModeRow(state: state),
+                if (state.dictationEnabled &&
+                    state.hotkeyStatus.error != null)
+                  _HotkeyErrorRow(message: state.hotkeyStatus.error!),
               ],
             ),
             _Section(
@@ -330,6 +333,48 @@ class _DictationModeRow extends StatelessWidget {
         selected: {state.dictationMode},
         showSelectedIcon: false,
         onSelectionChanged: (s) => cubit.setDictationMode(s.first),
+      ),
+    );
+  }
+}
+
+class _HotkeyErrorRow extends StatelessWidget {
+  const _HotkeyErrorRow({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).extension<FormaThemeExtension>()!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: FormaSpacing.sm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, size: 18, color: c.errorColor),
+          const SizedBox(width: FormaSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Atalho não registrado',
+                  style: context.formaTypography.body14Medium.copyWith(
+                    color: c.errorColor,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Verifique a permissão de Acessibilidade abaixo. '
+                  'Detalhe: $message',
+                  style: context.formaTypography.caption12.copyWith(
+                    color: c.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
