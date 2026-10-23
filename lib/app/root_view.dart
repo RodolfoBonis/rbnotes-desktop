@@ -48,6 +48,8 @@ class RootView extends StatelessWidget {
                   notes: di(),
                   noteAi: di(),
                   library: di(),
+                  queue: di(),
+                  enrichment: di(),
                 ),
               ),
               BlocProvider(

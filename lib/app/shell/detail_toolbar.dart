@@ -8,11 +8,15 @@ class DetailToolbar extends StatelessWidget {
     required this.onOpenAsk,
     required this.onStartRecording,
     this.onExport,
+    this.onMore,
     super.key,
   });
 
   final VoidCallback onOpenAsk;
   final VoidCallback onStartRecording;
+
+  /// Abre o menu "…" (ações da nota) na posição do toque. Null em diário/tarefas.
+  final void Function(Offset position)? onMore;
 
   /// Exportar a nota atual. Quando `null`, o ícone de compartilhar fica inerte
   /// (diário/tarefas não têm nota em foco), mas continua visível como no design.
@@ -78,6 +82,22 @@ class DetailToolbar extends StatelessWidget {
               ),
             ),
           ),
+          if (onMore != null) ...[
+            const SizedBox(width: 2),
+            GestureDetector(
+              onTapDown: (d) => onMore!(d.globalPosition),
+              behavior: HitTestBehavior.opaque,
+              child: SizedBox(
+                width: 28,
+                height: 28,
+                child: Icon(
+                  Icons.more_horiz,
+                  size: 17,
+                  color: rb.secondary(0.75),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(width: 8),
           GestureDetector(
             onTap: onStartRecording,

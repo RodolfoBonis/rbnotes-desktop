@@ -28,6 +28,7 @@ import 'package:rbnotes/features/library/presentation/note_list.dart';
 import 'package:rbnotes/features/library/presentation/sidebar.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
+import 'package:rbnotes/features/notes/presentation/note_actions.dart';
 import 'package:rbnotes/features/notes/presentation/note_detail_pane.dart';
 import 'package:rbnotes/features/notes/presentation/note_view_cubit.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
@@ -134,6 +135,27 @@ class _AppShellState extends State<AppShell> {
         !context.read<RecordingCubit>().state.isActive) {
       unawaited(context.read<NoteViewCubit>().togglePlay());
       return KeyEventResult.handled;
+    }
+    // Apagar a nota selecionada (⌫ / ⌘⌫). Não dispara enquanto se digita: um
+    // TextField em foco consome o backspace antes de chegar aqui.
+    if (key == LogicalKeyboardKey.backspace ||
+        key == LogicalKeyboardKey.delete) {
+      final library = context.read<LibraryCubit>();
+      final lib = library.state;
+      final id = lib.selectedNoteId;
+      if (id != null && lib.view == MainView.note) {
+        NoteRow? note;
+        for (final n in lib.notes) {
+          if (n.id == id) {
+            note = n;
+            break;
+          }
+        }
+        if (note != null) {
+          unawaited(confirmAndDeleteNote(context, note, library));
+          return KeyEventResult.handled;
+        }
+      }
     }
     return KeyEventResult.ignored;
   }

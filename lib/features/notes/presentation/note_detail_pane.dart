@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -12,9 +13,11 @@ import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/motion.dart';
 import 'package:rbnotes/core/ui/pulse_dot.dart';
 import 'package:rbnotes/data/database/database.dart';
+import 'package:rbnotes/features/library/presentation/library_cubit.dart';
 import 'package:rbnotes/features/notes/domain/note_export.dart';
 import 'package:rbnotes/features/notes/domain/note_models.dart';
 import 'package:rbnotes/features/notes/domain/note_summary_status.dart';
+import 'package:rbnotes/features/notes/presentation/note_actions.dart';
 import 'package:rbnotes/features/notes/presentation/note_view_cubit.dart';
 import 'package:rbnotes/features/notes/presentation/widgets/waveform_player.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
@@ -46,6 +49,18 @@ class NoteDetailPane extends StatelessWidget {
             onOpenAsk: onOpenAsk,
             onStartRecording: onStartRecording,
             onExport: () => exportCurrentNote(context),
+            onMore: (pos) {
+              final note = context.read<NoteViewCubit>().state.note;
+              if (note == null) return;
+              unawaited(
+                showNoteContextMenu(
+                  context: context,
+                  position: pos,
+                  note: note,
+                  library: context.read<LibraryCubit>(),
+                ),
+              );
+            },
           ),
           Expanded(
             child: BlocBuilder<NoteViewCubit, NoteViewState>(

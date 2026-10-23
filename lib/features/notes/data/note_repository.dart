@@ -217,6 +217,17 @@ class NoteRepository {
   Future<void> deleteNote(String id) =>
       (_db.delete(_db.notes)..where((n) => n.id.equals(id))).go();
 
+  /// Exclusão para o usuário: marca `deleted = true` e bumpa `updatedAt`, para
+  /// a nota sumir da UI (as queries filtram `deleted = false`) e um tombstone
+  /// propagar pelo sync. O SyncTrigger dispara no update da tabela `notes`.
+  Future<void> softDeleteNote(String id) =>
+      (_db.update(_db.notes)..where((n) => n.id.equals(id))).write(
+        NotesCompanion(
+          deleted: const Value(true),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+
   /// Remove **localmente** uma nota e todo o seu rastro de sync (sem gerar
   /// tombstone para o servidor). Usado só para limpar dados de seed que nunca
   /// saíram deste dispositivo — ver DemoSeeder.purgeSeedNotes.

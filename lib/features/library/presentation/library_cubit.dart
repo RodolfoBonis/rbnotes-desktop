@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc/bloc.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:equatable/equatable.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/enrichment_service.dart';
@@ -10,6 +11,9 @@ import 'package:rbnotes/features/collections/domain/forgotten_tasks.dart';
 import 'package:rbnotes/features/library/data/library_repository.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
+import 'package:rbnotes/features/notes/domain/note_models.dart';
+import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
+import 'package:uuid/uuid.dart';
 
 /// Qual seção da sidebar está selecionada.
 enum SectionKind { all, fav, diary, folder, collection }
@@ -230,9 +234,15 @@ class LibraryCubit extends Cubit<LibraryState> {
     required NoteRepository notes,
     required NoteAiRepository noteAi,
     required LibraryRepository library,
+    TranscriptionQueue? queue,
+    EnrichmentService? enrichment,
+    Uuid? uuid,
   }) : _notes = notes,
        _noteAi = noteAi,
        _library = library,
+       _queue = queue,
+       _enrichment = enrichment,
+       _uuid = uuid ?? const Uuid(),
        super(const LibraryState()) {
     _folders = _library.watchFolders().listen((v) {
       emit(state.copyWith(folders: v, loading: false));
@@ -255,6 +265,9 @@ class LibraryCubit extends Cubit<LibraryState> {
   final NoteRepository _notes;
   final NoteAiRepository _noteAi;
   final LibraryRepository _library;
+  final TranscriptionQueue? _queue;
+  final EnrichmentService? _enrichment;
+  final Uuid _uuid;
 
   StreamSubscription<List<FolderRow>>? _folders;
   StreamSubscription<List<CollectionRow>>? _collections;
@@ -320,6 +333,121 @@ class LibraryCubit extends Cubit<LibraryState> {
   }
 
   void setQuery(String query) => emit(state.copyWith(query: query));
+
+  // ---------- Ações de nota (menu de contexto / toolbar) ----------
+
+  Future<void> renameNote(String id, String title) async {
+    final clean = title.trim();
+    if (clean.isEmpty) return;
+    await _notes.updateTitle(id, clean);
+  }
+
+  Future<void> toggleFavorite(NoteRow note) =>
+      _notes.setFavorite(note.id, favorite: !note.favorite);
+
+  Future<void> moveToFolder(String id, String? folderId) =>
+      _notes.setFolder(id, folderId);
+
+  Future<void> retryTranscription(String id) async {
+    await _notes.setStatus(id, NoteStatus.transcribing);
+    _queue?.retry(id);
+  }
+
+  Future<void> regenerateSummary(String id) =>
+      _enrichment?.enrichNote(id, force: true) ?? Future<void>.value();
+
+  /// Exclui (soft-delete) a nota. Se era a selecionada, seleciona a próxima
+  /// nota visível da seção.
+  Future<void> deleteNote(String id) async {
+    final wasSelected = state.selectedNoteId == id;
+    await _notes.softDeleteNote(id);
+    if (!wasSelected) return;
+    final remaining = state
+        .notesForSection(DateTime.now())
+        .where((n) => n.id != id)
+        .toList();
+    emit(
+      state.copyWith(
+        selectedNoteId: remaining.isEmpty ? null : remaining.first.id,
+        clearSelection: remaining.isEmpty,
+      ),
+    );
+  }
+
+  /// Duplica a nota (texto, resumo e ações). Retorna o id da cópia e a
+  /// seleciona.
+  Future<String?> duplicateNote(String id) async {
+    final src = await _notes.getNote(id);
+    if (src == null) return null;
+    final newId = _uuid.v4();
+    final now = DateTime.now();
+    await _notes.insertNote(
+      NotesCompanion.insert(
+        id: newId,
+        title: Value(
+          src.title.isEmpty ? 'Cópia' : '${src.title} (cópia)',
+        ),
+        createdAt: now,
+        updatedAt: now,
+        durationMs: Value(src.durationMs),
+        playbackPath: Value(src.playbackPath),
+        micWavPath: Value(src.micWavPath),
+        systemWavPath: Value(src.systemWavPath),
+        status: src.status,
+        source: src.source,
+        folderId: Value(src.folderId),
+        favorite: const Value(false),
+        kind: Value(src.kind),
+        aiStatus: Value(src.aiStatus),
+        speakersJson: Value(src.speakersJson),
+      ),
+    );
+    final segs = await _notes.getSegments(id);
+    if (segs.isNotEmpty) {
+      await _notes.replaceSegments(newId, [
+        for (final s in segs)
+          DraftSegment(
+            speaker: s.speaker,
+            startMs: s.startMs,
+            endMs: s.endMs,
+            content: s.content,
+            wordsJson: s.wordsJson,
+          ),
+      ]);
+    }
+    final ai = await _noteAi.getNoteAi(id);
+    if (ai != null) {
+      await _noteAi.saveNoteAi(newId, ai);
+      await _noteAi.replaceActions(newId, ai.actions, genId: _uuid.v4);
+    }
+    emit(state.copyWith(selectedNoteId: newId, view: MainView.note));
+    return newId;
+  }
+
+  /// Dados da nota [id] para exportação (nota + segmentos + resumo).
+  Future<({NoteRow? note, List<SegmentRow> segments, NoteAi? ai})> exportBundle(
+    String id,
+  ) async {
+    final note = await _notes.getNote(id);
+    final segments = await _notes.getSegments(id);
+    final ai = await _noteAi.getNoteAi(id);
+    return (note: note, segments: segments, ai: ai);
+  }
+
+  /// Monta o texto da transcrição de [id] para "Copiar transcrição".
+  Future<String> transcriptText(String id) async {
+    final note = await _notes.getNote(id);
+    final segs = await _notes.getSegments(id);
+    final names = EnrichmentService.decodeSpeakers(note?.speakersJson);
+    final buffer = StringBuffer();
+    for (final s in segs) {
+      final speaker = s.speaker == SegmentSpeaker.me
+          ? (names.isNotEmpty ? names.first : 'Você')
+          : 'Outros';
+      buffer.writeln('$speaker: ${s.content}');
+    }
+    return buffer.toString().trim();
+  }
 
   @override
   Future<void> close() async {

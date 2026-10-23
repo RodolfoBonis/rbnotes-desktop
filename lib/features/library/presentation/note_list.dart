@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
@@ -5,6 +7,7 @@ import 'package:rbnotes/core/format/formatters.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/library/presentation/library_cubit.dart';
+import 'package:rbnotes/features/notes/presentation/note_actions.dart';
 
 /// Lista de notas (304px): título da seção, busca FTS, grupos por data e o
 /// item selecionado em laranja.
@@ -379,6 +382,17 @@ class _NoteCard extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 2),
       child: GestureDetector(
         onTap: onTap,
+        onSecondaryTapDown: (d) {
+          onTap(); // seleciona a nota ao abrir o menu de contexto
+          unawaited(
+            showNoteContextMenu(
+              context: context,
+              position: d.globalPosition,
+              note: note,
+              library: context.read<LibraryCubit>(),
+            ),
+          );
+        },
         behavior: HitTestBehavior.opaque,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
