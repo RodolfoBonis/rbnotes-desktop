@@ -25,6 +25,7 @@ class AppConfig {
     required this.authIssuer,
     required this.authClientId,
     required this.authRedirectUri,
+    required this.demoSeed,
   });
 
   factory AppConfig.forFlavor(Flavor flavor) {
@@ -36,6 +37,14 @@ class AppConfig {
     final defaultBase = flavor == Flavor.production
         ? 'https://api.notes.rodolfodebonis.com.br/v1'
         : 'http://localhost:8080/v1';
+
+    // Dados de demonstração (DemoSeeder) só no flavor development, ou quando
+    // explicitamente forçados com --dart-define=RBNOTES_DEMO=true. Nunca no
+    // build de produção padrão (o seed vazou para a máquina do dono).
+    const defineDemo = String.fromEnvironment('RBNOTES_DEMO');
+    final demoSeed = defineDemo.isNotEmpty
+        ? defineDemo == 'true'
+        : flavor == Flavor.development;
 
     return AppConfig(
       environment: flavor.name,
@@ -56,6 +65,7 @@ class AppConfig {
         'RBNOTES_AUTH_REDIRECT_URI',
         defaultValue: 'http://127.0.0.1:53682/callback',
       ),
+      demoSeed: demoSeed,
     );
   }
 
@@ -70,6 +80,10 @@ class AppConfig {
   final String authIssuer;
   final String authClientId;
   final String authRedirectUri;
+
+  /// Quando `true`, o `DemoSeeder` popula o banco com os dados do design na
+  /// primeira execução. Só em development ou com `RBNOTES_DEMO=true`.
+  final bool demoSeed;
 
   bool get hasSentry => sentryDsn.isNotEmpty;
 }

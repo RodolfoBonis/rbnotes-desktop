@@ -82,6 +82,30 @@ class DemoSeeder {
   final DiaryRepository _diary;
   final Uuid _uuid;
 
+  /// Ids das notas de seed (fixos). Usados para limpar o seed que vazou para o
+  /// build de produção do dono (ver [purgeSeedNotes]).
+  Iterable<String> get seedNoteIds => _notes_().map((n) => n.id);
+
+  /// Remove do banco as notas de seed conhecidas **que não foram editadas**.
+  /// Critério conservador de "não editada": a nota ainda tem o id e o título
+  /// originais e `updatedAt == createdAt` (o seeder grava os dois iguais; toda
+  /// renomeação, re-transcrição ou re-enriquecimento mexe em `updatedAt`).
+  /// Notas tocadas pelo usuário são preservadas. Idempotente.
+  Future<int> purgeSeedNotes() async {
+    var removed = 0;
+    for (final demo in _notes_()) {
+      final note = await _notes.getNote(demo.id);
+      if (note == null) continue;
+      final pristine =
+          note.title == demo.title &&
+          note.updatedAt.isAtSameMomentAs(note.createdAt);
+      if (!pristine) continue;
+      await _notes.purgeLocal(demo.id);
+      removed++;
+    }
+    return removed;
+  }
+
   Future<void> seedIfEmpty() async {
     await _library.ensureBuiltinCollections();
     final existing = await _notes.getAllNotes();

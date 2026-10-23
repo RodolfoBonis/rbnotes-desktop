@@ -197,15 +197,20 @@ Future<void> configureDependencies(AppConfig config) async {
     di.registerSingleton<AudioUploadCoordinator>(audioCoordinator);
   }
 
-  // Semeia os dados do design na primeira execução (só local-first; com backend
-  // as notas reais chegam pelo sync).
-  if (!config.useBackend) {
-    await DemoSeeder(
-      notes: repository,
-      noteAi: noteAi,
-      library: library,
-      diary: diary,
-    ).seedIfEmpty();
+  // Dados de demonstração: só no flavor development ou com RBNOTES_DEMO=true.
+  // Em produção, ao contrário, limpamos as notas de seed que vazaram para a
+  // máquina do dono (apenas as que ele não editou).
+  final seeder = DemoSeeder(
+    notes: repository,
+    noteAi: noteAi,
+    library: library,
+    diary: diary,
+  );
+  if (config.demoSeed) {
+    await seeder.seedIfEmpty();
+  } else {
+    await library.ensureBuiltinCollections();
+    await seeder.purgeSeedNotes();
   }
 
   unawaited(notifications.init());

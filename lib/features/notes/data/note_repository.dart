@@ -211,6 +211,18 @@ class NoteRepository {
   Future<void> deleteNote(String id) =>
       (_db.delete(_db.notes)..where((n) => n.id.equals(id))).go();
 
+  /// Remove **localmente** uma nota e todo o seu rastro de sync (sem gerar
+  /// tombstone para o servidor). Usado só para limpar dados de seed que nunca
+  /// saíram deste dispositivo — ver DemoSeeder.purgeSeedNotes.
+  Future<void> purgeLocal(String id) async {
+    await _db.transaction(() async {
+      await (_db.delete(_db.notes)..where((n) => n.id.equals(id))).go();
+      await (_db.delete(
+        _db.syncMeta,
+      )..where((m) => m.entityId.equals(id))).go();
+    });
+  }
+
   /// Zera os caminhos de áudio da nota (mantém o texto). Usado quando "apagar
   /// áudio após transcrever" ou a retenção removem os arquivos mas preservam a
   /// transcrição/resumo.
