@@ -25,8 +25,13 @@ class AppPaths {
     await root.create(recursive: true);
     final paths = AppPaths._(root);
     await Directory(paths.recordingsDir).create(recursive: true);
+    await Directory(paths.audioCacheDir).create(recursive: true);
     return paths;
   }
 
   String get recordingsDir => p.join(root.path, 'recordings');
+
+  /// Cache dos `.m4a` baixados sob demanda de outro dispositivo
+  /// (`GET /notes/{id}/audio`). Persistente: uma vez baixado, toca offline.
+  String get audioCacheDir => p.join(root.path, 'audio_cache');
 }

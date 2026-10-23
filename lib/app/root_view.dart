@@ -16,6 +16,7 @@ import 'package:rbnotes/features/notes/presentation/note_view_cubit.dart';
 import 'package:rbnotes/features/onboarding/presentation/onboarding_cubit.dart';
 import 'package:rbnotes/features/onboarding/presentation/onboarding_page.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
+import 'package:rbnotes/features/sync/data/audio_sync.dart';
 import 'package:rbnotes/notifications/notification_service.dart';
 
 /// Decide a tela de topo (login → onboarding → app) e injeta os cubits de cada
@@ -56,6 +57,10 @@ class RootView extends StatelessWidget {
                   ai: di(),
                   native: di(),
                   player: di(),
+                  audioSync: di.isRegistered<AudioSync>()
+                      ? di<AudioSync>()
+                      : null,
+                  paths: di(),
                 ),
               ),
               BlocProvider(

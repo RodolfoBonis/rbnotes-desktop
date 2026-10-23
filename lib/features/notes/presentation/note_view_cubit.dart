@@ -1,14 +1,19 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:path/path.dart' as p;
+import 'package:rbnotes/core/network/api_error.dart';
 import 'package:rbnotes/core/observability/app_logger.dart';
+import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
 import 'package:rbnotes/features/ai/domain/note_ai.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/presentation/audio_player_controller.dart';
+import 'package:rbnotes/features/sync/data/audio_sync.dart';
 import 'package:rbnotes/native/rb_native.dart';
 import 'package:uuid/uuid.dart';
 
@@ -31,6 +36,7 @@ class NoteViewState extends Equatable {
     this.chatThinking = false,
     this.streamingText,
     this.streamingCites = const [],
+    this.audioDownloadProgress,
   });
 
   final NoteRow? note;
@@ -49,6 +55,10 @@ class NoteViewState extends Equatable {
   /// Texto do streaming da resposta de IA em andamento (null quando ocioso).
   final String? streamingText;
   final List<int> streamingCites;
+
+  /// Progresso (0..1) do download do áudio sob demanda; null quando não há
+  /// download em andamento.
+  final double? audioDownloadProgress;
 
   int get durationMs => note?.durationMs ?? 0;
 
@@ -69,6 +79,8 @@ class NoteViewState extends Equatable {
     String? streamingText,
     bool clearStreaming = false,
     List<int>? streamingCites,
+    double? audioDownloadProgress,
+    bool clearAudioDownload = false,
   }) => NoteViewState(
     note: note ?? this.note,
     ai: clearAi ? null : (ai ?? this.ai),
@@ -86,6 +98,9 @@ class NoteViewState extends Equatable {
         ? null
         : (streamingText ?? this.streamingText),
     streamingCites: streamingCites ?? this.streamingCites,
+    audioDownloadProgress: clearAudioDownload
+        ? null
+        : (audioDownloadProgress ?? this.audioDownloadProgress),
   );
 
   @override
@@ -104,6 +119,7 @@ class NoteViewState extends Equatable {
     chatThinking,
     streamingText,
     streamingCites,
+    audioDownloadProgress,
   ];
 }
 
@@ -116,12 +132,16 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     required AiClient ai,
     required RbNative native,
     required AudioPlayerController player,
+    AudioSync? audioSync,
+    AppPaths? paths,
     Uuid? uuid,
   }) : _notes = notes,
        _noteAi = noteAi,
        _ai = ai,
        _native = native,
        _player = player,
+       _audioSync = audioSync,
+       _paths = paths,
        _uuid = uuid ?? const Uuid(),
        super(const NoteViewState()) {
     _posSub = _player.positionStream.listen(
@@ -137,6 +157,8 @@ class NoteViewCubit extends Cubit<NoteViewState> {
   final AiClient _ai;
   final RbNative _native;
   final AudioPlayerController _player;
+  final AudioSync? _audioSync;
+  final AppPaths? _paths;
   final Uuid _uuid;
 
   String? _noteId;
@@ -178,10 +200,85 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     });
 
     final note = await _notes.getNote(noteId);
-    final path = note?.playbackPath;
-    if (path != null) {
-      unawaited(_loadPlayer(path));
-      unawaited(_loadPeaks(path));
+    unawaited(_resolveAudio(noteId, note));
+  }
+
+  /// Decide a fonte do áudio: arquivo local → cache de download → baixa sob
+  /// demanda (nota vinda de outro Mac, sem áudio local). Uma vez em cache, toca
+  /// offline nas próximas vezes.
+  Future<void> _resolveAudio(String noteId, NoteRow? note) async {
+    final local = note?.playbackPath;
+    if (local != null) {
+      // Caminho de áudio local conhecido: toca e desenha a waveform dele
+      // (ambos toleram arquivo ausente, caindo para placeholder).
+      unawaited(_loadPlayer(local));
+      unawaited(_loadPeaks(local));
+      return;
+    }
+
+    // Sem áudio local (nota vinda de outro Mac, ou áudio apagado localmente):
+    // usa o cache de download; se não houver, baixa sob demanda.
+    final paths = _paths;
+    final audioSync = _audioSync;
+    if (paths == null) return;
+    final cachePath = p.join(paths.audioCacheDir, '$noteId.m4a');
+    if (File(cachePath).existsSync()) {
+      unawaited(_loadPlayer(cachePath));
+      unawaited(_loadPeaks(cachePath));
+      return;
+    }
+
+    // Só dá para baixar com backend e se a nota tiver, de fato, áudio.
+    if (audioSync == null || (note?.durationMs ?? 0) <= 0) return;
+    await _downloadAudio(noteId, cachePath, audioSync);
+  }
+
+  Future<void> _downloadAudio(
+    String noteId,
+    String cachePath,
+    AudioSync audioSync,
+  ) async {
+    emit(state.copyWith(audioDownloadProgress: 0));
+    try {
+      await audioSync.downloadToFile(
+        noteId,
+        cachePath,
+        onProgress: (received, total) {
+          if (_noteId != noteId) return;
+          if (total != null && total > 0) {
+            emit(
+              state.copyWith(
+                audioDownloadProgress: (received / total).clamp(0, 1),
+              ),
+            );
+          }
+        },
+      );
+      if (_noteId != noteId) return;
+      emit(state.copyWith(clearAudioDownload: true));
+      unawaited(_loadPlayer(cachePath));
+      unawaited(_loadPeaks(cachePath));
+    } on ApiError catch (e) {
+      // Download falhou: não deixa um arquivo parcial envenenar o cache.
+      try {
+        final f = File(cachePath);
+        if (f.existsSync()) await f.delete();
+      } on Object catch (_) {}
+      if (_noteId != noteId) return;
+      emit(state.copyWith(clearAudioDownload: true));
+      _notices.add(
+        e.isNotFound
+            ? 'Áudio não disponível.'
+            : 'Não foi possível baixar o áudio.',
+      );
+    } on Object catch (e, st) {
+      try {
+        final f = File(cachePath);
+        if (f.existsSync()) await f.delete();
+      } on Object catch (_) {}
+      await AppLogger.error(e, st, reason: 'audio_download', category: 'notes');
+      if (_noteId != noteId) return;
+      emit(state.copyWith(clearAudioDownload: true));
     }
   }
 

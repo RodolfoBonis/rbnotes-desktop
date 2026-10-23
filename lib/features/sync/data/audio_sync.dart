@@ -75,36 +75,52 @@ class AudioSync {
     }
   }
 
-  /// Baixa o áudio para [destPath] com retomada via `Range` (continua de
-  /// onde o arquivo local parou). Retorna o total de bytes do arquivo final.
-  Future<int> downloadToFile(String noteId, String destPath) async {
+  /// Baixa o áudio para [destPath] em blocos de [chunk] bytes, com retomada via
+  /// `Range` (continua do que já há em disco) e [onProgress] por bloco
+  /// (`received`, `total`). Baixar em blocos limita o uso de memória e permite
+  /// mostrar progresso. Retorna o total de bytes do arquivo final.
+  ///
+  /// Propaga [ApiError] (ex.: `404` → áudio ainda não existe no servidor) para
+  /// o chamador tratar.
+  Future<int> downloadToFile(
+    String noteId,
+    String destPath, {
+    int chunk = chunkSize,
+    void Function(int received, int? total)? onProgress,
+  }) async {
     final file = File(destPath);
     await file.parent.create(recursive: true);
     var existing = file.existsSync() ? await file.length() : 0;
+    int? total;
 
-    final first = await _api.getBytes(
-      '/notes/$noteId/audio',
-      rangeStart: existing > 0 ? existing : null,
-    );
-    if (first.statusCode == 200) {
-      // Servidor ignorou o Range (ou não havia parcial): grava do zero.
-      await file.writeAsBytes(first.bytes);
-      existing = first.bytes.length;
-    } else {
-      await file.writeAsBytes(first.bytes, mode: FileMode.append);
-      existing += first.bytes.length;
-    }
-
-    final total = first.totalLength;
-    while (total != null && existing < total) {
-      final next = await _api.getBytes(
+    while (true) {
+      final res = await _api.getBytes(
         '/notes/$noteId/audio',
         rangeStart: existing,
+        rangeEnd: existing + chunk - 1,
       );
-      if (next.bytes.isEmpty) break;
-      await file.writeAsBytes(next.bytes, mode: FileMode.append);
-      existing += next.bytes.length;
-      if (next.statusCode == 200) break;
+
+      if (res.statusCode == 200) {
+        // Servidor ignorou o Range: o corpo é o arquivo inteiro.
+        await file.writeAsBytes(res.bytes);
+        existing = res.bytes.length;
+        total = res.totalLength ?? existing;
+        onProgress?.call(existing, total);
+        break;
+      }
+
+      // 206 Partial Content.
+      if (existing == 0) {
+        await file.writeAsBytes(res.bytes);
+      } else {
+        await file.writeAsBytes(res.bytes, mode: FileMode.append);
+      }
+      existing += res.bytes.length;
+      total = res.totalLength ?? total;
+      onProgress?.call(existing, total);
+
+      if (res.bytes.isEmpty) break;
+      if (total != null && existing >= total) break;
     }
     return existing;
   }

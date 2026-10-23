@@ -8,6 +8,7 @@ import 'package:rbnotes/core/auth/auth_tokens.dart';
 import 'package:rbnotes/core/auth/oidc_client.dart';
 import 'package:rbnotes/core/auth/token_store.dart';
 import 'package:rbnotes/core/network/api_client.dart';
+import 'package:rbnotes/core/network/api_error.dart';
 import 'package:rbnotes/core/network/session_events.dart';
 import 'package:rbnotes/features/sync/data/audio_sync.dart';
 
@@ -130,5 +131,56 @@ void main() {
     final size = await audioFor().downloadToFile('n1', dest);
     expect(size, 10);
     expect(await File(dest).readAsBytes(), full);
+  });
+
+  test('download em blocos reporta progresso e conclui', () async {
+    final full = List<int>.generate(10, (i) => i);
+    server = await LocalServer.start((req) async {
+      final range = req.headers.value('range')!;
+      final m = RegExp(r'bytes=(\d+)-(\d*)').firstMatch(range)!;
+      final start = int.parse(m.group(1)!);
+      final endRaw = m.group(2)!;
+      var end = endRaw.isEmpty ? full.length - 1 : int.parse(endRaw);
+      if (end >= full.length) end = full.length - 1;
+      req.response
+        ..statusCode = 206
+        ..headers.set('content-range', 'bytes $start-$end/${full.length}')
+        ..add(full.sublist(start, end + 1));
+      await req.response.close();
+    });
+
+    final dir = await Directory.systemTemp.createTemp('rbnotes_audio_dl');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final dest = '${dir.path}/n1.m4a';
+    final progress = <double>[];
+    final size = await audioFor().downloadToFile(
+      'n1',
+      dest,
+      chunk: 4,
+      onProgress: (received, total) {
+        if (total != null && total > 0) progress.add(received / total);
+      },
+    );
+
+    expect(size, 10);
+    expect(await File(dest).readAsBytes(), full);
+    expect(progress.first, lessThan(1.0));
+    expect(progress.last, 1.0);
+    expect(progress.length, greaterThan(1), reason: 'baixou em vários blocos');
+  });
+
+  test('download 404 → ApiError.isNotFound (áudio indisponível)', () async {
+    server = await LocalServer.start((req) async {
+      req.response.statusCode = 404;
+      await req.response.close();
+    });
+    final dir = await Directory.systemTemp.createTemp('rbnotes_audio_404');
+    addTearDown(() => dir.deleteSync(recursive: true));
+
+    await expectLater(
+      audioFor().downloadToFile('n1', '${dir.path}/n1.m4a'),
+      throwsA(isA<ApiError>().having((e) => e.isNotFound, 'isNotFound', true)),
+    );
+    expect(File('${dir.path}/n1.m4a').existsSync(), isFalse);
   });
 }
