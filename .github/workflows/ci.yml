@@ -53,6 +53,14 @@ jobs:
       - name: Install cmake (whisper.cpp)
         run: brew install cmake
       - run: flutter pub get
+      # Compila o whisper.xcframework ANTES do pod install (o hook do Podfile vira no-op) e deixa a
+      # saída visível no log; o flutter build esconde a saída do pod install.
+      - name: Build whisper.cpp xcframework
+        run: |
+          xcodebuild -version
+          bash packages/rbnotes_native/scripts/build_whisper.sh
+          find packages/rbnotes_native/macos/Frameworks -maxdepth 3 | sort
+          lipo -info packages/rbnotes_native/macos/Frameworks/whisper.xcframework/*/whisper.framework/whisper
       - name: Build macOS (debug)
         run: flutter build macos --debug -t lib/main_production.dart
         env:
