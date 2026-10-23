@@ -28,11 +28,23 @@ abstract interface class RbNative {
   /// file is written. A `<id>.m4a` stereo mix (L = mic, R = system) is written
   /// on [stopRecording] for playback.
   ///
+  /// [inputDeviceId] selects the microphone (a device id from [inputDevices]);
+  /// null uses the system default input.
+  ///
+  /// With [liveTranscription] true, the plugin transcribes the audio in ~5 s
+  /// windows (with ~1 s overlap) using the [WhisperModel.tiny] model on a
+  /// low-priority lane and emits incremental [LiveTranscript]s on
+  /// [liveTranscript]. The tiny model is downloaded automatically if missing;
+  /// live transcription never delays writing the wav files (windows are
+  /// dropped if the transcription lane falls behind).
+  ///
   /// Throws `RbNativeException('already_recording')` if [id] is in progress.
   Future<RecordingHandle> startRecording({
     required String id,
     required String directory,
     required bool captureSystemAudio,
+    bool liveTranscription = false,
+    String? inputDeviceId,
   });
 
   /// Stops the recording [id], finalizes the wav headers and the `.m4a` mix.
@@ -40,7 +52,8 @@ abstract interface class RbNative {
   /// Throws `RbNativeException('not_recording')` if [id] is unknown.
   Future<RecordingResult> stopRecording(String id);
 
-  /// Pauses the recording [id] (audio is not written while paused).
+  /// Pauses the recording [id] (audio is not written while paused, and live
+  /// transcription is suspended).
   Future<void> pauseRecording(String id);
 
   /// Resumes a paused recording [id].
@@ -49,11 +62,25 @@ abstract interface class RbNative {
   /// Audio levels (0..1) per channel, roughly 20 Hz, while [id] records.
   Stream<AudioLevels> audioLevels(String id);
 
+  /// Incremental live-transcript updates for the recording [id] (only while it
+  /// was started with `liveTranscription: true`). The accumulated,
+  /// de-duplicated [LiveTranscript.text] grows over time; a final event with
+  /// `isFinal == true` is emitted when the recording stops.
+  Stream<LiveTranscript> liveTranscript(String id);
+
   /// Orphaned `.wav` files (app crashed mid-recording) in [directory], with
   /// their headers repaired so they are playable/transcribable.
   Future<List<RecoverableRecording>> findRecoverableRecordings(
     String directory,
   );
+
+  /// Available audio input devices (for the "Microphone" picker). The default
+  /// device has `isDefault == true`.
+  Future<List<AudioInputDevice>> inputDevices();
+
+  /// Peak amplitudes (0..1), one per bucket, of the audio file at [path]
+  /// (`.wav` or `.m4a`), for drawing a waveform. Returns [buckets] values.
+  Future<List<double>> waveformPeaks(String path, int buckets);
 
   /// Asynchronous, non-fatal native failures: write errors, audio device
   /// changes, system-audio drops, a disabled event tap or the dictation
@@ -72,11 +99,20 @@ abstract interface class RbNative {
   /// stream subscription cancels the download.
   Stream<double> downloadModel(WhisperModel model);
 
+  /// Deletes the on-disk file for [model]. No-op if it is not downloaded.
+  Future<void> deleteModel(WhisperModel model);
+
   /// Transcribes a 16 kHz mono wav at [wavPath] using [model]. Progress is
   /// reported through [onProgress] (0..1). Runs off the main thread.
   ///
+  /// [initialPrompt] seeds whisper's decoder with vocabulary/context (e.g. a
+  /// glossary of names), mapped to `whisper_full_params.initial_prompt`.
+  ///
   /// [priority] routes the job: [TranscriptionPriority.high] (dictation) runs
   /// on a separate native lane so it is not blocked by a long note.
+  ///
+  /// Each returned [TranscriptSegment] carries per-word timing/confidence in
+  /// [TranscriptSegment.words].
   ///
   /// Throws `RbNativeException('model_missing')` if the model is not
   /// downloaded, `transcription_cancelled` if [cancelTranscription] was
@@ -85,6 +121,7 @@ abstract interface class RbNative {
     required String wavPath,
     required WhisperModel model,
     String language = 'pt',
+    String? initialPrompt,
     TranscriptionPriority priority = TranscriptionPriority.normal,
     void Function(double progress)? onProgress,
   });

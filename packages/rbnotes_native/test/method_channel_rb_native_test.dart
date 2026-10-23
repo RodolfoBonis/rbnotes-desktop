@@ -85,6 +85,8 @@ void main() {
         'id': 'note-1',
         'directory': '/tmp/notes',
         'captureSystemAudio': true,
+        'liveTranscription': false,
+        'inputDeviceId': null,
       });
     });
 
@@ -192,6 +194,7 @@ void main() {
         'wavPath': '/tmp/a.wav',
         'model': 'smallQ5',
         'language': 'pt',
+        'initialPrompt': null,
         'priority': 'normal',
       });
     });

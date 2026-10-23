@@ -4,11 +4,16 @@ enum RbPermission { microphone, screenRecording, accessibility }
 /// Result of a permission query/request.
 enum PermissionStatus { granted, denied, notDetermined }
 
-/// Whisper models supported by the plugin.
+/// Whisper models supported by the plugin, ordered roughly from fastest/least
+/// accurate to slowest/most accurate.
 ///
-/// [largeV3TurboQ5] maps to `ggml-large-v3-turbo-q5_0.bin` and is the default;
-/// [smallQ5] maps to `ggml-small-q5_1.bin` (faster, lower quality fallback).
-enum WhisperModel { largeV3TurboQ5, smallQ5 }
+/// - [tiny] → `ggml-tiny.bin`: used for live (in-recording) transcription and
+///   as a lightweight fallback.
+/// - [smallQ5] → `ggml-small-q5_1.bin`.
+/// - [medium] → `ggml-medium-q5_0.bin`.
+/// - [largeV3TurboQ5] → `ggml-large-v3-turbo-q5_0.bin` (the default).
+/// - [largeV3] → `ggml-large-v3-q5_0.bin` (highest quality, largest).
+enum WhisperModel { tiny, smallQ5, medium, largeV3TurboQ5, largeV3 }
 
 /// Dictation hotkey behaviour.
 ///
@@ -50,14 +55,20 @@ extension PermissionStatusWire on PermissionStatus {
 
 extension WhisperModelWire on WhisperModel {
   String get wireName => switch (this) {
-    WhisperModel.largeV3TurboQ5 => 'largeV3TurboQ5',
+    WhisperModel.tiny => 'tiny',
     WhisperModel.smallQ5 => 'smallQ5',
+    WhisperModel.medium => 'medium',
+    WhisperModel.largeV3TurboQ5 => 'largeV3TurboQ5',
+    WhisperModel.largeV3 => 'largeV3',
   };
 
   /// The on-disk file name of the ggml model.
   String get fileName => switch (this) {
-    WhisperModel.largeV3TurboQ5 => 'ggml-large-v3-turbo-q5_0.bin',
+    WhisperModel.tiny => 'ggml-tiny.bin',
     WhisperModel.smallQ5 => 'ggml-small-q5_1.bin',
+    WhisperModel.medium => 'ggml-medium-q5_0.bin',
+    WhisperModel.largeV3TurboQ5 => 'ggml-large-v3-turbo-q5_0.bin',
+    WhisperModel.largeV3 => 'ggml-large-v3-q5_0.bin',
   };
 }
 

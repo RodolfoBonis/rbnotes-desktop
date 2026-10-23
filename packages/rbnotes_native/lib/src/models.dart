@@ -124,13 +124,55 @@ class WhisperModelState {
   final int? sizeBytes;
 }
 
-/// A transcribed segment with start/end timestamps.
+/// A single word with its timing and whisper confidence (0..1).
+///
+/// Produced from whisper token-level timestamps/probabilities by aggregating
+/// the sub-word tokens of a segment back into words. [probability] is the mean
+/// of the token probabilities that make up the word.
+@immutable
+class Word {
+  const Word({
+    required this.text,
+    required this.start,
+    required this.end,
+    required this.probability,
+  });
+
+  factory Word.fromMap(Map<Object?, Object?> map) => Word(
+    text: map['text']! as String,
+    start: Duration(milliseconds: (map['startMs']! as num).toInt()),
+    end: Duration(milliseconds: (map['endMs']! as num).toInt()),
+    probability: (map['probability']! as num).toDouble(),
+  );
+
+  final String text;
+  final Duration start;
+  final Duration end;
+
+  /// Whisper confidence for this word, 0..1 (mean of its token probabilities).
+  final double probability;
+
+  @override
+  bool operator ==(Object other) =>
+      other is Word &&
+      other.text == text &&
+      other.start == start &&
+      other.end == end &&
+      other.probability == probability;
+
+  @override
+  int get hashCode => Object.hash(text, start, end, probability);
+}
+
+/// A transcribed segment with start/end timestamps and, optionally, per-word
+/// timing/confidence.
 @immutable
 class TranscriptSegment {
   const TranscriptSegment({
     required this.start,
     required this.end,
     required this.text,
+    this.words,
   });
 
   factory TranscriptSegment.fromMap(Map<Object?, Object?> map) =>
@@ -138,11 +180,88 @@ class TranscriptSegment {
         start: Duration(milliseconds: (map['startMs']! as num).toInt()),
         end: Duration(milliseconds: (map['endMs']! as num).toInt()),
         text: map['text']! as String,
+        words: (map['words'] as List<Object?>?)
+            ?.cast<Map<Object?, Object?>>()
+            .map(Word.fromMap)
+            .toList(),
       );
 
   final Duration start;
   final Duration end;
   final String text;
+
+  /// Per-word timing and confidence, or null when the native side did not
+  /// compute word timestamps (the field is optional on the wire).
+  final List<Word>? words;
+}
+
+/// An incremental, in-recording ("live") transcript update emitted while a
+/// recording started with `liveTranscription: true` is running.
+///
+/// [text] is the accumulated, cleaned transcript so far (the overlap between
+/// consecutive audio windows is de-duplicated on the native side, so the app
+/// can render [text] directly). [isFinal] is true for the last update, emitted
+/// when the recording stops.
+@immutable
+class LiveTranscript {
+  const LiveTranscript({
+    required this.recordingId,
+    required this.text,
+    required this.isFinal,
+  });
+
+  factory LiveTranscript.fromMap(Map<Object?, Object?> map) => LiveTranscript(
+    recordingId: map['recordingId']! as String,
+    text: map['text']! as String,
+    isFinal: map['isFinal']! as bool,
+  );
+
+  final String recordingId;
+  final String text;
+  final bool isFinal;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LiveTranscript &&
+      other.recordingId == recordingId &&
+      other.text == text &&
+      other.isFinal == isFinal;
+
+  @override
+  int get hashCode => Object.hash(recordingId, text, isFinal);
+}
+
+/// An available audio input device (the "Microphone" picker in the UI).
+@immutable
+class AudioInputDevice {
+  const AudioInputDevice({
+    required this.id,
+    required this.name,
+    required this.isDefault,
+  });
+
+  factory AudioInputDevice.fromMap(Map<Object?, Object?> map) =>
+      AudioInputDevice(
+        id: map['id']! as String,
+        name: map['name']! as String,
+        isDefault: map['isDefault']! as bool,
+      );
+
+  /// Stable device identifier (CoreAudio device UID), passed back to
+  /// `startRecording(inputDeviceId:)`.
+  final String id;
+  final String name;
+  final bool isDefault;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AudioInputDevice &&
+      other.id == id &&
+      other.name == name &&
+      other.isDefault == isDefault;
+
+  @override
+  int get hashCode => Object.hash(id, name, isDefault);
 }
 
 /// An asynchronous, non-fatal native failure (write error, device change,

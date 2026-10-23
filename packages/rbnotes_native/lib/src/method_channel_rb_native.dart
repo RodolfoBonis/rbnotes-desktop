@@ -16,6 +16,7 @@ abstract final class RbNativeChannels {
   static const String modelDownload = 'rbnotes_native/model_download';
   static const String transcriptionProgress =
       'rbnotes_native/transcription_progress';
+  static const String liveTranscript = 'rbnotes_native/live_transcript';
 }
 
 /// `MethodChannel` backed implementation of [RbNative].
@@ -30,6 +31,7 @@ class MethodChannelRbNative implements RbNative {
     EventChannel? diagnosticsChannel,
     EventChannel? modelDownloadChannel,
     EventChannel? transcriptionProgressChannel,
+    EventChannel? liveTranscriptChannel,
   }) : _method = methodChannel ?? const MethodChannel(RbNativeChannels.method),
        _levels = levelsChannel ?? const EventChannel(RbNativeChannels.levels),
        _dictation =
@@ -42,7 +44,10 @@ class MethodChannelRbNative implements RbNative {
            const EventChannel(RbNativeChannels.modelDownload),
        _transcriptionProgress =
            transcriptionProgressChannel ??
-           const EventChannel(RbNativeChannels.transcriptionProgress);
+           const EventChannel(RbNativeChannels.transcriptionProgress),
+       _liveTranscript =
+           liveTranscriptChannel ??
+           const EventChannel(RbNativeChannels.liveTranscript);
 
   final MethodChannel _method;
   final EventChannel _levels;
@@ -50,6 +55,7 @@ class MethodChannelRbNative implements RbNative {
   final EventChannel _diagnostics;
   final EventChannel _modelDownload;
   final EventChannel _transcriptionProgress;
+  final EventChannel _liveTranscript;
 
   /// Single permanent fan-out of the native transcription-progress stream.
   /// Each native event is a `{wavPath, progress}` map; [transcribe] subscribes
@@ -57,6 +63,12 @@ class MethodChannelRbNative implements RbNative {
   /// EventChannel is listened to exactly once (no listen/cancel per call).
   StreamController<Map<Object?, Object?>>? _progressController;
   StreamSubscription<Object?>? _progressChannelSub;
+
+  /// Single permanent fan-out of the native live-transcript stream. Each native
+  /// event is a `{recordingId, text, isFinal}` map; [liveTranscript] subscribes
+  /// to this broadcast and filters by recording id.
+  StreamController<Map<Object?, Object?>>? _liveController;
+  StreamSubscription<Object?>? _liveChannelSub;
 
   Stream<Map<Object?, Object?>> get _progressEvents {
     final existing = _progressController;
@@ -76,13 +88,33 @@ class MethodChannelRbNative implements RbNative {
     return controller.stream;
   }
 
-  /// Releases the permanent progress subscription. Optional; the plugin
+  Stream<Map<Object?, Object?>> get _liveEvents {
+    final existing = _liveController;
+    if (existing != null) return existing.stream;
+
+    final controller = StreamController<Map<Object?, Object?>>.broadcast();
+    _liveController = controller;
+    _liveChannelSub = _mapStreamErrors(_liveTranscript.receiveBroadcastStream())
+        .listen(
+          (event) {
+            if (event is Map<Object?, Object?>) controller.add(event);
+          },
+          onError: controller.addError,
+        );
+    return controller.stream;
+  }
+
+  /// Releases the permanent fan-out subscriptions. Optional; the plugin
   /// normally lives for the app's lifetime.
   Future<void> dispose() async {
     await _progressChannelSub?.cancel();
     await _progressController?.close();
     _progressChannelSub = null;
     _progressController = null;
+    await _liveChannelSub?.cancel();
+    await _liveController?.close();
+    _liveChannelSub = null;
+    _liveController = null;
   }
 
   // ---------- Permissions ----------
@@ -110,11 +142,15 @@ class MethodChannelRbNative implements RbNative {
     required String id,
     required String directory,
     required bool captureSystemAudio,
+    bool liveTranscription = false,
+    String? inputDeviceId,
   }) async {
     final map = await _invoke<Map<Object?, Object?>>('startRecording', {
       'id': id,
       'directory': directory,
       'captureSystemAudio': captureSystemAudio,
+      'liveTranscription': liveTranscription,
+      'inputDeviceId': inputDeviceId,
     });
     return RecordingHandle.fromMap(map);
   }
@@ -141,6 +177,11 @@ class MethodChannelRbNative implements RbNative {
           .map((event) => AudioLevels.fromMap(event! as Map<Object?, Object?>));
 
   @override
+  Stream<LiveTranscript> liveTranscript(String id) => _liveEvents
+      .where((map) => map['recordingId'] == id)
+      .map(LiveTranscript.fromMap);
+
+  @override
   Future<List<RecoverableRecording>> findRecoverableRecordings(
     String directory,
   ) async {
@@ -151,6 +192,24 @@ class MethodChannelRbNative implements RbNative {
         .cast<Map<Object?, Object?>>()
         .map(RecoverableRecording.fromMap)
         .toList();
+  }
+
+  @override
+  Future<List<AudioInputDevice>> inputDevices() async {
+    final list = await _invoke<List<Object?>>('inputDevices');
+    return list
+        .cast<Map<Object?, Object?>>()
+        .map(AudioInputDevice.fromMap)
+        .toList();
+  }
+
+  @override
+  Future<List<double>> waveformPeaks(String path, int buckets) async {
+    final list = await _invoke<List<Object?>>('waveformPeaks', {
+      'path': path,
+      'buckets': buckets,
+    });
+    return list.map((e) => (e! as num).toDouble()).toList();
   }
 
   @override
@@ -175,10 +234,15 @@ class MethodChannelRbNative implements RbNative {
           .map((event) => (event! as num).toDouble());
 
   @override
+  Future<void> deleteModel(WhisperModel model) =>
+      _invoke<void>('deleteModel', {'model': model.wireName});
+
+  @override
   Future<List<TranscriptSegment>> transcribe({
     required String wavPath,
     required WhisperModel model,
     String language = 'pt',
+    String? initialPrompt,
     TranscriptionPriority priority = TranscriptionPriority.normal,
     void Function(double progress)? onProgress,
   }) async {
@@ -197,6 +261,7 @@ class MethodChannelRbNative implements RbNative {
         'wavPath': wavPath,
         'model': model.wireName,
         'language': language,
+        'initialPrompt': initialPrompt,
         'priority': priority.wireName,
       });
       return list
