@@ -20,7 +20,8 @@ class TrayController with TrayListener {
     // sistema recusar o ícone, o app segue sem a tray.
     try {
       trayManager.addListener(this);
-      await trayManager.setIcon('assets/brand/app_icon_1024.png');
+      // Ícone template (monocromático): o macOS ajusta a cor ao tema da barra.
+      await trayManager.setIcon('assets/brand/tray_icon.png', isTemplate: true);
       await trayManager.setToolTip('RbNotes');
       await _rebuildMenu(recording.state);
       _sub = recording.stream.listen(_rebuildMenu);
