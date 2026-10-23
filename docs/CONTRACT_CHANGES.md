@@ -3,6 +3,75 @@
 Registro de alterações em `docs/native-contract.md` (o quê e por quê). O outro
 engenheiro lê este arquivo.
 
+## 2026-10-23 — Overlay de atividade que sai do notch (HUD Dynamic Island)
+
+Estas **mudam a API pública** (aditivas; nada existente foi renomeado). O app
+consome esta API para mostrar o HUD de gravação/ditado por cima de qualquer app.
+
+- **4 métodos novos na `RbNative`:**
+  - `showActivityOverlay({required OverlayMode mode, required DateTime startedAt})`
+    — wire `showActivityOverlay {mode, startedAtMs}`. Mostra a pílula emergindo do
+    notch (ou descendo do menu bar sem notch). Chamar de novo re-aponta o painel
+    existente. `mode`: `recording` (HUD completo) ou `dictation` (pílula menor).
+  - `updateActivityOverlay({double? micLevel, double? systemLevel, String? liveText,
+    OverlayPhase? phase, double? progress, String? message, bool? paused})` — wire
+    `updateActivityOverlay {micLevel?, systemLevel?, liveText?, phase?, progress?,
+    message?, paused?}`. **Todos opcionais**: só os campos enviados mudam. Pode ser
+    chamado a ~20 Hz (níveis são coalescidos no main). No-op se nada está visível.
+  - `hideActivityOverlay({Duration delay = Duration.zero})` — wire
+    `hideActivityOverlay {delayMs}`. Esconde após o delay; um novo `show` cancela
+    um hide pendente.
+  - `overlayActions()` → `Stream<OverlayAction>` no EventChannel **único e
+    permanente** `rbnotes_native/overlay_actions`. O wire é uma `String` com o nome
+    da ação; o Dart decodifica para `OverlayAction`.
+
+- **Enums novos:**
+  - `OverlayMode { recording, dictation }` (wire: `recording`/`dictation`).
+  - `OverlayPhase { live, processing, done, error }` (wire igual aos nomes).
+  - `OverlayAction { pause, resume, stop, discard, openApp }` (wire igual).
+    `openApp` = clique no corpo da pílula (fora dos botões).
+
+- **Novo EventChannel:** `rbnotes_native/overlay_actions`.
+
+- **Novo uso de `invalid_event`:** uma ação desconhecida no stream
+  `overlay_actions` vira `RbNativeException('invalid_event')` (como no
+  `DictationEvent`).
+
+Comportamento (não afeta assinaturas, mas o app deve saber):
+
+- **Fases & auto-hide.** `phase: done` auto-esconde após ~1,5 s (o app não
+  precisa chamar `hide`). `error` **persiste** (o app decide quando esconder).
+  `live`/`processing` ficam até o app mandar outra coisa. No `recording`, o HUD
+  nasce **expandido** e colapsa para compacto após ~2 s (ou enquanto o mouse
+  estiver sobre ele fica expandido). No `dictation`, `phase: done` mostra
+  "Colado" e deve ser seguido de `hide`.
+- **Cronômetro local.** O nativo avança o tempo a partir de `startedAtMs`; não é
+  preciso enviar update por segundo. Pausar (`paused: true`) congela o tempo.
+- **Foco & janelas.** `NSPanel` não-ativador (`.nonactivatingPanel`,
+  `level = .statusBar`, `collectionBehavior [.canJoinAllSpaces,
+  .fullScreenAuxiliary, .stationary]`, `hidesOnDeactivate = false`, sem sombra do
+  sistema — a sombra é desenhada no SwiftUI). **Não rouba o foco** do app em uso,
+  então o ditado cola no app em foco; aceita cliques nos botões sem ativar o
+  RbNotes; funciona em qualquer Space e por cima de apps em tela cheia.
+- **Tela & notch.** Usa a tela do menu bar (`NSScreen.screens.first`, fallback
+  `.main`). Notch detectado por `safeAreaInsets.top` (≥20 pt) +
+  `auxiliaryTopLeftArea`/`auxiliaryTopRightArea` para a largura; a pílula nasce
+  com as dimensões do notch e faz spring (~0,35 s) para o tamanho alvo. Sem notch,
+  desce do menu bar (`NSStatusBar.system.thickness`). Respeita "Reduzir
+  movimento" (`accessibilityDisplayShouldReduceMotion` → fade em vez de spring).
+- **Níveis.** O app pode enviar `micLevel`/`systemLevel` via
+  `updateActivityOverlay` (ex.: reencaminhando `audioLevels(id)`); o overlay
+  mantém uma janela rolante das amostras para as barras. Alternativa documentada:
+  o próprio app alimenta os níveis — o nativo não se inscreve sozinho na gravação.
+
+Limitações conhecidas:
+
+- O posicionamento exato "dentro do notch" depende do modelo (largura do notch
+  varia); a geometria é derivada de `auxiliaryTop*Area`, testada em
+  `RbNativeCore` (`NotchGeometryTests`) mas não há calibração por modelo.
+- `OverlayMode`/`OverlayPhase` exigem macOS 13+ (SwiftUI material); em versões
+  anteriores os métodos viram no-op (o app deve degradar para um HUD in-window).
+
 ## 2026-10-23 — Implementação inicial do `rbnotes_native`
 
 **Nenhuma mudança na API pública do contrato.** A interface `RbNative`, os

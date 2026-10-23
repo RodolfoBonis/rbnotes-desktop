@@ -85,6 +85,24 @@ abstract interface class RbNative {
   /// Toca o som de início/fim do ditado. O nativo NÃO toca sons automaticamente;
   /// é o app que chama este método.
   Future<void> playDictationSound(DictationSound s); // start | end
+
+  // ---------- Overlay de atividade (HUD do notch) ----------
+  /// Mostra a pílula que sai do notch (ou desce do menu bar sem notch). Não rouba
+  /// o foco do app em uso (o ditado continua colando no app em foco), flutua
+  /// acima de apps em tela cheia e aparece em qualquer Space. Chamar de novo
+  /// re-aponta o painel existente para [mode]. mode: recording | dictation.
+  Future<void> showActivityOverlay({required OverlayMode mode, required DateTime startedAt});
+  /// Atualização parcial do overlay visível (todos os campos opcionais; só os
+  /// informados mudam). [micLevel]/[systemLevel] (0..1) podem vir a ~20 Hz (o
+  /// nativo faz coalescing no main). phase: live | processing | done | error;
+  /// message = título curto (done) / erro (error). No-op se nada estiver visível.
+  Future<void> updateActivityOverlay({double? micLevel, double? systemLevel, String? liveText, OverlayPhase? phase, double? progress, String? message, bool? paused});
+  /// Esconde e desmonta o overlay após [delay] (imediato por padrão). Um novo
+  /// showActivityOverlay cancela um hide pendente.
+  Future<void> hideActivityOverlay({Duration delay = Duration.zero});
+  /// Ações do usuário no overlay (botões ou clique no corpo). Stream único e
+  /// permanente (broadcast), como diagnostics().
+  Stream<OverlayAction> overlayActions();
 }
 
 enum RbPermission { microphone, screenRecording, accessibility }
@@ -94,6 +112,9 @@ enum WhisperModel { tiny, smallQ5, medium, largeV3TurboQ5, largeV3 }
 enum DictationMode { toggle, holdToTalk }
 enum DictationSound { start, end }
 enum TranscriptionPriority { normal, high } // default: normal
+enum OverlayMode { recording, dictation }
+enum OverlayPhase { live, processing, done, error }
+enum OverlayAction { pause, resume, stop, discard, openApp }
 
 class Hotkey { final int keyCode; final Set<HotkeyModifier> modifiers; }
 enum HotkeyModifier { command, option, control, shift, function }
@@ -140,10 +161,24 @@ Não são erros fatais; não interrompem a gravação/ditado por si só. O app d
 `audio_config_changed` (também emitido quando o dispositivo de entrada escolhido não pôde ser selecionado e caiu no default), `audio_engine_restart_failed`, `system_audio_stopped`, `write_failed`, `tap_disabled`, `dictation_watchdog`, `dictation_key_stuck`.
 
 ## Regras
-- Canais via `MethodChannel('rbnotes_native')` + `EventChannel`s nomeados: `rbnotes_native/levels`, `rbnotes_native/dictation`, `rbnotes_native/diagnostics`, `rbnotes_native/model_download`, `rbnotes_native/transcription_progress`, `rbnotes_native/live_transcript`.
+- Canais via `MethodChannel('rbnotes_native')` + `EventChannel`s nomeados: `rbnotes_native/levels`, `rbnotes_native/dictation`, `rbnotes_native/diagnostics`, `rbnotes_native/model_download`, `rbnotes_native/transcription_progress`, `rbnotes_native/live_transcript`, `rbnotes_native/overlay_actions`.
 - `transcription_progress` é um **stream único e permanente** que emite `{wavPath, progress}`; o Dart filtra por `wavPath` dentro de `transcribe`.
 - `live_transcript` é um **stream único e permanente** que emite `{recordingId, text, isFinal}`; o Dart filtra por `recordingId` dentro de `liveTranscript`.
 - `diagnostics` é um **stream único e permanente** que emite `NativeDiagnostic`.
 - `TranscriptSegment.words`: o wire traz `words` como lista opcional de `{text, startMs, endMs, probability}`; ausente quando não houver timestamps por palavra. `transcribe` sempre computa; a transcrição ao vivo (tiny) **não** preenche `words`.
 - Falante: o app junta os segmentos de `mic.wav` → "Eu" e de `system.wav` → "Outros", ordenados por `start`.
 - Sem chave de API; tudo local. A transcrição ao vivo usa o modelo `tiny` e idioma `pt`.
+- **Overlay de atividade.** `overlay_actions` é um stream **único e permanente**
+  que emite uma `String` com o nome da ação (`pause`/`resume`/`stop`/`discard`/
+  `openApp`); uma ação desconhecida vira `RbNativeException('invalid_event')` no
+  Dart. O wire dos métodos: `showActivityOverlay {mode, startedAtMs}`,
+  `updateActivityOverlay {micLevel?, systemLevel?, liveText?, phase?, progress?,
+  message?, paused?}` (campos ausentes = sem mudança), `hideActivityOverlay
+  {delayMs}`. O nativo mantém o cronômetro localmente a partir de `startedAtMs`
+  (não precisa de update por segundo) e faz coalescing dos níveis no main (aceita
+  ~20 Hz sem travar). O overlay usa a tela do menu bar (`NSScreen.screens.first`,
+  fallback `.main`). Em Macs com notch (`safeAreaInsets.top` + `auxiliaryTopLeft/
+  RightArea`) a pílula nasce das dimensões do notch e expande; sem notch, desce do
+  menu bar. Respeita "Reduzir movimento" (fade em vez de spring). O painel é um
+  `NSPanel` não-ativador (não rouba foco; o ditado cola no app em foco) acima de
+  apps em tela cheia, em qualquer Space.
