@@ -359,7 +359,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -380,39 +380,41 @@ class AppDatabase extends _$AppDatabase {
         await _createSearchIndex();
         await rebuildSearchIndex();
       }
+      // Reparo de schema genérico (schema v4): compara cada tabela declarada no
+      // drift com o `PRAGMA table_info` real e adiciona as colunas que faltam e
+      // cria as tabelas que faltam. Conserta bancos vindos do MVP (v1/v2) e
+      // tambem bancos ja em v3 que nunca ganharam
+      // `transcript_segments.words_json` — a migracao v3 original so mexia em
+      // `notes`, entao todo `replaceSegments` falhava e a nota travava em
+      // "Resumo em preparacao...".
+      await _repairSchema(m);
       if (from < 3) {
-        // Defensivo: só adiciona o que falta (a tabela pode já estar
-        // parcialmente no esquema v3 em cenários de teste/recuperação).
-        final cols = await _columns('notes');
-        Future<void> addCol(GeneratedColumn<Object> c) async {
-          if (!cols.contains(c.name)) await m.addColumn(notes, c);
-        }
-
-        await addCol(notes.folderId);
-        await addCol(notes.favorite);
-        await addCol(notes.kind);
-        await addCol(notes.autoTitle);
-        await addCol(notes.aiStatus);
-        await addCol(notes.speakersJson);
-        await addCol(notes.deleted);
-        final existing = await _tables();
-        Future<void> addTable(TableInfo<Table, Object> t) async {
-          if (!existing.contains(t.actualTableName)) await m.createTable(t);
-        }
-
-        await addTable(folders);
-        await addTable(noteAiTable);
-        await addTable(actions);
-        await addTable(chatMessages);
-        await addTable(collections);
-        await addTable(vocabulary);
-        await addTable(diaryPrompts);
-        await addTable(diaryEntries);
-        await addTable(syncMeta);
         await _seedV3();
       }
     },
   );
+
+  /// Reparo de schema generico (ver [migration]). Idempotente: so adiciona o
+  /// que falta. Cobre todas as tabelas declaradas em `@DriftDatabase` (o indice
+  /// FTS virtual e tratado a parte em [_createSearchIndex]). Todas as colunas
+  /// passiveis de adicao sao nulas ou tem default, compativeis com o
+  /// `ALTER TABLE ADD COLUMN` do SQLite.
+  Future<void> _repairSchema(Migrator m) async {
+    final existingTables = await _tables();
+    for (final table in allTables) {
+      final name = table.actualTableName;
+      if (!existingTables.contains(name)) {
+        await m.createTable(table);
+        continue;
+      }
+      final cols = await _columns(name);
+      for (final column in table.$columns) {
+        if (!cols.contains(column.name)) {
+          await m.addColumn(table, column);
+        }
+      }
+    }
+  }
 
   Future<void> _createSearchIndex() async {
     await customStatement(_createFtsTable);
