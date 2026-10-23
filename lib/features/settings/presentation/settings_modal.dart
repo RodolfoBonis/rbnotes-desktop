@@ -616,9 +616,10 @@ class _SettingsModalState extends State<SettingsModal> {
         SyncPhase.offline => 'Sem conexão',
         SyncPhase.error => status.message ?? 'Falha ao sincronizar',
         SyncPhase.disabled => 'Desligado',
-        SyncPhase.idle => status.lastSyncAt == null
-            ? 'Nunca sincronizado'
-            : _ago(status.lastSyncAt!),
+        SyncPhase.idle =>
+          status.lastSyncAt == null
+              ? 'Nunca sincronizado'
+              : _ago(status.lastSyncAt!),
       };
       return _SettingRow(
         label: 'Última sincronização',

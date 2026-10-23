@@ -387,6 +387,7 @@ class AppDatabase extends _$AppDatabase {
         Future<void> addCol(GeneratedColumn<Object> c) async {
           if (!cols.contains(c.name)) await m.addColumn(notes, c);
         }
+
         await addCol(notes.folderId);
         await addCol(notes.favorite);
         await addCol(notes.kind);
@@ -398,6 +399,7 @@ class AppDatabase extends _$AppDatabase {
         Future<void> addTable(TableInfo<Table, Object> t) async {
           if (!existing.contains(t.actualTableName)) await m.createTable(t);
         }
+
         await addTable(folders);
         await addTable(noteAiTable);
         await addTable(actions);

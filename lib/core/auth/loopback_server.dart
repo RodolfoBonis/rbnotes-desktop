@@ -91,9 +91,17 @@ class LoopbackAuthServer {
         'h1{font-size:20px;margin:0 0 8px}p{color:#6b6b70;font-size:14px}';
     return <String>[
       '<!doctype html><html lang="pt-BR"><head>',
-      '<meta charset="utf-8"><title>', title, '</title>',
-      '<style>', style, '</style></head>',
-      '<body><div class="c"><h1>', title, '</h1><p>', body, '</p></div>',
+      '<meta charset="utf-8"><title>',
+      title,
+      '</title>',
+      '<style>',
+      style,
+      '</style></head>',
+      '<body><div class="c"><h1>',
+      title,
+      '</h1><p>',
+      body,
+      '</p></div>',
       '</body></html>',
     ].join();
   }
