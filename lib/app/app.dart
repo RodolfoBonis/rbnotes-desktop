@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rbnotes/app/theme_mode_cubit.dart';
 import 'package:rbnotes/core/di/injector.dart';
+import 'package:rbnotes/core/observability/diagnostics_monitor.dart';
 import 'package:rbnotes/core/routing/app_router.dart';
 import 'package:rbnotes/core/theme/rbnotes_theme.dart';
 import 'package:rbnotes/features/notes/presentation/notes_list_cubit.dart';
@@ -44,6 +45,7 @@ class _RbNotesAppState extends State<RbNotesApp> {
             queue: di(),
             settings: di(),
             paths: di(),
+            diagnostics: di<DiagnosticsMonitor>().stream,
           ),
         ),
         BlocProvider(

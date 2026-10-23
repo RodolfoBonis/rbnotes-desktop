@@ -43,6 +43,28 @@ abstract final class AppLogger {
     );
   }
 
+  /// Reporta um diagnóstico assíncrono do nativo (falha não-fatal: queda do
+  /// áudio do sistema, erro de escrita, event tap desabilitado, watchdog do
+  /// ditado) ao Sentry, com o código e o contexto anexados.
+  static Future<void> nativeDiagnostic(
+    String code,
+    String message, {
+    String? recordingId,
+  }) async {
+    developer.log('diagnostic $code: $message', name: 'native', level: 900);
+    await Sentry.captureMessage(
+      'native diagnostic: $code',
+      level: SentryLevel.warning,
+      withScope: (scope) async {
+        await scope.setTag('native_diagnostic', code);
+        await scope.setTag('category', 'native');
+        if (recordingId != null) {
+          await scope.setTag('recording_id', recordingId);
+        }
+      },
+    );
+  }
+
   static Future<void> error(
     Object error,
     StackTrace? stackTrace, {

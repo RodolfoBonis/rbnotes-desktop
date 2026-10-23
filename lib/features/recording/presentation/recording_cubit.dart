@@ -13,6 +13,9 @@ import 'package:uuid/uuid.dart';
 
 enum RecordingStatus { idle, recording, paused }
 
+/// Diagnóstico nativo: o áudio do sistema caiu durante a gravação.
+const _systemAudioStoppedCode = 'system_audio_stopped';
+
 class RecordingState extends Equatable {
   const RecordingState({
     this.status = RecordingStatus.idle,
@@ -21,6 +24,7 @@ class RecordingState extends Equatable {
     this.micLevel = 0,
     this.systemLevel,
     this.captureSystemAudio = false,
+    this.systemAudioDropped = false,
     this.error,
   });
 
@@ -30,6 +34,9 @@ class RecordingState extends Equatable {
   final double micLevel;
   final double? systemLevel;
   final bool captureSystemAudio;
+
+  /// O áudio do sistema caiu no meio da gravação (SCStream parou). O mic segue.
+  final bool systemAudioDropped;
   final String? error;
 
   bool get isActive => status != RecordingStatus.idle;
@@ -41,6 +48,7 @@ class RecordingState extends Equatable {
     double? micLevel,
     double? systemLevel,
     bool? captureSystemAudio,
+    bool? systemAudioDropped,
     String? error,
     bool clearError = false,
   }) => RecordingState(
@@ -50,6 +58,7 @@ class RecordingState extends Equatable {
     micLevel: micLevel ?? this.micLevel,
     systemLevel: systemLevel ?? this.systemLevel,
     captureSystemAudio: captureSystemAudio ?? this.captureSystemAudio,
+    systemAudioDropped: systemAudioDropped ?? this.systemAudioDropped,
     error: clearError ? null : (error ?? this.error),
   );
 
@@ -61,6 +70,7 @@ class RecordingState extends Equatable {
     micLevel,
     systemLevel,
     captureSystemAudio,
+    systemAudioDropped,
     error,
   ];
 }
@@ -73,6 +83,7 @@ class RecordingCubit extends Cubit<RecordingState> {
     required TranscriptionQueue queue,
     required SettingsStore settings,
     required AppPaths paths,
+    required Stream<NativeDiagnostic> diagnostics,
     Uuid? uuid,
   }) : _native = native,
        _repository = repository,
@@ -82,7 +93,9 @@ class RecordingCubit extends Cubit<RecordingState> {
        _uuid = uuid ?? const Uuid(),
        super(
          RecordingState(captureSystemAudio: settings.captureSystemAudio),
-       );
+       ) {
+    _diagSub = diagnostics.listen(_onDiagnostic);
+  }
 
   final RbNative _native;
   final NoteRepository _repository;
@@ -92,6 +105,7 @@ class RecordingCubit extends Cubit<RecordingState> {
   final Uuid _uuid;
 
   StreamSubscription<AudioLevels>? _levelsSub;
+  StreamSubscription<NativeDiagnostic>? _diagSub;
   Timer? _ticker;
   DateTime? _startedAt;
   Duration _accumulated = Duration.zero;
@@ -140,6 +154,7 @@ class RecordingCubit extends Cubit<RecordingState> {
           status: RecordingStatus.recording,
           noteId: id,
           elapsed: Duration.zero,
+          systemAudioDropped: false,
         ),
       );
     } on RbNativeException catch (e, st) {
@@ -221,6 +236,12 @@ class RecordingCubit extends Cubit<RecordingState> {
     }
   }
 
+  void _onDiagnostic(NativeDiagnostic diagnostic) {
+    if (diagnostic.code == _systemAudioStoppedCode && state.isActive) {
+      emit(state.copyWith(systemAudioDropped: true));
+    }
+  }
+
   void _listenLevels(String id) {
     unawaited(_levelsSub?.cancel());
     _levelsSub = _native.audioLevels(id).listen((levels) {
@@ -258,6 +279,7 @@ class RecordingCubit extends Cubit<RecordingState> {
   Future<void> close() async {
     _ticker?.cancel();
     await _levelsSub?.cancel();
+    await _diagSub?.cancel();
     return super.close();
   }
 }

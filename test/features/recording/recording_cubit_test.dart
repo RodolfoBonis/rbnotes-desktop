@@ -51,6 +51,7 @@ void main() {
     queue: queue,
     settings: settings,
     paths: paths,
+    diagnostics: native.diagnostics(),
   );
 
   blocTest<RecordingCubit, RecordingState>(
@@ -89,14 +90,32 @@ void main() {
     await cubit.close();
   });
 
+  test('diagnóstico system_audio_stopped marca systemAudioDropped', () async {
+    final cubit = build();
+    await cubit.start();
+    final id = cubit.state.noteId!;
+    native.emitDiagnostic(
+      NativeDiagnostic(
+        code: 'system_audio_stopped',
+        message: 'SCStream parou',
+        recordingId: id,
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(cubit.state.systemAudioDropped, isTrue);
+    await cubit.close();
+  });
+
   test('sem permissão de microfone emite erro e não grava', () async {
     // requestPermission do fake normalmente concede; este nega sempre.
+    final denying = _DenyingNative();
     final cubit = RecordingCubit(
-      native: _DenyingNative(),
+      native: denying,
       repository: repo,
       queue: queue,
       settings: settings,
       paths: paths,
+      diagnostics: denying.diagnostics(),
     );
     await cubit.start();
     expect(cubit.state.status, RecordingStatus.idle);

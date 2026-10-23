@@ -23,6 +23,7 @@ void main() {
           queue: h.queue,
           settings: h.settings,
           paths: h.paths,
+          diagnostics: h.native.diagnostics(),
         ),
       ),
       BlocProvider(

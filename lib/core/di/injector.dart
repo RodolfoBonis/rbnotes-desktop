@@ -1,5 +1,6 @@
 import 'package:get_it/get_it.dart';
 import 'package:rbnotes/core/config/app_config.dart';
+import 'package:rbnotes/core/observability/diagnostics_monitor.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/dictation/data/dictation_service.dart';
@@ -38,6 +39,7 @@ Future<void> configureDependencies(AppConfig config) async {
     repository: repository,
     settings: settings,
   );
+  final diagnostics = DiagnosticsMonitor(native);
 
   di
     ..registerSingleton<AppConfig>(config)
@@ -49,5 +51,6 @@ Future<void> configureDependencies(AppConfig config) async {
     ..registerSingleton<NoteRepository>(repository)
     ..registerSingleton<TranscriptionQueue>(queue)
     ..registerSingleton<DictationService>(dictation)
+    ..registerSingleton<DiagnosticsMonitor>(diagnostics)
     ..registerFactory<AudioPlayerController>(JustAudioPlayer.new);
 }

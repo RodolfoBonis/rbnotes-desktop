@@ -10,6 +10,7 @@ import 'package:rbnotes/app/theme_mode_cubit.dart';
 import 'package:rbnotes/core/di/injector.dart';
 import 'package:rbnotes/core/routing/routes.dart';
 import 'package:rbnotes/data/database/database.dart';
+import 'package:rbnotes/features/dictation/data/dictation_service.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/presentation/notes_list_view.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
@@ -30,6 +31,7 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late final TrayController _tray;
+  StreamSubscription<String>? _noticesSub;
 
   @override
   void initState() {
@@ -39,13 +41,23 @@ class _AppShellState extends State<AppShell> {
       onOpen: _bringToFront,
     );
     unawaited(_tray.init());
+    // Avisos do ditado (ex.: a colagem falhou mas o texto foi salvo).
+    _noticesSub = di<DictationService>().notices.listen(_showNotice);
     WidgetsBinding.instance.addPostFrameCallback((_) => _runRecovery());
   }
 
   @override
   void dispose() {
+    unawaited(_noticesSub?.cancel());
     _tray.dispose();
     super.dispose();
+  }
+
+  void _showNotice(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   Future<void> _bringToFront() async {
@@ -60,7 +72,9 @@ class _AppShellState extends State<AppShell> {
       queue: di(),
       paths: di(),
     );
-    await cubit.scan();
+    await cubit.scan(
+      currentRecordingId: context.read<RecordingCubit>().state.noteId,
+    );
     if (!mounted || !cubit.state.hasRecoverable) return;
     await showRecoveryDialog(context, cubit);
   }

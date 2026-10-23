@@ -96,6 +96,29 @@ class RecordingPanel extends StatelessWidget {
                     ],
                   ),
                 ),
+              if (state.isActive && state.systemAudioDropped)
+                Padding(
+                  padding: const EdgeInsets.only(top: FormaSpacing.sm),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        size: 16,
+                        color: c.warningColor,
+                      ),
+                      const SizedBox(width: FormaSpacing.xs),
+                      Expanded(
+                        child: Text(
+                          'Áudio do sistema indisponível — gravando só o '
+                          'microfone.',
+                          style: context.formaTypography.caption12.copyWith(
+                            color: c.warningColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               if (state.error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: FormaSpacing.sm),
