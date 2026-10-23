@@ -283,6 +283,24 @@ class NoteRepository {
     });
   }
 
+  /// Edita o texto de um segmento (edição inline da transcrição), reindexa o
+  /// FTS e marca o conjunto de segmentos como alterado para o sync.
+  Future<void> updateSegmentContent(
+    String noteId,
+    int segmentId,
+    String content,
+  ) async {
+    await _db.transaction(() async {
+      await (_db.update(
+        _db.transcriptSegments,
+      )..where((s) => s.id.equals(segmentId))).write(
+        TranscriptSegmentsCompanion(content: Value(content)),
+      );
+      await _db.recomposeSearchBody(noteId);
+      await _touchSegmentSet(noteId, DateTime.now());
+    });
+  }
+
   Future<List<SegmentRow>> getSegments(String noteId) {
     return (_db.select(_db.transcriptSegments)
           ..where((s) => s.noteId.equals(noteId))

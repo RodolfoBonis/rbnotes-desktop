@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:rbnotes/app/shell/detail_toolbar.dart';
@@ -12,6 +13,7 @@ import 'package:rbnotes/core/format/formatters.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/motion.dart';
 import 'package:rbnotes/core/ui/pulse_dot.dart';
+import 'package:rbnotes/core/ui/rb_menu.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/library/presentation/library_cubit.dart';
 import 'package:rbnotes/features/notes/domain/note_export.dart';
@@ -750,11 +752,15 @@ class _SegmentRow extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.baseline,
                     textBaseline: TextBaseline.alphabetic,
                     children: [
-                      Text(
-                        speakerName,
-                        style: context.bodyText(
-                          size: 12,
-                          weight: FontWeight.w600,
+                      GestureDetector(
+                        onTap: () => _renameSpeaker(context, speakerName),
+                        behavior: HitTestBehavior.opaque,
+                        child: Text(
+                          speakerName,
+                          style: context.bodyText(
+                            size: 12,
+                            weight: FontWeight.w600,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -783,9 +789,40 @@ class _SegmentRow extends StatelessWidget {
   }
 }
 
-/// Texto do segmento como um Wrap de palavras; as de baixa confiança ficam
-/// sublinhadas e abrem "Corrigir palavra" ao toque.
-class _SegmentText extends StatelessWidget {
+/// Diálogo para renomear um falante em toda a nota.
+Future<void> _renameSpeaker(BuildContext context, String current) async {
+  final cubit = context.read<NoteViewCubit>();
+  final controller = TextEditingController(text: current);
+  final name = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Renomear falante'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        onSubmitted: (v) => Navigator.of(ctx).pop(v),
+        decoration: const InputDecoration(hintText: 'Nome do falante'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('Cancelar'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(controller.text),
+          child: const Text('Salvar'),
+        ),
+      ],
+    ),
+  );
+  if (name != null && name.trim().isNotEmpty) {
+    await cubit.renameSpeaker(current, name.trim());
+  }
+}
+
+/// Texto do segmento: Wrap de palavras (baixa confiança sublinhada). Duplo
+/// clique edita o texto inline (Enter salva, Esc cancela).
+class _SegmentText extends StatefulWidget {
   const _SegmentText({
     required this.segment,
     required this.dimmed,
@@ -797,16 +834,113 @@ class _SegmentText extends StatelessWidget {
   final ValueChanged<String> onFixWord;
 
   @override
+  State<_SegmentText> createState() => _SegmentTextState();
+}
+
+class _SegmentTextState extends State<_SegmentText> {
+  bool _editing = false;
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.segment.content,
+  );
+  final FocusNode _focusNode = FocusNode();
+
+  void _startEdit() {
+    _controller.text = widget.segment.content;
+    setState(() => _editing = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+      _controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _controller.text.length,
+      );
+    });
+  }
+
+  Future<void> _save() async {
+    final text = _controller.text.trim();
+    setState(() => _editing = false);
+    if (text.isNotEmpty && text != widget.segment.content) {
+      await context.read<NoteViewCubit>().editSegment(
+        widget.segment.id,
+        text,
+      );
+    }
+  }
+
+  void _cancel() => setState(() => _editing = false);
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      _cancel();
+      return KeyEventResult.handled;
+    }
+    if ((event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.numpadEnter) &&
+        !shift) {
+      unawaited(_save());
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final rb = context.rb;
     final baseStyle = context.bodyText(
       size: 14,
       height: 1.55,
-      color: dimmed ? rb.secondary(0.6) : rb.text,
+      color: widget.dimmed ? rb.secondary(0.6) : rb.text,
     );
-    final words = TranscriptWord.decode(segment.wordsJson);
+    if (_editing) {
+      return Focus(
+        onKeyEvent: _onKey,
+        child: TextField(
+          controller: _controller,
+          focusNode: _focusNode,
+          maxLines: null,
+          style: baseStyle,
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: 6,
+            ),
+            filled: true,
+            fillColor: rb.fill,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: rb.accent),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: rb.accent),
+            ),
+          ),
+          onEditingComplete: _save,
+        ),
+      );
+    }
+    return GestureDetector(
+      onDoubleTap: _startEdit,
+      behavior: HitTestBehavior.opaque,
+      child: _buildDisplay(context, baseStyle),
+    );
+  }
+
+  Widget _buildDisplay(BuildContext context, TextStyle baseStyle) {
+    final rb = context.rb;
+    final words = TranscriptWord.decode(widget.segment.wordsJson);
     if (words.isEmpty) {
-      return Text(segment.content, style: baseStyle);
+      return Text(widget.segment.content, style: baseStyle);
     }
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -814,7 +948,7 @@ class _SegmentText extends StatelessWidget {
         for (final w in words)
           if (w.probability < _lowConfidence)
             GestureDetector(
-              onTap: () => onFixWord(_clean(w.text)),
+              onTap: () => widget.onFixWord(_clean(w.text)),
               behavior: HitTestBehavior.opaque,
               child: Container(
                 margin: const EdgeInsets.only(right: 4),
@@ -859,6 +993,8 @@ class _InsightsTab extends StatelessWidget {
         for (final a in state.actions)
           GestureDetector(
             onTap: () => cubit.toggleAction(a),
+            onSecondaryTapDown: (d) =>
+                unawaited(_taskMenu(context, a, d.globalPosition)),
             behavior: HitTestBehavior.opaque,
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -943,6 +1079,124 @@ class _InsightsTab extends StatelessWidget {
       ],
     );
   }
+}
+
+enum _TaskMenu { edit, delete }
+
+Future<void> _taskMenu(
+  BuildContext context,
+  ActionRow action,
+  Offset position,
+) async {
+  final cubit = context.read<NoteViewCubit>();
+  final choice = await showRbMenu<_TaskMenu>(
+    context: context,
+    position: position,
+    width: 200,
+    items: const [
+      RbMenuItem(
+        value: _TaskMenu.edit,
+        label: 'Editar tarefa',
+        icon: Icons.edit_outlined,
+      ),
+      RbMenuItem(
+        value: _TaskMenu.delete,
+        label: 'Apagar tarefa',
+        icon: Icons.delete_outline,
+        destructive: true,
+      ),
+    ],
+  );
+  if (choice == null || !context.mounted) return;
+  switch (choice) {
+    case _TaskMenu.edit:
+      await _editTaskDialog(context, action, cubit);
+    case _TaskMenu.delete:
+      await cubit.deleteAction(action.id);
+  }
+}
+
+Future<void> _editTaskDialog(
+  BuildContext context,
+  ActionRow action,
+  NoteViewCubit cubit,
+) async {
+  final contentCtrl = TextEditingController(text: action.content);
+  final ownerCtrl = TextEditingController(text: action.owner ?? '');
+  var due = action.due;
+
+  final saved = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => AlertDialog(
+        title: const Text('Editar tarefa'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: contentCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Tarefa'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: ownerCtrl,
+              decoration: const InputDecoration(labelText: 'Responsável'),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    due == null
+                        ? 'Sem prazo'
+                        : 'Prazo: ${DateFormat('dd/MM/yyyy').format(due!)}',
+                  ),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: ctx,
+                      initialDate: due ?? DateTime.now(),
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) setState(() => due = picked);
+                  },
+                  child: const Text('Escolher'),
+                ),
+                if (due != null)
+                  TextButton(
+                    onPressed: () => setState(() => due = null),
+                    child: const Text('Limpar'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (saved != true) return;
+  final owner = ownerCtrl.text.trim();
+  await cubit.editAction(
+    action.id,
+    content: contentCtrl.text.trim().isEmpty ? null : contentCtrl.text.trim(),
+    owner: owner.isEmpty ? null : owner,
+    clearOwner: owner.isEmpty,
+    due: due,
+    clearDue: due == null,
+  );
 }
 
 class _InsightCard extends StatelessWidget {

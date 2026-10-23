@@ -124,6 +124,36 @@ class NoteAiRepository {
     );
   }
 
+  /// Edita uma tarefa (texto, responsável, prazo). Campos omitidos ficam como
+  /// estão; passe [clearOwner]/[clearDue] para zerá-los.
+  Future<void> updateAction(
+    String id, {
+    String? content,
+    String? owner,
+    bool clearOwner = false,
+    DateTime? due,
+    bool clearDue = false,
+  }) {
+    return (_db.update(_db.actions)..where((a) => a.id.equals(id))).write(
+      ActionsCompanion(
+        content: content == null ? const Value.absent() : Value(content),
+        owner: clearOwner ? const Value(null) : Value.absentIfNull(owner),
+        due: clearDue ? const Value(null) : Value.absentIfNull(due),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  /// Apaga uma tarefa (soft-delete, propaga no sync).
+  Future<void> deleteAction(String id) {
+    return (_db.update(_db.actions)..where((a) => a.id.equals(id))).write(
+      ActionsCompanion(
+        deleted: const Value(true),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
   // ---------- chat ----------
 
   Stream<List<ChatMessageRow>> watchChat(String noteId) {

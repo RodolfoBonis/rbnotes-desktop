@@ -375,6 +375,26 @@ class NoteViewCubit extends Cubit<NoteViewState> {
   Future<void> toggleAction(ActionRow action) =>
       _noteAi.setActionDone(action.id, done: !action.done);
 
+  /// Edita uma tarefa (texto, responsável, prazo).
+  Future<void> editAction(
+    String id, {
+    String? content,
+    String? owner,
+    bool clearOwner = false,
+    DateTime? due,
+    bool clearDue = false,
+  }) => _noteAi.updateAction(
+    id,
+    content: content,
+    owner: owner,
+    clearOwner: clearOwner,
+    due: due,
+    clearDue: clearDue,
+  );
+
+  /// Apaga uma tarefa.
+  Future<void> deleteAction(String id) => _noteAi.deleteAction(id);
+
   // ---------- chat ----------
 
   void setChatInput(String v) => emit(state.copyWith(chatInput: v));
@@ -489,6 +509,55 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     final enrichment = _enrichment;
     if (noteId == null || enrichment == null) return;
     await enrichment.enrichNote(noteId, force: true);
+  }
+
+  /// Edita o texto de um segmento (duplo clique na transcrição). Salva,
+  /// reindexa o FTS e sincroniza.
+  Future<void> editSegment(int segmentId, String content) async {
+    final noteId = _noteId;
+    final clean = content.trim();
+    if (noteId == null || clean.isEmpty) return;
+    await _notes.updateSegmentContent(noteId, segmentId, clean);
+  }
+
+  /// Renomeia um falante em toda a nota (clique no nome). Atualiza os nomes no
+  /// `note_ai` e em `notes.speakersJson`, e sincroniza.
+  Future<void> renameSpeaker(String oldName, String newName) async {
+    final noteId = _noteId;
+    final clean = newName.trim();
+    if (noteId == null || clean.isEmpty || clean == oldName) return;
+    final ai = state.ai;
+    if (ai != null) {
+      final sn = ai.speakerNames;
+      final updated = NoteAi(
+        title: ai.title,
+        tldr: ai.tldr,
+        points: ai.points,
+        actions: ai.actions,
+        decisions: ai.decisions,
+        questions: ai.questions,
+        quote: ai.quote,
+        speakerNames: SpeakerNames(
+          others: sn.others.map((o) => o == oldName ? clean : o).toList(),
+          segments: [
+            for (final s in sn.segments)
+              if (s.speaker == oldName)
+                SpeakerSegment(
+                  index: s.index,
+                  speaker: clean,
+                  inferred: s.inferred,
+                )
+              else
+                s,
+          ],
+        ),
+      );
+      await _noteAi.saveNoteAi(noteId, updated);
+    }
+    final speakers = EnrichmentSpeakers.of(state.note?.speakersJson)
+        .map((s) => s == oldName ? clean : s)
+        .toList();
+    await _notes.setSpeakers(noteId, speakers.join('\u001f'));
   }
 
   /// Renomeia o título da nota atual (ação "Renomear"). Marca como título
