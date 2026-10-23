@@ -1,0 +1,15 @@
+include: package:very_good_analysis/analysis_options.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - example/build/**
+    - "**/*.g.dart"
+    - macos/**
+
+linter:
+  rules:
+    # The public API is a thin data layer mirroring docs/native-contract.md
+    # 1:1 (model fields, constructors, fromMap). Documenting every field would
+    # duplicate the contract and add noise; the contract is the source of truth.
+    public_member_api_docs: false
