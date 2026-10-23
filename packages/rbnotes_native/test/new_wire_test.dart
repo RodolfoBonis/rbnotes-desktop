@@ -241,7 +241,138 @@ void main() {
       );
     });
   });
+
+  group('activity overlay', () {
+    test('showActivityOverlay serializes mode and startedAt', () async {
+      handle();
+      final started = DateTime.fromMillisecondsSinceEpoch(1700000000000);
+
+      await native.showActivityOverlay(
+        mode: OverlayMode.recording,
+        startedAt: started,
+      );
+
+      expect(calls.single.method, 'showActivityOverlay');
+      expect(calls.single.arguments, {
+        'mode': 'recording',
+        'startedAtMs': 1700000000000,
+      });
+    });
+
+    test('showActivityOverlay forwards dictation mode', () async {
+      handle();
+      await native.showActivityOverlay(
+        mode: OverlayMode.dictation,
+        startedAt: DateTime.fromMillisecondsSinceEpoch(0),
+      );
+      expect((calls.single.arguments as Map)['mode'], 'dictation');
+    });
+
+    test('updateActivityOverlay sends only the fields given, nulls otherwise',
+        () async {
+      handle();
+
+      await native.updateActivityOverlay(micLevel: 0.6, liveText: 'olá');
+
+      expect(calls.single.method, 'updateActivityOverlay');
+      expect(calls.single.arguments, {
+        'micLevel': 0.6,
+        'systemLevel': null,
+        'liveText': 'olá',
+        'phase': null,
+        'progress': null,
+        'message': null,
+        'paused': null,
+      });
+    });
+
+    test('updateActivityOverlay serializes phase/progress/message', () async {
+      handle();
+
+      await native.updateActivityOverlay(
+        phase: OverlayPhase.processing,
+        progress: 0.4,
+        message: 'Transcrevendo',
+        paused: true,
+      );
+
+      final args = calls.single.arguments as Map;
+      expect(args['phase'], 'processing');
+      expect(args['progress'], 0.4);
+      expect(args['message'], 'Transcrevendo');
+      expect(args['paused'], true);
+    });
+
+    test('hideActivityOverlay defaults to zero delay', () async {
+      handle();
+      await native.hideActivityOverlay();
+      expect(calls.single.method, 'hideActivityOverlay');
+      expect(calls.single.arguments, {'delayMs': 0});
+    });
+
+    test('hideActivityOverlay forwards the delay in ms', () async {
+      handle();
+      await native.hideActivityOverlay(
+        delay: const Duration(milliseconds: 1500),
+      );
+      expect((calls.single.arguments as Map)['delayMs'], 1500);
+    });
+
+    test('overlayActions decodes each known wire action', () async {
+      messenger.setMockStreamHandler(
+        const EventChannel(RbNativeChannels.overlayActions),
+        _ListStreamHandler(const [
+          'pause',
+          'resume',
+          'stop',
+          'discard',
+          'openApp',
+        ]),
+      );
+
+      final actions = await native.overlayActions().take(5).toList();
+
+      expect(actions, const [
+        OverlayAction.pause,
+        OverlayAction.resume,
+        OverlayAction.stop,
+        OverlayAction.discard,
+        OverlayAction.openApp,
+      ]);
+
+      messenger.setMockStreamHandler(
+        const EventChannel(RbNativeChannels.overlayActions),
+        null,
+      );
+    });
+
+    test('overlayActions surfaces an unknown action as invalid_event',
+        () async {
+      messenger.setMockStreamHandler(
+        const EventChannel(RbNativeChannels.overlayActions),
+        _ListStreamHandler(const ['explode']),
+      );
+
+      await expectLater(
+        native.overlayActions().first,
+        throwsA(
+          isA<RbNativeException>().having(
+            (e) => e.code,
+            'code',
+            RbNativeErrorCode.invalidEvent,
+          ),
+        ),
+      );
+
+      messenger.setMockStreamHandler(
+        const EventChannel(RbNativeChannels.overlayActions),
+        null,
+      );
+    });
+  });
 }
+
+
 
 class _ListStreamHandler extends MockStreamHandler {
   _ListStreamHandler(this.events);

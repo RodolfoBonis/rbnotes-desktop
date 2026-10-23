@@ -17,6 +17,7 @@ abstract final class RbNativeChannels {
   static const String transcriptionProgress =
       'rbnotes_native/transcription_progress';
   static const String liveTranscript = 'rbnotes_native/live_transcript';
+  static const String overlayActions = 'rbnotes_native/overlay_actions';
 }
 
 /// `MethodChannel` backed implementation of [RbNative].
@@ -32,6 +33,7 @@ class MethodChannelRbNative implements RbNative {
     EventChannel? modelDownloadChannel,
     EventChannel? transcriptionProgressChannel,
     EventChannel? liveTranscriptChannel,
+    EventChannel? overlayActionsChannel,
   }) : _method = methodChannel ?? const MethodChannel(RbNativeChannels.method),
        _levels = levelsChannel ?? const EventChannel(RbNativeChannels.levels),
        _dictation =
@@ -47,7 +49,10 @@ class MethodChannelRbNative implements RbNative {
            const EventChannel(RbNativeChannels.transcriptionProgress),
        _liveTranscript =
            liveTranscriptChannel ??
-           const EventChannel(RbNativeChannels.liveTranscript);
+           const EventChannel(RbNativeChannels.liveTranscript),
+       _overlayActions =
+           overlayActionsChannel ??
+           const EventChannel(RbNativeChannels.overlayActions);
 
   final MethodChannel _method;
   final EventChannel _levels;
@@ -56,6 +61,7 @@ class MethodChannelRbNative implements RbNative {
   final EventChannel _modelDownload;
   final EventChannel _transcriptionProgress;
   final EventChannel _liveTranscript;
+  final EventChannel _overlayActions;
 
   /// Single permanent fan-out of the native transcription-progress stream.
   /// Each native event is a `{wavPath, progress}` map; [transcribe] subscribes
@@ -308,6 +314,46 @@ class MethodChannelRbNative implements RbNative {
   @override
   Future<void> playDictationSound(DictationSound s) =>
       _invoke<void>('playDictationSound', {'sound': s.wireName});
+
+  // ---------- Activity overlay ----------
+
+  @override
+  Future<void> showActivityOverlay({
+    required OverlayMode mode,
+    required DateTime startedAt,
+  }) => _invoke<void>('showActivityOverlay', {
+    'mode': mode.wireName,
+    'startedAtMs': startedAt.millisecondsSinceEpoch,
+  });
+
+  @override
+  Future<void> updateActivityOverlay({
+    double? micLevel,
+    double? systemLevel,
+    String? liveText,
+    OverlayPhase? phase,
+    double? progress,
+    String? message,
+    bool? paused,
+  }) => _invoke<void>('updateActivityOverlay', {
+    'micLevel': micLevel,
+    'systemLevel': systemLevel,
+    'liveText': liveText,
+    'phase': phase?.wireName,
+    'progress': progress,
+    'message': message,
+    'paused': paused,
+  });
+
+  @override
+  Future<void> hideActivityOverlay({Duration delay = Duration.zero}) =>
+      _invoke<void>('hideActivityOverlay', {'delayMs': delay.inMilliseconds});
+
+  @override
+  Stream<OverlayAction> overlayActions() =>
+      _mapStreamErrors(_overlayActions.receiveBroadcastStream()).map(
+        (event) => OverlayActionWire.fromWire(event! as String),
+      );
 
   // ---------- Helpers ----------
 

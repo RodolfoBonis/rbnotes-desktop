@@ -1,3 +1,5 @@
+import 'package:rbnotes_native/src/exceptions.dart';
+
 /// System permissions the plugin can query and request.
 enum RbPermission { microphone, screenRecording, accessibility }
 
@@ -100,5 +102,59 @@ extension TranscriptionPriorityWire on TranscriptionPriority {
   String get wireName => switch (this) {
     TranscriptionPriority.normal => 'normal',
     TranscriptionPriority.high => 'high',
+  };
+}
+
+/// Which activity the notch overlay represents.
+///
+/// [recording] shows the full recording HUD (REC dot, timer, live waveform,
+/// live transcript and Pause/Finish/Discard controls). [dictation] shows the
+/// smaller dictation pill (waveform + "Ditando…" + the paste hint).
+enum OverlayMode { recording, dictation }
+
+/// The visual phase of the activity overlay, driving which content it renders.
+///
+/// [live] is the active recording/dictation state; [processing] shows the
+/// "Transcrevendo / Gerando resumo" progress; [done] shows a check and a short
+/// title before auto-hiding; [error] shows an icon and a short message.
+enum OverlayPhase { live, processing, done, error }
+
+/// A user action performed on the activity overlay.
+///
+/// [openApp] is emitted when the user clicks the body of the pill (outside the
+/// explicit buttons) to bring RbNotes to the front.
+enum OverlayAction { pause, resume, stop, discard, openApp }
+
+extension OverlayModeWire on OverlayMode {
+  String get wireName => switch (this) {
+    OverlayMode.recording => 'recording',
+    OverlayMode.dictation => 'dictation',
+  };
+}
+
+extension OverlayPhaseWire on OverlayPhase {
+  String get wireName => switch (this) {
+    OverlayPhase.live => 'live',
+    OverlayPhase.processing => 'processing',
+    OverlayPhase.done => 'done',
+    OverlayPhase.error => 'error',
+  };
+}
+
+extension OverlayActionWire on OverlayAction {
+  /// Decodes an action coming from the native side.
+  ///
+  /// Throws `RbNativeException('invalid_event')` for an unknown value, so a
+  /// malformed action never silently becomes a default.
+  static OverlayAction fromWire(String value) => switch (value) {
+    'pause' => OverlayAction.pause,
+    'resume' => OverlayAction.resume,
+    'stop' => OverlayAction.stop,
+    'discard' => OverlayAction.discard,
+    'openApp' => OverlayAction.openApp,
+    _ => throw RbNativeException(
+      RbNativeErrorCode.invalidEvent,
+      'Unknown OverlayAction: $value',
+    ),
   };
 }

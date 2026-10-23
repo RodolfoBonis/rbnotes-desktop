@@ -154,4 +154,52 @@ abstract interface class RbNative {
   /// Plays a system sound at the start or end of a dictation session. The
   /// native side no longer plays these automatically; the app triggers them.
   Future<void> playDictationSound(DictationSound s);
+
+  // ---------- Activity overlay (notch HUD) ----------
+
+  /// Shows the Dynamic-Island-style activity overlay that emerges from the
+  /// notch (or drops from the top of the menu bar on Macs without a notch).
+  ///
+  /// [mode] selects the recording HUD or the smaller dictation pill;
+  /// [startedAt] seeds the elapsed-time counter (the native side advances it
+  /// locally, so the timer keeps ticking without per-second updates).
+  ///
+  /// The overlay never steals focus from the frontmost app (so dictation can
+  /// still paste into it) and floats above full-screen apps on every Space.
+  /// Calling it again while visible re-targets the existing panel to [mode].
+  Future<void> showActivityOverlay({
+    required OverlayMode mode,
+    required DateTime startedAt,
+  });
+
+  /// Pushes a partial update into the visible overlay. Every argument is
+  /// optional; only the provided fields change.
+  ///
+  /// [micLevel]/[systemLevel] (0..1) drive the live waveform and may be sent at
+  /// ~20 Hz — the native side coalesces them on the main thread. [liveText] is
+  /// the accumulated live transcript (the last 1-2 lines are shown, new words
+  /// fade in). [phase] switches between live/processing/done/error; [progress]
+  /// (0..1) feeds the processing bar; [message] is the short title (done) or
+  /// error text; [paused] toggles the paused styling of the REC dot.
+  ///
+  /// No-op if no overlay is currently shown.
+  Future<void> updateActivityOverlay({
+    double? micLevel,
+    double? systemLevel,
+    String? liveText,
+    OverlayPhase? phase,
+    double? progress,
+    String? message,
+    bool? paused,
+  });
+
+  /// Hides and tears down the overlay after [delay] (immediately by default).
+  /// A non-zero [delay] lets the "done"/"pasted" state linger before it
+  /// animates back into the notch. A new [showActivityOverlay] cancels a
+  /// pending hide.
+  Future<void> hideActivityOverlay({Duration delay = Duration.zero});
+
+  /// User actions performed on the overlay (button taps or a click on the
+  /// pill body). A single permanent broadcast stream, like [diagnostics].
+  Stream<OverlayAction> overlayActions();
 }
