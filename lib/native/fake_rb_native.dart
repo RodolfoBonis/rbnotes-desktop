@@ -77,6 +77,28 @@ class FakeRbNative implements RbNative {
   Hotkey? registeredHotkey;
   DictationMode? registeredMode;
 
+  // ---- Activity overlay (notch HUD) — hooks de teste. ----
+  final _overlayActions = StreamController<OverlayAction>.broadcast();
+
+  /// Overlay visível no momento (null quando escondido).
+  OverlayMode? overlayMode;
+  DateTime? overlayStartedAt;
+
+  /// Última atualização aplicada ao overlay (campos parciais).
+  OverlayPhase? overlayPhase;
+  double? overlayProgress;
+  String? overlayMessage;
+  String? overlayLiveText;
+  double? overlayMicLevel;
+  double? overlaySystemLevel;
+  bool? overlayPaused;
+
+  /// Nº de vezes que show/update/hide foram chamados (asserts de teste).
+  int overlayShowCount = 0;
+  int overlayUpdateCount = 0;
+  int overlayHideCount = 0;
+  Duration? lastOverlayHideDelay;
+
   @override
   Future<PermissionStatus> permissionStatus(RbPermission p) async =>
       _permissions[p] ?? PermissionStatus.notDetermined;
@@ -310,9 +332,58 @@ class FakeRbNative implements RbNative {
   Future<void> playDictationSound(DictationSound s) async =>
       playedSounds.add(s);
 
+  @override
+  Future<void> showActivityOverlay({
+    required OverlayMode mode,
+    required DateTime startedAt,
+  }) async {
+    overlayMode = mode;
+    overlayStartedAt = startedAt;
+    overlayPhase = OverlayPhase.live;
+    overlayShowCount++;
+  }
+
+  @override
+  Future<void> updateActivityOverlay({
+    double? micLevel,
+    double? systemLevel,
+    String? liveText,
+    OverlayPhase? phase,
+    double? progress,
+    String? message,
+    bool? paused,
+  }) async {
+    // No-op se nada visível (espelha o contrato real).
+    if (overlayMode == null) return;
+    if (micLevel != null) overlayMicLevel = micLevel;
+    if (systemLevel != null) overlaySystemLevel = systemLevel;
+    if (liveText != null) overlayLiveText = liveText;
+    if (phase != null) overlayPhase = phase;
+    if (progress != null) overlayProgress = progress;
+    if (message != null) overlayMessage = message;
+    if (paused != null) overlayPaused = paused;
+    overlayUpdateCount++;
+  }
+
+  @override
+  Future<void> hideActivityOverlay({Duration delay = Duration.zero}) async {
+    lastOverlayHideDelay = delay;
+    overlayHideCount++;
+    overlayMode = null;
+    overlayStartedAt = null;
+  }
+
+  @override
+  Stream<OverlayAction> overlayActions() => _overlayActions.stream;
+
+  /// Emite uma ação do overlay (uso em dev/testes).
+  void emitOverlayAction(OverlayAction action) =>
+      _overlayActions.add(action);
+
   Future<void> dispose() async {
     await _dictation.close();
     await _diagnostics.close();
+    if (!_overlayActions.isClosed) await _overlayActions.close();
     for (final c in _live.values) {
       if (!c.isClosed) await c.close();
     }
