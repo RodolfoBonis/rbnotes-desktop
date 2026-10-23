@@ -12,6 +12,8 @@ import 'package:rbnotes/core/observability/app_bloc_observer.dart';
 import 'package:rbnotes/core/observability/diagnostics_monitor.dart';
 import 'package:rbnotes/features/dictation/data/dictation_service.dart';
 import 'package:rbnotes/features/settings/data/retention_service.dart';
+import 'package:rbnotes/features/sync/data/audio_upload_queue.dart';
+import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:window_manager/window_manager.dart';
@@ -60,6 +62,12 @@ Future<void> bootstrap(
   di<RetentionService>().start();
   // Diagnósticos assíncronos do nativo → Sentry com contexto.
   di<DiagnosticsMonitor>().start();
+  // Sync real (quando o backend está ligado): dispara ao abrir + a cada 2 min,
+  // e retoma uploads de áudio pendentes.
+  if (di.isRegistered<SyncService>()) di<SyncService>().start();
+  if (di.isRegistered<AudioUploadQueue>()) {
+    unawaited(di<AudioUploadQueue>().process());
+  }
 
   Future<void> run() async => runApp(builder());
 
