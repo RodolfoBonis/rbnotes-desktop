@@ -13,6 +13,7 @@ import 'package:rbnotes/app/theme_mode_cubit.dart';
 import 'package:rbnotes/core/di/injector.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
+import 'package:rbnotes/core/ui/motion.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/auth/data/auth_service.dart';
 import 'package:rbnotes/features/collections/domain/collection_rule.dart';
@@ -274,28 +275,33 @@ class _OverlayLayer extends StatelessWidget {
         return Stack(
           children: [
             if (state.askOpen)
-              AskOverlay(
-                onClose: overlay.closeAsk,
-                colorForNote: (id) => RbTokens.folderColor(
-                  library.state.notes
-                      .where((n) => n.id == id)
-                      .map((n) => n.folderId)
-                      .firstOrNull,
+              FadeScaleIn(
+                child: AskOverlay(
+                  onClose: overlay.closeAsk,
+                  colorForNote: (id) => RbTokens.folderColor(
+                    library.state.notes
+                        .where((n) => n.id == id)
+                        .map((n) => n.folderId)
+                        .firstOrNull,
+                  ),
+                  onOpenSource: (id) {
+                    overlay.closeAsk();
+                    library
+                      ..selectSection(LibrarySection.all)
+                      ..selectNote(id);
+                  },
                 ),
-                onOpenSource: (id) {
-                  overlay.closeAsk();
-                  library
-                    ..selectSection(LibrarySection.all)
-                    ..selectNote(id);
-                },
               ),
             if (state.newCollectionOpen)
-              NewCollectionModal(
-                onClose: overlay.closeNewCollection,
-                onCreate: (desc) => _createCollection(context, desc),
+              FadeScaleIn(
+                child: NewCollectionModal(
+                  onClose: overlay.closeNewCollection,
+                  onCreate: (desc) => _createCollection(context, desc),
+                ),
               ),
-            if (state.fixOpen) _FixModal(word: state.fixWord!),
-            if (state.settingsOpen) const _SettingsLayer(),
+            if (state.fixOpen)
+              FadeScaleIn(child: _FixModal(word: state.fixWord!)),
+            if (state.settingsOpen) const FadeScaleIn(child: _SettingsLayer()),
             if (state.toast != null) ShellToast(message: state.toast!),
           ],
         );

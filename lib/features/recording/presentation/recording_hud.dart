@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:rbnotes/core/format/formatters.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
+import 'package:rbnotes/core/ui/motion.dart';
 import 'package:rbnotes/core/ui/pulse_dot.dart';
 import 'package:rbnotes/core/ui/wave_bars.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
@@ -20,15 +21,25 @@ class RecordingHud extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<RecordingCubit, RecordingState>(
       builder: (context, state) {
-        if (!state.isActive) return const SizedBox.shrink();
-        return Align(
-          alignment: Alignment.bottomCenter,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: state.isProcessing
-                ? _ProcessingCard(state: state)
-                : _RecordingCard(state: state),
-          ),
+        return AnimatedSwitcher(
+          duration: reduceMotion(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: fadeScaleTransition,
+          child: !state.isActive
+              ? const SizedBox.shrink()
+              : Align(
+                  key: ValueKey(state.isProcessing),
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 24),
+                    child: state.isProcessing
+                        ? _ProcessingCard(state: state)
+                        : _RecordingCard(state: state),
+                  ),
+                ),
         );
       },
     );

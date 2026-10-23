@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:rbnotes/app/shell/detail_toolbar.dart';
 import 'package:rbnotes/core/format/formatters.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
+import 'package:rbnotes/core/ui/motion.dart';
 import 'package:rbnotes/core/ui/pulse_dot.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/notes/domain/note_export.dart';
@@ -303,7 +304,7 @@ class _TabBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return switch (state.tab) {
+    final body = switch (state.tab) {
       NoteTab.resumo => _ResumoTab(state: state),
       NoteTab.trans => _TranscriptTab(
         state: state,
@@ -313,6 +314,17 @@ class _TabBody extends StatelessWidget {
       NoteTab.ins => _InsightsTab(state: state),
       NoteTab.chat => _ChatTab(state: state),
     };
+    return AnimatedSwitcher(
+      duration: reduceMotion(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 180),
+      switchInCurve: Curves.easeOutCubic,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: child,
+      ),
+      child: KeyedSubtree(key: ValueKey(state.tab), child: body),
+    );
   }
 }
 
