@@ -3,7 +3,7 @@ import 'package:rbnotes/features/collections/domain/collection_rule.dart';
 
 CollectionCandidate _note({
   String? folder,
-  int speakers = 1,
+  int speakers = 2,
   bool openActions = false,
   String text = '',
 }) => CollectionCandidate(
@@ -39,7 +39,7 @@ void main() {
     test('openActions requires an open action', () {
       const rule = CollectionRule(openActions: true);
       expect(rule.matches(_note(openActions: true)), isTrue);
-      expect(rule.matches(_note(openActions: false)), isFalse);
+      expect(rule.matches(_note()), isFalse);
     });
 
     test('criteria combine with AND', () {

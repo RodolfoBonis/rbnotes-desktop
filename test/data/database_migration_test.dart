@@ -126,7 +126,7 @@ void main() {
     await v2.customStatement(_v2Notes);
     await v2.customStatement(_v2Segments);
     await v2.customStatement(
-      "INSERT INTO notes (id, title, created_at, updated_at, status, source) "
+      'INSERT INTO notes (id, title, created_at, updated_at, status, source) '
       "VALUES ('n', 'Nota antiga', 0, 0, 'ready', 'recording')",
     );
     await v2.customStatement('PRAGMA user_version = 2');
