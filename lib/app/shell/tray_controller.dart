@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:tray_manager/tray_manager.dart';
 
@@ -15,11 +16,17 @@ class TrayController with TrayListener {
   StreamSubscription<RecordingState>? _sub;
 
   Future<void> init() async {
-    trayManager.addListener(this);
-    await trayManager.setIcon('assets/brand/app_icon_1024.png');
-    await trayManager.setToolTip('RbNotes');
-    await _rebuildMenu(recording.state);
-    _sub = recording.stream.listen(_rebuildMenu);
+    // A barra de menus é opcional: num ambiente sem o plugin (testes) ou se o
+    // sistema recusar o ícone, o app segue sem a tray.
+    try {
+      trayManager.addListener(this);
+      await trayManager.setIcon('assets/brand/app_icon_1024.png');
+      await trayManager.setToolTip('RbNotes');
+      await _rebuildMenu(recording.state);
+      _sub = recording.stream.listen(_rebuildMenu);
+    } on Object catch (e) {
+      AppLogger.warning('tray init failed', category: 'tray', error: e);
+    }
   }
 
   Future<void> _rebuildMenu(RecordingState state) async {

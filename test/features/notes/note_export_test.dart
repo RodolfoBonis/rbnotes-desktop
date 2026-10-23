@@ -12,6 +12,11 @@ void main() {
     status: NoteStatus.ready,
     pinned: false,
     source: NoteSource.recording,
+    favorite: false,
+    kind: NoteKind.note,
+    autoTitle: false,
+    aiStatus: AiStatus.none,
+    deleted: false,
   );
   const segments = [
     SegmentRow(

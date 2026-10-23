@@ -139,7 +139,7 @@ class _AppShellState extends State<AppShell> {
       focusNode: _focusNode,
       autofocus: true,
       onKeyEvent: _onKey,
-      child: ColoredBox(
+      child: Material(
         color: rb.wallpaper,
         child: Stack(
           children: [

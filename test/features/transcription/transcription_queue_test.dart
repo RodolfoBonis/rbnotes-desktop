@@ -245,6 +245,7 @@ class _ScriptedNative extends FakeRbNative {
     required String wavPath,
     required WhisperModel model,
     String language = 'pt',
+    String? initialPrompt,
     TranscriptionPriority priority = TranscriptionPriority.normal,
     void Function(double progress)? onProgress,
   }) {

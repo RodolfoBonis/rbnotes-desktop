@@ -38,4 +38,17 @@ Future<void> _loadFonts() async {
       // Sem bundle de assets neste teste — os fallbacks cuidam do render.
     }
   }
+  // Ícones do Material (play, busca, checks, engrenagem…) nos goldens.
+  for (final key in const [
+    'fonts/MaterialIcons-Regular.otf',
+    'packages/cupertino_icons/assets/CupertinoIcons.ttf',
+  ]) {
+    try {
+      await (FontLoader(
+        key.contains('Cupertino') ? 'CupertinoIcons' : 'MaterialIcons',
+      )..addFont(rootBundle.load(key))).load();
+    } on Object catch (_) {
+      // ícone opcional nos goldens.
+    }
+  }
 }

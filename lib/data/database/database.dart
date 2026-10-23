@@ -381,24 +381,32 @@ class AppDatabase extends _$AppDatabase {
         await rebuildSearchIndex();
       }
       if (from < 3) {
-        // Novas colunas em `notes`.
-        await m.addColumn(notes, notes.folderId);
-        await m.addColumn(notes, notes.favorite);
-        await m.addColumn(notes, notes.kind);
-        await m.addColumn(notes, notes.autoTitle);
-        await m.addColumn(notes, notes.aiStatus);
-        await m.addColumn(notes, notes.speakersJson);
-        await m.addColumn(notes, notes.deleted);
-        // Novas tabelas.
-        await m.createTable(folders);
-        await m.createTable(noteAiTable);
-        await m.createTable(actions);
-        await m.createTable(chatMessages);
-        await m.createTable(collections);
-        await m.createTable(vocabulary);
-        await m.createTable(diaryPrompts);
-        await m.createTable(diaryEntries);
-        await m.createTable(syncMeta);
+        // Defensivo: só adiciona o que falta (a tabela pode já estar
+        // parcialmente no esquema v3 em cenários de teste/recuperação).
+        final cols = await _columns('notes');
+        Future<void> addCol(GeneratedColumn<Object> c) async {
+          if (!cols.contains(c.name)) await m.addColumn(notes, c);
+        }
+        await addCol(notes.folderId);
+        await addCol(notes.favorite);
+        await addCol(notes.kind);
+        await addCol(notes.autoTitle);
+        await addCol(notes.aiStatus);
+        await addCol(notes.speakersJson);
+        await addCol(notes.deleted);
+        final existing = await _tables();
+        Future<void> addTable(TableInfo<Table, Object> t) async {
+          if (!existing.contains(t.actualTableName)) await m.createTable(t);
+        }
+        await addTable(folders);
+        await addTable(noteAiTable);
+        await addTable(actions);
+        await addTable(chatMessages);
+        await addTable(collections);
+        await addTable(vocabulary);
+        await addTable(diaryPrompts);
+        await addTable(diaryEntries);
+        await addTable(syncMeta);
         await _seedV3();
       }
     },
@@ -409,6 +417,20 @@ class AppDatabase extends _$AppDatabase {
     for (final sql in _ftsTriggers) {
       await customStatement(sql);
     }
+  }
+
+  /// Colunas existentes de [table] (para migração defensiva).
+  Future<Set<String>> _columns(String table) async {
+    final rows = await customSelect('PRAGMA table_info($table)').get();
+    return rows.map((r) => r.read<String>('name')).toSet();
+  }
+
+  /// Tabelas existentes (para migração defensiva).
+  Future<Set<String>> _tables() async {
+    final rows = await customSelect(
+      "SELECT name FROM sqlite_master WHERE type = 'table'",
+    ).get();
+    return rows.map((r) => r.read<String>('name')).toSet();
   }
 
   /// Semeia pastas e perguntas do diário (idempotente).

@@ -76,17 +76,21 @@ void main() {
     await cubit.close();
   });
 
-  test('stop finaliza a nota e enfileira transcrição', () async {
+  test('stop finaliza, processa e volta a ocioso', () async {
     final cubit = build();
     await cubit.start();
     final id = cubit.state.noteId!;
+    final created = cubit.createdNotes.first;
     await cubit.stop();
+    // Entra no HUD de processamento.
+    expect(cubit.state.status, RecordingStatus.processing);
+    // Ao terminar (transcrição + IA), emite a nota criada e volta a ocioso.
+    final note = await created;
+    expect(note.id, id);
+    final saved = await repo.getNote(id);
+    expect(saved!.micWavPath, isNotNull);
+    expect(saved.status, NoteStatus.ready);
     expect(cubit.state.status, RecordingStatus.idle);
-    // A fila processa e marca ready.
-    await queue.progress.firstWhere((p) => p.done || p.failed);
-    final note = await repo.getNote(id);
-    expect(note!.micWavPath, isNotNull);
-    expect(note.status, NoteStatus.ready);
     await cubit.close();
   });
 
