@@ -422,7 +422,10 @@ class _PermissionRow extends StatelessWidget {
 /// Rótulos legíveis dos modelos whisper (o enum do plugin não os carrega).
 extension WhisperModelLabel on WhisperModel {
   String get label => switch (this) {
-    WhisperModel.largeV3TurboQ5 => 'Large v3 Turbo (q5)',
+    WhisperModel.tiny => 'Tiny',
     WhisperModel.smallQ5 => 'Small (q5)',
+    WhisperModel.medium => 'Medium',
+    WhisperModel.largeV3TurboQ5 => 'Large v3 Turbo (q5)',
+    WhisperModel.largeV3 => 'Large v3',
   };
 }

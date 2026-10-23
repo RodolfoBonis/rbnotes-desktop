@@ -21,6 +21,13 @@ WHERE (?1 = '' OR EXISTS (
 ))
 ORDER BY n.pinned DESC, n.created_at DESC''';
 
+/// Resultado de uma correção de palavra (quantas notas e ocorrências).
+class WordFixResult {
+  const WordFixResult({required this.notes, required this.occurrences});
+  final int notes;
+  final int occurrences;
+}
+
 /// Persistência das notas, segmentos e tags (drift/SQLite).
 ///
 /// Única porta para os dados locais; todas as features dependem desta classe.
@@ -53,6 +60,17 @@ class NoteRepository {
         );
   }
 
+  /// Todas as notas não apagadas, mais recentes primeiro (sidebar/lista v3).
+  Stream<List<NoteRow>> watchAllNotes() {
+    return (_db.select(_db.notes)
+          ..where((n) => n.deleted.equals(false))
+          ..orderBy([(n) => OrderingTerm.desc(n.createdAt)]))
+        .watch();
+  }
+
+  Future<List<NoteRow>> getAllNotes() =>
+      (_db.select(_db.notes)..where((n) => n.deleted.equals(false))).get();
+
   Future<List<NoteSearchHit>> search(String query) => _db.search(query);
 
   // ---------- Detalhe ----------
@@ -72,10 +90,7 @@ class NoteRepository {
 
   Stream<List<TagRow>> watchNoteTags(String noteId) {
     final query = _db.select(_db.tags).join([
-      innerJoin(
-        _db.noteTags,
-        _db.noteTags.tagId.equalsExp(_db.tags.id),
-      ),
+      innerJoin(_db.noteTags, _db.noteTags.tagId.equalsExp(_db.tags.id)),
     ])..where(_db.noteTags.noteId.equals(noteId));
     return query.watch().map(
       (rows) => rows.map((r) => r.readTable(_db.tags)).toList(),
@@ -85,8 +100,6 @@ class NoteRepository {
   Future<NoteRow?> getNote(String id) =>
       (_db.select(_db.notes)..where((n) => n.id.equals(id))).getSingleOrNull();
 
-  /// Todas as notas num dado [status] (ex.: `recording`/`transcribing`
-  /// pendentes após um crash, para recuperação no boot).
   Future<List<NoteRow>> notesWithStatus(NoteStatus status) =>
       (_db.select(_db.notes)..where((n) => n.status.equalsValue(status))).get();
 
@@ -95,15 +108,58 @@ class NoteRepository {
   Future<void> insertNote(NotesCompanion note) =>
       _db.into(_db.notes).insert(note);
 
-  Future<void> updateTitle(String id, String title) {
+  Future<void> updateTitle(String id, String title, {bool autoTitle = false}) {
     return (_db.update(_db.notes)..where((n) => n.id.equals(id))).write(
-      NotesCompanion(title: Value(title), updatedAt: Value(DateTime.now())),
+      NotesCompanion(
+        title: Value(title),
+        autoTitle: Value(autoTitle),
+        updatedAt: Value(DateTime.now()),
+      ),
     );
   }
 
   Future<void> setPinned(String id, {required bool pinned}) {
     return (_db.update(_db.notes)..where((n) => n.id.equals(id))).write(
       NotesCompanion(pinned: Value(pinned), updatedAt: Value(DateTime.now())),
+    );
+  }
+
+  Future<void> setFavorite(String id, {required bool favorite}) {
+    return (_db.update(_db.notes)..where((n) => n.id.equals(id))).write(
+      NotesCompanion(
+        favorite: Value(favorite),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<void> setFolder(String id, String? folderId) {
+    return (_db.update(_db.notes)..where((n) => n.id.equals(id))).write(
+      NotesCompanion(
+        folderId: Value(folderId),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<void> setKind(String id, NoteKind kind) {
+    return (_db.update(_db.notes)..where((n) => n.id.equals(id))).write(
+      NotesCompanion(kind: Value(kind), updatedAt: Value(DateTime.now())),
+    );
+  }
+
+  Future<void> setAiStatus(String id, AiStatus status) {
+    return (_db.update(_db.notes)..where((n) => n.id.equals(id))).write(
+      NotesCompanion(aiStatus: Value(status), updatedAt: Value(DateTime.now())),
+    );
+  }
+
+  Future<void> setSpeakers(String id, String? speakersJson) {
+    return (_db.update(_db.notes)..where((n) => n.id.equals(id))).write(
+      NotesCompanion(
+        speakersJson: Value(speakersJson),
+        updatedAt: Value(DateTime.now()),
+      ),
     );
   }
 
@@ -134,9 +190,6 @@ class NoteRepository {
     );
   }
 
-  /// Atualiza uma nota órfã (status `recording` após crash) com os caminhos dos
-  /// `.wav` recuperados e a marca como `transcribing`. Diferente de
-  /// [finalizeRecording], não exige `playbackPath` (pode não haver `.m4a`).
   Future<void> recoverRecording(
     String id, {
     required int durationMs,
@@ -159,9 +212,6 @@ class NoteRepository {
 
   // ---------- Segmentos ----------
 
-  /// Substitui todos os segmentos de uma nota (ordem por [DraftSegment.startMs]
-  /// fica a cargo de quem monta a lista) e recompõe o índice de busca numa
-  /// única passada, dentro da mesma transação.
   Future<void> replaceSegments(
     String noteId,
     List<DraftSegment> segments,
@@ -193,6 +243,46 @@ class NoteRepository {
           ..where((s) => s.noteId.equals(noteId))
           ..orderBy([(s) => OrderingTerm.asc(s.startMs)]))
         .get();
+  }
+
+  /// Corrige uma palavra na transcrição: substitui [from] por [to] na nota
+  /// [onlyNoteId] (se dado) ou em todas as notas. Recompõe o índice FTS das
+  /// notas afetadas. Retorna quantas notas e ocorrências mudaram.
+  Future<WordFixResult> fixWord(
+    String from,
+    String to, {
+    String? onlyNoteId,
+  }) async {
+    if (from.isEmpty || from == to) {
+      return const WordFixResult(notes: 0, occurrences: 0);
+    }
+    var notesChanged = 0;
+    var occurrences = 0;
+    await _db.transaction(() async {
+      final query = _db.select(_db.transcriptSegments);
+      if (onlyNoteId != null) {
+        query.where((s) => s.noteId.equals(onlyNoteId));
+      }
+      final segments = await query.get();
+      final touchedNotes = <String>{};
+      for (final s in segments) {
+        if (!s.content.contains(from)) continue;
+        occurrences += from.allMatches(s.content).length;
+        touchedNotes.add(s.noteId);
+        await (_db.update(
+          _db.transcriptSegments,
+        )..where((t) => t.id.equals(s.id))).write(
+          TranscriptSegmentsCompanion(
+            content: Value(s.content.replaceAll(from, to)),
+          ),
+        );
+      }
+      for (final noteId in touchedNotes) {
+        await _db.recomposeSearchBody(noteId);
+      }
+      notesChanged = touchedNotes.length;
+    });
+    return WordFixResult(notes: notesChanged, occurrences: occurrences);
   }
 
   // ---------- Tags ----------
