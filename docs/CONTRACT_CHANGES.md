@@ -88,3 +88,55 @@ Comportamento reforçado (sem mudar assinaturas):
 - Gravação: mic e sistema são alinhados por host time no stop (pad de silêncio
   no início da fonte que começou depois); se o `.wav` de sistema ficar
   ilegível, o resultado degrada para mic-only (`systemWavPath == null`).
+
+## 2026-10-23 — Live transcription, vocabulário, confiança por palavra, modelos, waveform e dispositivos
+
+Estas **mudam a API pública** (todas aditivas/compatíveis com o wire existente). O
+app pode adotar aos poucos; nada do que já existia foi renomeado.
+
+- **Transcrição ao vivo.** `startRecording` ganhou `bool liveTranscription = false`.
+  Com `true`, o nativo transcreve janelas de ~5 s (sobreposição de ~1 s) com o modelo
+  `tiny` numa lane de baixa prioridade separada do `transcribe` principal e emite
+  `Stream<LiveTranscript> liveTranscript(String recordingId)` (`{recordingId, text,
+  isFinal}`) no EventChannel **único e permanente** `rbnotes_native/live_transcript`
+  (filtrado por `recordingId` no Dart, como o `transcription_progress`). `text` é o
+  acumulado já **limpo** (a sobreposição é de-duplicada no nativo). `pauseRecording`
+  suspende; `stopRecording` emite o evento final com `isFinal=true`. O modelo `tiny` é
+  baixado automaticamente se faltar e a transcrição ao vivo **nunca** atrasa a escrita
+  dos wavs (janelas são descartadas se a lane ficar ocupada). Idioma fixo `pt`.
+
+- **Vocabulário/contexto.** `transcribe` ganhou `String? initialPrompt`
+  (wire `{initialPrompt: String?}`), mapeado para
+  `whisper_full_params.initial_prompt`. Útil para nomes próprios/jargão.
+
+- **Confiança por palavra.** `TranscriptSegment` ganhou
+  `List<Word>? words` (`Word{text, start, end, probability}`; wire
+  `words: [{text, startMs, endMs, probability}]`, **opcional**). Vem de
+  `token_timestamps` do whisper.cpp, com os tokens agregados em palavras
+  (probabilidade = média das probabilidades dos tokens; tokens especiais são
+  descartados). `transcribe` agora sempre preenche `words`; a transcrição ao vivo
+  (tiny) não. O formato antigo continua válido (campo novo é opcional no wire).
+
+- **Modelos.** `WhisperModel` agora é
+  `{ tiny, smallQ5, medium, largeV3TurboQ5, largeV3 }` (os wire names de `smallQ5`
+  e `largeV3TurboQ5` não mudaram). Arquivos/SHA-256/tamanho oficiais fixados para
+  `ggml-tiny.bin`, `ggml-medium-q5_0.bin` e `ggml-large-v3-q5_0.bin`. Novo
+  `Future<void> deleteModel(WhisperModel)` (remove o arquivo; no-op se ausente).
+  `modelState` segue retornando `{downloaded, sizeBytes?}`.
+
+- **Picos de waveform.** Novo
+  `Future<List<double>> waveformPeaks(String path, int buckets)` — lê `.wav`/`.m4a`,
+  faz downmix mono e devolve o pico (0..1) por bucket, para o player do design.
+
+- **Dispositivos de entrada.** Novo
+  `Future<List<AudioInputDevice>> inputDevices()` (`{id, name, isDefault}`, `id` = UID
+  CoreAudio) e `startRecording` ganhou `String? inputDeviceId` (null = default do
+  sistema). Se o dispositivo escolhido não puder ser selecionado, a gravação continua
+  no default e um diagnóstico `audio_config_changed` é emitido.
+
+Notas de wire (para o fake do app):
+- `startRecording` agora envia sempre `{id, directory, captureSystemAudio,
+  liveTranscription, inputDeviceId}` (os dois últimos com defaults `false`/`null`).
+- `transcribe` agora envia sempre `{wavPath, model, language, initialPrompt, priority}`.
+- Novos canais/métodos: EventChannel `rbnotes_native/live_transcript`; métodos
+  `inputDevices`, `waveformPeaks` (`{path, buckets}`), `deleteModel` (`{model}`).
