@@ -26,8 +26,14 @@ void main() {
   });
 
   test('transcrevendo enquanto a nota ainda roda', () {
-    expect(run(note: NoteStatus.transcribing).kind, SummaryStatusKind.transcribing);
-    expect(run(note: NoteStatus.recording).kind, SummaryStatusKind.transcribing);
+    expect(
+      run(note: NoteStatus.transcribing).kind,
+      SummaryStatusKind.transcribing,
+    );
+    expect(
+      run(note: NoteStatus.recording).kind,
+      SummaryStatusKind.transcribing,
+    );
   });
 
   test('ai ready mostra o resumo', () {
@@ -40,20 +46,20 @@ void main() {
     expect(run(ai: AiStatus.failed).kind, SummaryStatusKind.summaryFailed);
   });
 
-  test('none na pasta Pessoal com privacidade = desativado por privacidade', () {
+  test('none na pasta Pessoal com privacidade = disabledPersonal', () {
     expect(
-      run(ai: AiStatus.none, folder: 'pessoal', skipPersonal: true).kind,
+      run(folder: 'pessoal', skipPersonal: true).kind,
       SummaryStatusKind.disabledPersonal,
     );
   });
 
   test('none fora da Pessoal = desativado generico', () {
     expect(
-      run(ai: AiStatus.none, folder: 'trabalho', skipPersonal: true).kind,
+      run(folder: 'trabalho', skipPersonal: true).kind,
       SummaryStatusKind.disabled,
     );
     expect(
-      run(ai: AiStatus.none, folder: 'pessoal').kind,
+      run(folder: 'pessoal').kind,
       SummaryStatusKind.disabled,
     );
   });
