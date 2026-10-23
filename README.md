@@ -1,105 +1,93 @@
 # RbNotes
 
-App desktop pessoal de **voice notes** para **macOS**, local-first (sem backend):
-gravação de mic + áudio do sistema, transcrição local com whisper.cpp, ditado
-global e organização com busca full-text.
+App desktop pessoal de **voice notes** para **macOS**, local-first: gravação de
+mic + áudio do sistema, transcrição local com whisper.cpp, ditado global,
+resumo/insights por IA e organização com busca full-text. A UI segue o
+**design v3** (Claude Design) — papel quente, acento `#E0512E`, títulos serif
+(Newsreader/New York) e corpo em SF Pro.
 
-Construído em Flutter, seguindo os padrões do `spooliq-desktop`
-(bloc + get_it + go_router + forma_ui + sentry).
+Construído em Flutter (bloc + get_it + forma_ui + sentry), com o plugin nativo
+`packages/rbnotes_native` (Swift: ScreenCaptureKit, whisper.cpp/Metal, ditado).
 
-## Recursos (MVP)
+## Recursos
 
-- **Gravação**: mic e, opcionalmente, áudio do sistema (reuniões) em canais
-  separados; pausar/retomar, medidor por canal e recuperação de gravações
-  interrompidas.
-- **Transcrição local**: whisper.cpp (Metal) em fila serial de background; junta
-  os falantes (`Eu` = mic, `Outros` = sistema) e gera o título automático.
-- **Ditado global**: atalho configurável (padrão ⌥Space, segurar-para-falar) →
-  transcreve → cola no app em foco → salva como nota; "colar último ditado".
-- **Notas**: lista com busca FTS5 (bm25 + trecho destacado), filtro por tag,
-  fixadas primeiro e agrupadas por dia; player sincronizado com a transcrição
-  (clique no segmento pula no áudio), edição de título, tags com emoji, copiar e
-  exportar `.md`/`.txt`.
-- **Menu bar** (tray): Gravar/Parar, status e "Abrir RbNotes".
-- **Observabilidade**: Sentry (via `--dart-define=SENTRY_DSN`, desligado se
-  vazio) e logs estruturados; erros nativos chegam como `RbNativeException` com
-  o `code` anexado ao Sentry.
+- **Login** (e-mail/senha + Google; Apple "em breve") e **onboarding** em 4
+  passos (boas-vindas, permissões, modelo Whisper com download, pronto).
+- **Shell de 3 colunas**: sidebar (Todas/Favoritas/Diário, pastas com cor,
+  coleções inteligentes, status Whisper/Claude, perfil), lista agrupada por dia
+  com busca FTS, e detalhe.
+- **Nota**: player com waveform/velocidade e as abas **Resumo** (TL;DR, pontos,
+  citação "ouvir em"), **Transcrição** (falantes com cor, palavra de baixa
+  confiança → "Corrigir palavra" em todas as notas + vocabulário), **Insights**
+  (ações, decisões, em aberto) e **Conversa** (chat com citações de tempo).
+- **Perguntar às notas** (⌘K, streaming + fontes), **Tarefas esquecidas**
+  (> 3 dias), **Reuniões** (> 1 falante), **coleções por linguagem natural**,
+  **Diário** (pergunta do dia, calendário com sequência, resumo do mês, Touch ID).
+- **Gravação**: HUD com onda e transcrição ao vivo → HUD de processamento
+  (Whisper → falantes → Claude) → título "digitando". Ditado global (⌥Space).
+- **Configurações** (⌘,) com 7 abas; **atalhos** ⌘R/⌘K/⌘,/espaço/Esc.
+- **Observabilidade**: Sentry (via `--dart-define=SENTRY_DSN`).
+
+## IA, sync e privacidade
+
+A IA e o sync são **interfaces** (`AiClient`, `SyncClient`) com fakes
+local-first (`FakeAiClient` gera respostas plausíveis e streaming simulado a
+partir da transcrição). A integração com a `rbnotes-api` (Keycloak/PKCE, SSE)
+entra depois. Antes de enviar texto à IA: a pasta Pessoal pode ser omitida e
+CPF/telefone/cartão são mascarados (`PrivacyMasker`).
 
 ## Pré-requisitos
 
-- macOS 13.0+ (ScreenCaptureKit, whisper Metal).
-- [fvm](https://fvm.app) com Flutter **3.47.6** (`.fvmrc`).
-- `cmake` + Command Line Tools do Xcode (o whisper.cpp é compilado do fonte):
-  `brew install cmake`.
-- Token do pub privado (forma_ui):
-  `dart pub token add https://pub.rodolfodebonis.com.br`.
-
-## Setup
-
-```sh
-fvm install
-fvm flutter pub get
-```
-
-O plugin nativo mora em `packages/rbnotes_native` (versionado neste repo) e é
-referenciado por `path:`. O `macos/Podfile` roda `scripts/build_whisper.sh` do
-plugin automaticamente, gerando `whisper.xcframework` (não versionado) antes do
-CocoaPods — a primeira build é mais demorada.
+- macOS 13.0+; [fvm](https://fvm.app) com Flutter **3.47.6** (`.fvmrc`).
+- `brew install cmake` (whisper.cpp compilado do fonte).
+- Token do pub privado: `dart pub token add https://pub.rodolfodebonis.com.br`.
 
 ## Rodar
 
 ```sh
+fvm install && fvm flutter pub get
+cd macos && pod install && cd ..   # necessário quando o plugin nativo muda
 fvm flutter run -d macos -t lib/main_development.dart
-# produção (Sentry ligado):
-fvm flutter run -d macos -t lib/main_production.dart \
-  --dart-define=SENTRY_DSN=https://...
 ```
 
-## Permissões (System Settings → Privacy & Security)
+A primeira execução semeia os dados do design (notas, resumos, diário) para a UI
+refletir os mockups.
 
-O app guia o usuário em **Configurações → Permissões**:
-
-1. **Microfone** — gravar e ditar (prompt do sistema).
-2. **Gravação de tela** — só para capturar o áudio do sistema; a primeira
-   solicitação abre os Ajustes (relançar após conceder).
-3. **Acessibilidade** — ditado global (CGEventTap) e colar o texto.
-
-O App Sandbox fica **desligado** (exigência de CGEventTap, Acessibilidade e
-ScreenCaptureKit).
-
-## Testes
+## Testes e qualidade
 
 ```sh
-fvm flutter analyze
-fvm flutter test
+fvm flutter analyze                      # limpo
+fvm flutter test                         # inclui golden tests (1280×800)
+fvm flutter test --update-goldens        # regenera os goldens
+fvm flutter build macos --debug -t lib/main_development.dart
 ```
 
-Cobrem: repositório drift em memória + busca FTS, fila de transcrição e junção
-de falantes com `FakeRbNative`, os cubits (gravação, recuperação, lista,
-detalhe, configurações), o serviço de ditado, exportação e as telas principais.
-Todos usam `FakeRbNative` — nenhum teste depende do plugin nativo real.
-
-## Build
-
-```sh
-fvm flutter build macos --debug -t lib/main_production.dart
-```
+Goldens em `test/features/**/goldens/` (login claro/escuro, shell claro/escuro,
+transcrição, insights, conversa, diário, tarefas, perguntar, configurações).
+Testes cobrem migração drift v2→v3, masker, regras de coleção, tarefas
+esquecidas, sequência do diário, streaming fake, os cubits novos e os atalhos.
 
 ## Arquitetura
 
 ```
 lib/
-  app/            app, shell master-detail, tray, tema
-  core/           config, DI (get_it), tema (forma), rotas, paths, observabilidade
-  data/database/  drift: notes, transcript_segments, tags, note_tags + FTS5
+  app/            RbNotesApp, RootView, shell de 3 colunas + overlays/HUDs, tray
+  core/           config, DI (get_it), tema/tokens (RbTokens), ui, observabilidade
+  data/database/  drift v3: notes, segments, folders, note_ai, actions,
+                  chat_messages, collections, vocabulary, diary*, sync_meta + FTS5
   native/         fachada do contrato (reexporta rbnotes_native) + FakeRbNative
   features/
-    recording/    RecordingCubit, RecoveryCubit, painel de gravação
-    transcription/ TranscriptionQueue (fila serial), ModelDownloadCubit, lógica
-    notes/         NoteRepository, lista, detalhe (player), modelos, export
-    dictation/     DictationService (atalho → transcreve → cola → salva)
-    settings/      SettingsStore, SettingsCubit, editor de atalho
+    auth/         AuthService + Fake, login/onboarding
+    library/      sidebar, lista, coleções, demo seeder
+    notes/        repositórios, detalhe (player, abas), NoteViewCubit
+    recording/    RecordingCubit (live + processamento), HUDs, recuperação
+    transcription/ fila serial, junção de falantes, palavras/confiança
+    ai/           AiClient + FakeAiClient, EnrichmentService, masker, Ask
+    collections/  regras de coleção, tarefas esquecidas
+    diary/        repositório, calendário/sequência, DiaryCubit
+    dictation/    ditado global (atalho → transcreve → cola → salva)
+    settings/     SettingsStore (7 abas), vocabulário
 ```
 
-Toda a lógica depende da interface `RbNative` (`package:rbnotes_native`),
-injetada via get_it; os testes injetam `FakeRbNative`.
+Toda a lógica depende de interfaces (`RbNative`, `AiClient`, `SyncClient`,
+`AuthService`), injetadas via get_it; os testes injetam fakes.

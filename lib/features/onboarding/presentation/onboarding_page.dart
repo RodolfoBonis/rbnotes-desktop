@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/pulse_dot.dart';
+import 'package:rbnotes/core/ui/rb_lottie.dart';
 import 'package:rbnotes/core/ui/traffic_lights.dart';
 import 'package:rbnotes/features/onboarding/presentation/onboarding_cubit.dart';
 import 'package:rbnotes/native/rb_native.dart';
@@ -632,6 +633,8 @@ class _Ready extends StatelessWidget {
     final rb = context.rb;
     return Column(
       children: [
+        const RbLottie(asset: 'assets/lottie/pulse.json', size: 56),
+        const SizedBox(height: 8),
         GestureDetector(
           onTap: onRecordFirst,
           behavior: HitTestBehavior.opaque,

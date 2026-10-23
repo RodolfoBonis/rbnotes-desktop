@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
+import 'package:rbnotes/core/ui/rb_lottie.dart';
 import 'package:rbnotes/features/collections/domain/forgotten_tasks.dart';
 import 'package:rbnotes/features/library/presentation/library_cubit.dart';
 
@@ -72,6 +73,11 @@ class TasksPane extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            const RbLottie(
+                              asset: 'assets/lottie/pulse.json',
+                              size: 64,
+                            ),
+                            const SizedBox(height: 10),
                             Text(
                               'Nada esquecido.',
                               style: context.serif(size: 20),
