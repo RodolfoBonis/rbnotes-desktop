@@ -131,9 +131,17 @@ class KeycloakAuthService implements AuthService {
 
     final server = _loopbackFactory();
     final callbackFuture = server.listen();
-    final launched = await _launch(url);
+    bool launched;
+    try {
+      launched = await _launch(url);
+    } on Object {
+      launched = false;
+    }
     if (!launched) {
+      // Fecha o socket loopback imediatamente (não deixa ouvindo por 5 min) e
+      // ignora o callback pendente (que só expiraria depois).
       await server.close();
+      unawaited(callbackFuture.then((_) {}).catchError((_) {}));
       throw const AuthException('Não foi possível abrir o navegador.');
     }
 

@@ -210,4 +210,45 @@ void main() {
       expect(stored?.refreshToken, 'refresh-2'); // rotação persistida
     },
   );
+
+  test(
+    'refresh com falha de rede mantém a sessão (não desloga)',
+    () async {
+      await boot((req) async {
+        final path = req.uri.path;
+        if (path.endsWith('/.well-known/openid-configuration')) {
+          return writeJson(req, 200, {
+            'issuer': '${server.base}/realms/rbnotes',
+            'authorization_endpoint': '${server.base}/auth',
+            // Token endpoint numa porta morta: refresh falha por rede.
+            'token_endpoint': 'http://127.0.0.1:1/token',
+          });
+        }
+        return writeJson(req, 401, {'code': 'unauthorized'});
+      });
+
+      final events = SessionEvents();
+      final captured = <SessionEvent>[];
+      final sub = events.stream.listen(captured.add);
+      final tokens = MemoryTokenStore(
+        const AuthTokens(accessToken: 'access-1', refreshToken: 'refresh-1'),
+      );
+      final api = ApiClient(
+        baseUrl: '${server.base}/v1',
+        tokens: tokens,
+        oidc: oidcFor(),
+        events: events,
+      );
+
+      await expectLater(api.getJson('/me'), throwsA(isA<ApiError>()));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      // Blip de rede no refresh não pode apagar o refresh token nem derrubar
+      // a sessão (do contrário o usuário é deslogado por ficar offline).
+      final stored = await tokens.read();
+      expect(stored?.refreshToken, 'refresh-1');
+      expect(captured.whereType<SessionExpired>(), isEmpty);
+      await sub.cancel();
+    },
+  );
 }

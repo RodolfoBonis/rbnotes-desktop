@@ -72,7 +72,15 @@ class AuthInterceptor extends Interceptor {
         options.extra[_kRetried] != true;
     if (!canRefresh) return handler.next(err);
 
-    final refreshed = await _refreshOnce();
+    AuthTokens? refreshed;
+    try {
+      refreshed = await _refreshOnce();
+    } on Object catch (_) {
+      // Falha transitória ao renovar (rede/keychain): NÃO encerra a sessão;
+      // propaga o 401 para ser tratado como erro pontual (os tokens seguem
+      // salvos e a próxima tentativa pode renovar).
+      return handler.next(err);
+    }
     if (refreshed == null) {
       _events.emit(const SessionExpired());
       return handler.next(err);
@@ -110,8 +118,23 @@ class AuthInterceptor extends Interceptor {
       await _tokens.write(rotated);
       AppLogger.info('Sessão renovada', category: 'auth');
       return rotated;
-    } on Object catch (e) {
-      AppLogger.warning('Falha ao renovar sessão', category: 'auth', error: e);
+    } on OidcException catch (e) {
+      if (e.isNetwork) {
+        // Transitório (offline/timeout): mantém os tokens e sinaliza falha
+        // para o chamador — não derruba a sessão por um blip de rede.
+        AppLogger.warning(
+          'Rede fora ao renovar sessão; tokens preservados',
+          category: 'auth',
+          error: e,
+        );
+        rethrow;
+      }
+      // Refresh inválido/expirado/revogado: encerra a sessão.
+      AppLogger.warning(
+        'Refresh inválido; encerrando sessão',
+        category: 'auth',
+        error: e,
+      );
       await _tokens.clear();
       return null;
     }

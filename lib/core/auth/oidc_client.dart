@@ -26,8 +26,12 @@ class OidcEndpoints {
 
 /// Erro de autenticação OIDC (discovery, troca de código, refresh).
 class OidcException implements Exception {
-  const OidcException(this.message);
+  const OidcException(this.message, {this.isNetwork = false});
   final String message;
+
+  /// Falha de transporte (sem resposta HTTP): offline/timeout. O chamador deve
+  /// tratar como transitória — nunca encerrar a sessão por causa dela.
+  final bool isNetwork;
 
   @override
   String toString() => 'OidcException: $message';
@@ -66,7 +70,10 @@ class OidcClient {
       if (data == null) throw const OidcException('Discovery vazio.');
       return _endpoints = OidcEndpoints.fromJson(data);
     } on DioException catch (e) {
-      throw OidcException('Falha no discovery OIDC: ${e.message}');
+      throw OidcException(
+        'Falha no discovery OIDC: ${e.message}',
+        isNetwork: e.response == null,
+      );
     }
   }
 
@@ -169,7 +176,10 @@ class OidcClient {
       final desc = body is Map<String, dynamic>
           ? (body['error_description'] ?? body['error'])?.toString()
           : null;
-      throw OidcException(desc ?? 'Falha ao obter tokens: ${e.message}');
+      throw OidcException(
+        desc ?? 'Falha ao obter tokens: ${e.message}',
+        isNetwork: e.response == null,
+      );
     }
   }
 }
