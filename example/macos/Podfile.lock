@@ -1,0 +1,22 @@
+PODS:
+  - FlutterMacOS (1.0.0)
+  - rbnotes_native (0.0.1):
+    - FlutterMacOS
+
+DEPENDENCIES:
+  - FlutterMacOS (from `Flutter/ephemeral`)
+  - rbnotes_native (from `Flutter/ephemeral/.symlinks/plugins/rbnotes_native/macos`)
+
+EXTERNAL SOURCES:
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+  rbnotes_native:
+    :path: Flutter/ephemeral/.symlinks/plugins/rbnotes_native/macos
+
+SPEC CHECKSUMS:
+  FlutterMacOS: c232990155153907050900a2e175c7773903ba4e
+  rbnotes_native: 656ce8818ce9d067cda06b5e5359e93def603d50
+
+PODFILE CHECKSUM: eeae81afe9f581933d377205baa93ccfcdb5a978
+
+COCOAPODS: 1.16.2

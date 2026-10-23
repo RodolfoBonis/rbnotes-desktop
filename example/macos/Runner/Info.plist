@@ -26,6 +26,8 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>O RbNotes grava o microfone para criar notas de voz e transcrever.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

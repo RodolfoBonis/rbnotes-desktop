@@ -1,4 +1,9 @@
-platform :osx, '12.0'
+platform :osx, '13.0'
+
+# Self-healing: ensure the whisper.cpp framework exists before CocoaPods
+# resolves `vendored_frameworks`. No-op when already built.
+system('bash', File.expand_path('../../scripts/build_whisper.sh', __dir__)) ||
+  raise('build_whisper.sh failed — see output above')
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -30,6 +35,7 @@ target 'Runner' do
   use_frameworks!
 
   flutter_install_all_macos_pods File.dirname(File.realpath(__FILE__))
+
   target 'RunnerTests' do
     inherit! :search_paths
   end
