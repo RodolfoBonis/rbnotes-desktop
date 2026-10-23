@@ -22,6 +22,12 @@ enum DictationSound { start, end }
 /// Hotkey modifiers (map to Carbon modifier masks on the native side).
 enum HotkeyModifier { command, option, control, shift, function }
 
+/// Scheduling priority for `RbNative.transcribe`.
+///
+/// [high] (used for dictation) runs on a separate native lane so it never
+/// waits behind a long [normal] note transcription. Defaults to [normal].
+enum TranscriptionPriority { normal, high }
+
 /// Wire names shared with the native side. Keeping the mapping explicit
 /// (instead of relying on `Enum.name`) makes the protocol stable even if the
 /// Dart enum members are ever reordered or renamed.
@@ -76,5 +82,12 @@ extension HotkeyModifierWire on HotkeyModifier {
     HotkeyModifier.control => 'control',
     HotkeyModifier.shift => 'shift',
     HotkeyModifier.function => 'function',
+  };
+}
+
+extension TranscriptionPriorityWire on TranscriptionPriority {
+  String get wireName => switch (this) {
+    TranscriptionPriority.normal => 'normal',
+    TranscriptionPriority.high => 'high',
   };
 }

@@ -20,6 +20,12 @@ abstract final class RbNativeErrorCode {
   static const String hotkeyConflict = 'hotkey_conflict';
   static const String pasteFailed = 'paste_failed';
 
+  /// An enum/argument sent over the channel was missing or not recognized.
+  static const String invalidArgument = 'invalid_argument';
+
+  /// A dictation event map could not be decoded (unknown/missing `type`).
+  static const String invalidEvent = 'invalid_event';
+
   /// Fallback used when a platform error arrives without a recognized code
   /// (should not happen, but keeps the boundary total).
   static const String unknown = 'unknown';

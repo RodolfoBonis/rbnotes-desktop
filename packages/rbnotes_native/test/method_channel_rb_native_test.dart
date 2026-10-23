@@ -170,7 +170,7 @@ void main() {
       expect(calls.single.arguments, {'model': 'largeV3TurboQ5'});
     });
 
-    test('transcribe serializes args and parses segments', () async {
+    test('transcribe serializes args with default normal priority', () async {
       handle(
         response: [
           {'startMs': 0, 'endMs': 1500, 'text': 'olá'},
@@ -192,19 +192,22 @@ void main() {
         'wavPath': '/tmp/a.wav',
         'model': 'smallQ5',
         'language': 'pt',
+        'priority': 'normal',
       });
     });
 
-    test('transcribe forwards language override', () async {
+    test('transcribe forwards language override and high priority', () async {
       handle(response: <Object?>[]);
 
       await native.transcribe(
         wavPath: '/tmp/a.wav',
         model: WhisperModel.largeV3TurboQ5,
         language: 'en',
+        priority: TranscriptionPriority.high,
       );
 
       expect(calls.single.arguments, containsPair('language', 'en'));
+      expect(calls.single.arguments, containsPair('priority', 'high'));
     });
 
     test('cancelTranscription sends wavPath', () async {
@@ -258,6 +261,51 @@ void main() {
     });
   });
 
+  group('DictationEvent decoding', () {
+    test('decodes the sealed hierarchy', () {
+      expect(
+        DictationEvent.fromMap(const {'type': 'started'}),
+        isA<DictationStarted>(),
+      );
+      final stopped = DictationEvent.fromMap(const {
+        'type': 'stopped',
+        'wavPath': '/tmp/d.wav',
+      });
+      expect(stopped, isA<DictationStopped>());
+      expect((stopped as DictationStopped).wavPath, '/tmp/d.wav');
+      expect(
+        DictationEvent.fromMap(const {'type': 'cancelled'}),
+        isA<DictationCancelled>(),
+      );
+    });
+
+    test('unknown type throws invalid_event', () {
+      expect(
+        () => DictationEvent.fromMap(const {'type': 'bogus'}),
+        throwsA(
+          isA<RbNativeException>().having(
+            (e) => e.code,
+            'code',
+            RbNativeErrorCode.invalidEvent,
+          ),
+        ),
+      );
+    });
+
+    test('stopped without wavPath throws invalid_event', () {
+      expect(
+        () => DictationEvent.fromMap(const {'type': 'stopped'}),
+        throwsA(
+          isA<RbNativeException>().having(
+            (e) => e.code,
+            'code',
+            RbNativeErrorCode.invalidEvent,
+          ),
+        ),
+      );
+    });
+  });
+
   group('error mapping', () {
     test(
       'PlatformException becomes RbNativeException with same code',
@@ -284,28 +332,27 @@ void main() {
       },
     );
 
-    test('permission_denied code is preserved', () async {
+    test('invalid_argument code is preserved', () async {
       handle(
         onCall: (_) async => throw PlatformException(
-          code: RbNativeErrorCode.permissionDenied,
-          message: 'no mic',
+          code: RbNativeErrorCode.invalidArgument,
+          message: 'missing id',
         ),
       );
 
       await expectLater(
-        native.requestPermission(RbPermission.microphone),
+        native.stopRecording('x'),
         throwsA(
           isA<RbNativeException>().having(
             (e) => e.code,
             'code',
-            'permission_denied',
+            RbNativeErrorCode.invalidArgument,
           ),
         ),
       );
     });
 
     test('MissingPluginException maps to unknown code', () async {
-      // No handler registered -> MissingPluginException.
       messenger.setMockMethodCallHandler(methodChannel, null);
 
       await expectLater(
@@ -356,6 +403,28 @@ void main() {
       expect(events[2], isA<DictationCancelled>());
     });
 
+    test('diagnostics decodes NativeDiagnostic incl. recordingId', () async {
+      messenger.setMockStreamHandler(
+        const EventChannel(RbNativeChannels.diagnostics),
+        _ListStreamHandler([
+          {
+            'code': 'write_failed',
+            'message': 'disk full',
+            'recordingId': 'note-7',
+          },
+          {'code': 'audio_config_changed', 'message': 'device swapped'},
+        ]),
+      );
+
+      final events = await native.diagnostics().take(2).toList();
+
+      expect(events[0].code, 'write_failed');
+      expect(events[0].message, 'disk full');
+      expect(events[0].recordingId, 'note-7');
+      expect(events[1].code, 'audio_config_changed');
+      expect(events[1].recordingId, isNull);
+    });
+
     test('downloadModel maps doubles and propagates errors', () async {
       messenger.setMockStreamHandler(
         const EventChannel(RbNativeChannels.modelDownload),
@@ -382,15 +451,19 @@ void main() {
       expect(progress, [0.0, 0.5]);
     });
 
-    test('transcribe forwards progress via EventChannel', () async {
+    test('transcribe multiplexes progress filtered by wavPath', () async {
       messenger
         ..setMockStreamHandler(
           const EventChannel(RbNativeChannels.transcriptionProgress),
-          _ListStreamHandler([0.25, 0.75, 1.0]),
+          _ListStreamHandler([
+            {'wavPath': '/tmp/a.wav', 'progress': 0.25},
+            {'wavPath': '/tmp/other.wav', 'progress': 0.9},
+            {'wavPath': '/tmp/a.wav', 'progress': 0.75},
+          ]),
         )
         ..setMockMethodCallHandler(methodChannel, (call) async {
           // Give the progress stream a chance to deliver before returning.
-          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await Future<void>.delayed(const Duration(milliseconds: 40));
           return <Object?>[
             {'startMs': 0, 'endMs': 100, 'text': 'ok'},
           ];
@@ -404,7 +477,9 @@ void main() {
       );
 
       expect(segments.single.text, 'ok');
+      // Only this wavPath's events, not /tmp/other.wav's 0.9.
       expect(progress, containsAllInOrder(<double>[0.25]));
+      expect(progress, isNot(contains(0.9)));
     });
   });
 }

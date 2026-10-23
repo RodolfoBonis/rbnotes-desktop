@@ -55,6 +55,12 @@ abstract interface class RbNative {
     String directory,
   );
 
+  /// Asynchronous, non-fatal native failures: write errors, audio device
+  /// changes, system-audio drops, a disabled event tap or the dictation
+  /// watchdog. A single permanent broadcast stream; the app can surface these
+  /// to the user or to error monitoring.
+  Stream<NativeDiagnostic> diagnostics();
+
   // ---------- Transcription (whisper.cpp + Metal) ----------
 
   /// Whether [model] is downloaded and its size on disk.
@@ -62,11 +68,15 @@ abstract interface class RbNative {
 
   /// Downloads [model] into Application Support/RbNotes/models, emitting
   /// progress 0..1. The stream completes when the download finishes and emits
-  /// a `RbNativeException('model_download_failed')` on error.
+  /// a `RbNativeException('model_download_failed')` on error. Cancelling the
+  /// stream subscription cancels the download.
   Stream<double> downloadModel(WhisperModel model);
 
   /// Transcribes a 16 kHz mono wav at [wavPath] using [model]. Progress is
   /// reported through [onProgress] (0..1). Runs off the main thread.
+  ///
+  /// [priority] routes the job: [TranscriptionPriority.high] (dictation) runs
+  /// on a separate native lane so it is not blocked by a long note.
   ///
   /// Throws `RbNativeException('model_missing')` if the model is not
   /// downloaded, `transcription_cancelled` if [cancelTranscription] was
@@ -75,6 +85,7 @@ abstract interface class RbNative {
     required String wavPath,
     required WhisperModel model,
     String language = 'pt',
+    TranscriptionPriority priority = TranscriptionPriority.normal,
     void Function(double progress)? onProgress,
   });
 
@@ -86,7 +97,8 @@ abstract interface class RbNative {
   /// Registers the global dictation hotkey with the given [mode].
   ///
   /// Throws `RbNativeException('hotkey_conflict')` if the combination is
-  /// already taken by the system or another app.
+  /// already taken (toggle mode), or `permission_denied` if the event tap
+  /// cannot be installed (hold-to-talk needs Accessibility).
   Future<void> registerDictationHotkey(Hotkey hotkey, DictationMode mode);
 
   /// Unregisters the global dictation hotkey.
@@ -96,12 +108,13 @@ abstract interface class RbNative {
   Stream<DictationEvent> dictationEvents();
 
   /// Pastes [text] into the frontmost app: saves the pasteboard, writes the
-  /// text, posts ⌘V and restores the original pasteboard after ~300 ms.
-  /// Requires Accessibility permission.
+  /// text, posts ⌘V and restores the original pasteboard afterwards (only if
+  /// it was not changed meanwhile). Requires Accessibility permission.
   ///
   /// Throws `RbNativeException('paste_failed')` on failure.
   Future<void> pasteText(String text);
 
-  /// Plays a system sound at the start or end of a dictation session.
+  /// Plays a system sound at the start or end of a dictation session. The
+  /// native side no longer plays these automatically; the app triggers them.
   Future<void> playDictationSound(DictationSound s);
 }

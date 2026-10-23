@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:rbnotes_native/src/enums.dart';
+import 'package:rbnotes_native/src/exceptions.dart';
 
 /// A global dictation hotkey: a virtual key code plus a set of modifiers.
 @immutable
@@ -144,19 +145,71 @@ class TranscriptSegment {
   final String text;
 }
 
+/// An asynchronous, non-fatal native failure (write error, device change,
+/// system-audio drop, dictation watchdog, …) emitted on `RbNative.diagnostics`.
+@immutable
+class NativeDiagnostic {
+  const NativeDiagnostic({
+    required this.code,
+    required this.message,
+    this.recordingId,
+  });
+
+  factory NativeDiagnostic.fromMap(Map<Object?, Object?> map) =>
+      NativeDiagnostic(
+        code: map['code']! as String,
+        message: map['message']! as String,
+        recordingId: map['recordingId'] as String?,
+      );
+
+  /// A stable diagnostic code (see `docs/native-contract.md`).
+  final String code;
+  final String message;
+
+  /// The recording the diagnostic relates to, when applicable.
+  final String? recordingId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is NativeDiagnostic &&
+      other.code == code &&
+      other.message == message &&
+      other.recordingId == recordingId;
+
+  @override
+  int get hashCode => Object.hash(code, message, recordingId);
+}
+
 /// Events emitted by the global dictation hotkey.
 sealed class DictationEvent {
   const DictationEvent();
 
   /// Decodes an event map coming from the native side.
+  ///
+  /// Throws `RbNativeException('invalid_event')` if the map is missing/has an
+  /// unknown `type` (so a malformed event never silently becomes a default).
   factory DictationEvent.fromMap(Map<Object?, Object?> map) {
-    final type = map['type']! as String;
-    return switch (type) {
-      'started' => const DictationStarted(),
-      'stopped' => DictationStopped(map['wavPath']! as String),
-      'cancelled' => const DictationCancelled(),
-      _ => throw ArgumentError('Unknown DictationEvent: $type'),
-    };
+    final type = map['type'];
+    switch (type) {
+      case 'started':
+        return const DictationStarted();
+      case 'stopped':
+        final wavPath = map['wavPath'];
+        if (wavPath is! String) {
+          throw const RbNativeException(
+            RbNativeErrorCode.invalidEvent,
+            'DictationStopped missing wavPath',
+          );
+        }
+        return DictationStopped(wavPath);
+      case 'cancelled':
+        return const DictationCancelled();
+      default:
+        throw RbNativeException(
+          RbNativeErrorCode.invalidEvent,
+          'Unknown DictationEvent: $type',
+        );
+    }
   }
 }
 

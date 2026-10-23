@@ -12,6 +12,7 @@ abstract final class RbNativeChannels {
   static const String method = 'rbnotes_native';
   static const String levels = 'rbnotes_native/levels';
   static const String dictation = 'rbnotes_native/dictation';
+  static const String diagnostics = 'rbnotes_native/diagnostics';
   static const String modelDownload = 'rbnotes_native/model_download';
   static const String transcriptionProgress =
       'rbnotes_native/transcription_progress';
@@ -26,12 +27,16 @@ class MethodChannelRbNative implements RbNative {
     MethodChannel? methodChannel,
     EventChannel? levelsChannel,
     EventChannel? dictationChannel,
+    EventChannel? diagnosticsChannel,
     EventChannel? modelDownloadChannel,
     EventChannel? transcriptionProgressChannel,
   }) : _method = methodChannel ?? const MethodChannel(RbNativeChannels.method),
        _levels = levelsChannel ?? const EventChannel(RbNativeChannels.levels),
        _dictation =
            dictationChannel ?? const EventChannel(RbNativeChannels.dictation),
+       _diagnostics =
+           diagnosticsChannel ??
+           const EventChannel(RbNativeChannels.diagnostics),
        _modelDownload =
            modelDownloadChannel ??
            const EventChannel(RbNativeChannels.modelDownload),
@@ -42,8 +47,43 @@ class MethodChannelRbNative implements RbNative {
   final MethodChannel _method;
   final EventChannel _levels;
   final EventChannel _dictation;
+  final EventChannel _diagnostics;
   final EventChannel _modelDownload;
   final EventChannel _transcriptionProgress;
+
+  /// Single permanent fan-out of the native transcription-progress stream.
+  /// Each native event is a `{wavPath, progress}` map; [transcribe] subscribes
+  /// to this broadcast and filters by its own `wavPath`. The underlying
+  /// EventChannel is listened to exactly once (no listen/cancel per call).
+  StreamController<Map<Object?, Object?>>? _progressController;
+  StreamSubscription<Object?>? _progressChannelSub;
+
+  Stream<Map<Object?, Object?>> get _progressEvents {
+    final existing = _progressController;
+    if (existing != null) return existing.stream;
+
+    final controller = StreamController<Map<Object?, Object?>>.broadcast();
+    _progressController = controller;
+    _progressChannelSub =
+        _mapStreamErrors(
+          _transcriptionProgress.receiveBroadcastStream(),
+        ).listen(
+          (event) {
+            if (event is Map<Object?, Object?>) controller.add(event);
+          },
+          onError: controller.addError,
+        );
+    return controller.stream;
+  }
+
+  /// Releases the permanent progress subscription. Optional; the plugin
+  /// normally lives for the app's lifetime.
+  Future<void> dispose() async {
+    await _progressChannelSub?.cancel();
+    await _progressController?.close();
+    _progressChannelSub = null;
+    _progressController = null;
+  }
 
   // ---------- Permissions ----------
 
@@ -113,6 +153,12 @@ class MethodChannelRbNative implements RbNative {
         .toList();
   }
 
+  @override
+  Stream<NativeDiagnostic> diagnostics() =>
+      _mapStreamErrors(_diagnostics.receiveBroadcastStream()).map(
+        (event) => NativeDiagnostic.fromMap(event! as Map<Object?, Object?>),
+      );
+
   // ---------- Transcription ----------
 
   @override
@@ -133,27 +179,38 @@ class MethodChannelRbNative implements RbNative {
     required String wavPath,
     required WhisperModel model,
     String language = 'pt',
+    TranscriptionPriority priority = TranscriptionPriority.normal,
     void Function(double progress)? onProgress,
   }) async {
-    StreamSubscription<Object?>? progressSub;
+    StreamSubscription<Map<Object?, Object?>>? progressSub;
     if (onProgress != null) {
-      // Correlated by wavPath; native emits raw doubles for this key.
-      progressSub = _transcriptionProgress
-          .receiveBroadcastStream(wavPath)
-          .listen((event) => onProgress((event! as num).toDouble()));
+      // Filter the shared, permanent progress stream by this wavPath.
+      progressSub = _progressEvents.listen((map) {
+        if (map['wavPath'] == wavPath) {
+          final value = map['progress'];
+          if (value is num) onProgress(value.toDouble());
+        }
+      });
     }
     try {
       final list = await _invoke<List<Object?>>('transcribe', {
         'wavPath': wavPath,
         'model': model.wireName,
         'language': language,
+        'priority': priority.wireName,
       });
       return list
           .cast<Map<Object?, Object?>>()
           .map(TranscriptSegment.fromMap)
           .toList();
     } finally {
-      await progressSub?.cancel();
+      // A failure to cancel the (internal) subscription must never mask the
+      // transcription result/error.
+      try {
+        await progressSub?.cancel();
+      } on Object {
+        // ignore: swallow — cancelling our own stream sub is best-effort.
+      }
     }
   }
 
