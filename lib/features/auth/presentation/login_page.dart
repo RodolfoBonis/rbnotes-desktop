@@ -51,8 +51,8 @@ class _LeftPanel extends StatelessWidget {
                   'Fale à vontade. O RbNotes escreve, resume e '
                   'lembra por você.',
                   style: context.serif(
-                    size: 42,
-                    weight: FontWeight.w500,
+                    size: 40,
+                    weight: FontWeight.w400,
                     height: 1.12,
                     letterSpacing: -0.8,
                   ),
@@ -297,6 +297,7 @@ class _AuthForm extends StatelessWidget {
             ],
             const SizedBox(height: 30),
             Container(
+              width: double.infinity,
               padding: const EdgeInsets.only(top: 18),
               decoration: BoxDecoration(
                 border: Border(top: BorderSide(color: rb.hairline, width: 0.5)),
@@ -501,8 +502,15 @@ class _AuthField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final rb = context.rb;
-    return SizedBox(
+    return Container(
       height: 36,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: rb.fill,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: rb.onSurface(0.22), width: 0.5),
+      ),
       child: TextFormField(
         initialValue: value,
         obscureText: obscure,
@@ -511,20 +519,10 @@ class _AuthField extends StatelessWidget {
         style: context.bodyText(size: 13.5),
         cursorColor: rb.accent,
         decoration: InputDecoration(
-          isDense: true,
-          filled: true,
-          fillColor: rb.card,
+          isCollapsed: true,
+          border: InputBorder.none,
           hintText: hint,
           hintStyle: context.bodyText(size: 13.5, color: rb.secondary(0.45)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: rb.onSurface(0.22), width: 0.5),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: rb.accent, width: 1.5),
-          ),
         ),
       ),
     );
