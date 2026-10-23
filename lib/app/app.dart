@@ -9,6 +9,7 @@ import 'package:rbnotes/core/theme/rbnotes_theme.dart';
 import 'package:rbnotes/features/auth/presentation/session_cubit.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:window_manager/window_manager.dart';
 
 class RbNotesApp extends StatelessWidget {
   const RbNotesApp({super.key});
@@ -31,6 +32,13 @@ class RbNotesApp extends StatelessWidget {
             diagnostics: di<DiagnosticsMonitor>().stream,
             aiActivity: di(),
             enrichment: di(),
+            // Overlay do notch: usa-o quando a gravação começa com o app sem
+            // foco; traz a janela ao foco na ação "openApp" do overlay.
+            isForeground: windowManager.isFocused,
+            onOpenApp: () async {
+              await windowManager.show();
+              await windowManager.focus();
+            },
           ),
         ),
       ],

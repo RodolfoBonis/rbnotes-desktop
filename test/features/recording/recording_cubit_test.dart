@@ -144,6 +144,50 @@ void main() {
     expect(cubit.state.isActive, isFalse);
     await cubit.close();
   });
+
+  test('gravacao background mostra o overlay do notch (pedido 11)', () async {
+    final cubit = build();
+    await cubit.start(background: true);
+    expect(cubit.state.background, isTrue);
+    expect(native.overlayShowCount, 1);
+    expect(native.overlayMode, OverlayMode.recording);
+    expect(cubit.state.hudVisible, isFalse); // sem HUD interno duplicado
+
+    // A acao "stop" do overlay encerra a gravacao.
+    native.emitOverlayAction(OverlayAction.stop);
+    await cubit.stream.firstWhere((s) => s.isProcessing || !s.isActive);
+    expect(cubit.state.isRecording, isFalse);
+    await cubit.close();
+  });
+
+  test('gravacao em foco usa o HUD interno, sem overlay', () async {
+    final cubit = build();
+    await cubit.start(); // foreground (isForeground nao injetado => true)
+    expect(cubit.state.background, isFalse);
+    expect(native.overlayShowCount, 0);
+    expect(cubit.state.hudVisible, isTrue);
+    await cubit.close();
+  });
+
+  test('acao openApp traz a janela ao foco e esconde o overlay', () async {
+    var opened = false;
+    final cubit = RecordingCubit(
+      native: native,
+      repository: repo,
+      queue: queue,
+      settings: settings,
+      paths: paths,
+      diagnostics: native.diagnostics(),
+      onOpenApp: () async => opened = true,
+    );
+    await cubit.start(background: true);
+    expect(native.overlayShowCount, 1);
+    native.emitOverlayAction(OverlayAction.openApp);
+    await cubit.stream.firstWhere((s) => !s.background);
+    expect(opened, isTrue);
+    expect(cubit.state.hudVisible, isTrue); // HUD interno assume
+    await cubit.close();
+  });
 }
 
 /// Fake que nega o microfone mesmo após requestPermission.

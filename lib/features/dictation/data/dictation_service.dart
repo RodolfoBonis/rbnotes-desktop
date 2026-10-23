@@ -119,10 +119,19 @@ class DictationService {
       switch (event) {
         case DictationStarted():
           unawaited(_playSound(DictationSound.start));
+          _overlay(
+            _native.showActivityOverlay(
+              mode: OverlayMode.dictation,
+              startedAt: DateTime.now(),
+            ),
+          );
+          _overlay(
+            _native.updateActivityOverlay(phase: OverlayPhase.live),
+          );
         case DictationStopped(:final wavPath):
           await _handleStopped(wavPath);
         case DictationCancelled():
-          break;
+          _overlay(_native.hideActivityOverlay());
       }
     } on Object catch (e, st) {
       await AppLogger.error(
@@ -135,6 +144,7 @@ class DictationService {
   }
 
   Future<void> _handleStopped(String wavPath) async {
+    _overlay(_native.updateActivityOverlay(phase: OverlayPhase.processing));
     List<TranscriptSegment> segments;
     try {
       segments = await _native.transcribe(
@@ -153,11 +163,29 @@ class DictationService {
         category: 'dictation',
       );
       unawaited(_playSound(DictationSound.end));
+      _overlay(
+        _native.updateActivityOverlay(
+          phase: OverlayPhase.error,
+          message: 'Não foi possível transcrever',
+        ),
+      );
+      _overlay(
+        _native.hideActivityOverlay(delay: const Duration(seconds: 2)),
+      );
       await _deleteTempWav(wavPath);
       return;
     }
 
     unawaited(_playSound(DictationSound.end));
+    _overlay(
+      _native.updateActivityOverlay(
+        phase: OverlayPhase.done,
+        message: 'Ditado colado',
+      ),
+    );
+    _overlay(
+      _native.hideActivityOverlay(delay: const Duration(milliseconds: 1500)),
+    );
     // O wav do ditado é temporário: apaga após transcrever (sucesso ou erro).
     await _deleteTempWav(wavPath);
 
@@ -248,6 +276,12 @@ class DictationService {
           content: s.text.trim(),
         ),
     ]);
+  }
+
+  /// Dispara uma chamada de overlay sem deixar falha (ex.: macOS < 13, onde o
+  /// nativo é no-op) interferir no ditado.
+  void _overlay(Future<void> op) {
+    unawaited(op.catchError((Object _) {}));
   }
 
   Future<void> dispose() async {

@@ -132,6 +132,18 @@ void main() {
     await svc.dispose();
     await failNative.dispose();
   });
+
+  test('ditado mostra e esconde o overlay do notch (pedido 11)', () async {
+    await service.start();
+    native.emitDictation(const DictationStarted());
+    await pump();
+    expect(native.overlayShowCount, 1);
+    expect(native.overlayMode, OverlayMode.dictation);
+
+    native.emitDictation(const DictationStopped('/tmp/dictation.wav'));
+    await pump();
+    expect(native.overlayHideCount, greaterThanOrEqualTo(1));
+  });
 }
 
 class _PasteFailNative extends FakeRbNative {

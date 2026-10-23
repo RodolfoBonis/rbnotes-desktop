@@ -42,6 +42,7 @@ class RecordingState extends Equatable {
     this.claudeStatus,
     this.failedStep,
     this.hudDismissed = false,
+    this.background = false,
   });
 
   final RecordingStatus status;
@@ -73,6 +74,10 @@ class RecordingState extends Equatable {
   /// progresso aparece no item da lista.
   final bool hudDismissed;
 
+  /// A gravação começou por atalho global ou com o app oculto/sem foco: a UI
+  /// usa o overlay do notch em vez do HUD interno (evita duplicação).
+  final bool background;
+
   bool get isRecording =>
       status == RecordingStatus.recording || status == RecordingStatus.paused;
   bool get isProcessing => status == RecordingStatus.processing;
@@ -81,8 +86,10 @@ class RecordingState extends Equatable {
   /// Falhou alguma etapa do processamento (mostra o card de erro no HUD).
   bool get processingFailed => failedStep != null;
 
-  /// O HUD deve aparecer? (não, se o usuário o fechou durante o processamento).
-  bool get hudVisible => isActive && !(isProcessing && hudDismissed);
+  /// O HUD interno deve aparecer? Não quando o usuário o fechou durante o
+  /// processamento, nem quando a sessão usa o overlay do notch (background).
+  bool get hudVisible =>
+      isActive && !background && !(isProcessing && hudDismissed);
 
   RecordingState copyWith({
     RecordingStatus? status,
@@ -104,6 +111,7 @@ class RecordingState extends Equatable {
     int? failedStep,
     bool clearFailedStep = false,
     bool? hudDismissed,
+    bool? background,
   }) => RecordingState(
     status: status ?? this.status,
     noteId: clearNoteId ? null : (noteId ?? this.noteId),
@@ -122,6 +130,7 @@ class RecordingState extends Equatable {
         : (claudeStatus ?? this.claudeStatus),
     failedStep: clearFailedStep ? null : (failedStep ?? this.failedStep),
     hudDismissed: hudDismissed ?? this.hudDismissed,
+    background: background ?? this.background,
   );
 
   @override
@@ -141,6 +150,7 @@ class RecordingState extends Equatable {
     claudeStatus,
     failedStep,
     hudDismissed,
+    background,
   ];
 }
 
@@ -156,6 +166,8 @@ class RecordingCubit extends Cubit<RecordingState> {
     required Stream<NativeDiagnostic> diagnostics,
     AiActivity? aiActivity,
     EnrichmentService? enrichment,
+    Future<bool> Function()? isForeground,
+    Future<void> Function()? onOpenApp,
     Uuid? uuid,
   }) : _native = native,
        _repository = repository,
@@ -164,9 +176,15 @@ class RecordingCubit extends Cubit<RecordingState> {
        _paths = paths,
        _aiActivity = aiActivity,
        _enrichment = enrichment,
+       _isForeground = isForeground,
+       _onOpenApp = onOpenApp,
        _uuid = uuid ?? const Uuid(),
        super(RecordingState(captureSystemAudio: settings.captureSystemAudio)) {
     _diagSub = diagnostics.listen(_onDiagnostic);
+    _overlayActionSub = _native.overlayActions().listen(
+      _onOverlayAction,
+      onError: (Object _, StackTrace _) {},
+    );
   }
 
   final RbNative _native;
@@ -176,6 +194,8 @@ class RecordingCubit extends Cubit<RecordingState> {
   final AppPaths _paths;
   final AiActivity? _aiActivity;
   final EnrichmentService? _enrichment;
+  final Future<bool> Function()? _isForeground;
+  final Future<void> Function()? _onOpenApp;
   final Uuid _uuid;
 
   StreamSubscription<AudioLevels>? _levelsSub;
@@ -184,6 +204,8 @@ class RecordingCubit extends Cubit<RecordingState> {
   StreamSubscription<TranscriptionProgress>? _procSub;
   StreamSubscription<NoteRow?>? _aiSub;
   StreamSubscription<AiPhase>? _aiPhaseSub;
+  StreamSubscription<OverlayAction>? _overlayActionSub;
+  bool _overlayShown = false;
   Timer? _ticker;
   Timer? _stepTicker;
   DateTime? _startedAt;
@@ -199,10 +221,17 @@ class RecordingCubit extends Cubit<RecordingState> {
     emit(state.copyWith(captureSystemAudio: value));
   }
 
-  /// Inicia uma gravação de nota.
-  Future<void> start({NoteKind kind = NoteKind.note}) async {
+  /// Inicia uma gravação de nota. [background] (atalho global / app oculto)
+  /// força o uso do overlay do notch em vez do HUD interno. Se não for passado,
+  /// detecta pelo foco da janela via `isForeground`.
+  Future<void> start({
+    NoteKind kind = NoteKind.note,
+    bool background = false,
+  }) async {
     if (state.isActive) return;
-    emit(state.copyWith(clearError: true, kind: kind));
+    final foreground = await (_isForeground?.call() ?? Future.value(true));
+    final bg = background || !foreground;
+    emit(state.copyWith(clearError: true, kind: kind, background: bg));
 
     final mic = await _native.permissionStatus(RbPermission.microphone);
     if (mic != PermissionStatus.granted) {
@@ -477,10 +506,110 @@ class RecordingCubit extends Cubit<RecordingState> {
     unawaited(_procSub?.cancel());
     unawaited(_aiSub?.cancel());
     unawaited(_aiPhaseSub?.cancel());
+    if (_overlayShown) {
+      // Fase "done" no overlay some sozinha em ~1,5 s (lado nativo).
+      _overlay(
+        _native.updateActivityOverlay(
+          phase: OverlayPhase.done,
+          progress: 1,
+          message: 'Nota pronta',
+        ),
+      );
+      _overlay(
+        _native.hideActivityOverlay(delay: const Duration(milliseconds: 1500)),
+      );
+      _overlayShown = false;
+    }
     if (noteId.isNotEmpty) {
       _created.add(CreatedNote(id: noteId, kind: state.kind));
     }
     _reset();
+  }
+
+  // ---------- overlay do notch ----------
+
+  @override
+  void onChange(Change<RecordingState> change) {
+    super.onChange(change);
+    _mirrorOverlay(change.nextState);
+  }
+
+  /// Espelha o estado para o overlay do notch quando a sessão é background.
+  /// Nenhuma falha aqui (ex.: macOS < 13, onde o nativo é no-op) afeta a
+  /// gravação: os erros são engolidos e o HUD interno serve de fallback.
+  void _mirrorOverlay(RecordingState s) {
+    final want = s.isActive && s.background;
+    if (want && !_overlayShown) {
+      _overlayShown = true;
+      _overlay(
+        _native.showActivityOverlay(
+          mode: OverlayMode.recording,
+          startedAt: _startedAt ?? DateTime.now(),
+        ),
+      );
+    }
+    if (want) {
+      if (s.isProcessing) {
+        if (s.processingFailed) {
+          _overlay(
+            _native.updateActivityOverlay(
+              phase: OverlayPhase.error,
+              message: s.error ?? 'Erro no processamento',
+            ),
+          );
+        } else {
+          _overlay(
+            _native.updateActivityOverlay(
+              phase: OverlayPhase.processing,
+              progress: _overallProgress(s),
+              message: s.claudeStatus ?? 'Preparando sua nota…',
+            ),
+          );
+        }
+      } else {
+        _overlay(
+          _native.updateActivityOverlay(
+            micLevel: s.micLevel,
+            systemLevel: s.systemLevel,
+            liveText: s.liveText,
+            phase: OverlayPhase.live,
+            paused: s.status == RecordingStatus.paused,
+          ),
+        );
+      }
+    } else if (!want && _overlayShown) {
+      _overlayShown = false;
+      _overlay(_native.hideActivityOverlay());
+    }
+  }
+
+  /// Progresso geral (0..1) do pipeline para o overlay: transcrição (0–0.5),
+  /// falantes (~0.55) e resumo (0.6–1.0).
+  double _overallProgress(RecordingState s) => switch (s.step) {
+    0 => s.stepProgress * 0.5,
+    1 => 0.55,
+    _ => (0.6 + s.stepProgress * 0.4).clamp(0.0, 1.0),
+  };
+
+  void _overlay(Future<void> op) {
+    unawaited(op.catchError((Object _) {}));
+  }
+
+  void _onOverlayAction(OverlayAction action) {
+    switch (action) {
+      case OverlayAction.pause:
+        unawaited(pause());
+      case OverlayAction.resume:
+        unawaited(resume());
+      case OverlayAction.stop:
+        unawaited(stop());
+      case OverlayAction.discard:
+        unawaited(discard());
+      case OverlayAction.openApp:
+        unawaited(_onOpenApp?.call() ?? Future<void>.value());
+        // Traz a UI para o foco: o HUD interno assume e o overlay some.
+        if (state.isActive) emit(state.copyWith(background: false));
+    }
   }
 
   void _onDiagnostic(NativeDiagnostic diagnostic) {
@@ -537,6 +666,7 @@ class RecordingCubit extends Cubit<RecordingState> {
     await _procSub?.cancel();
     await _aiSub?.cancel();
     await _aiPhaseSub?.cancel();
+    await _overlayActionSub?.cancel();
     await _diagSub?.cancel();
     await _created.close();
     return super.close();
