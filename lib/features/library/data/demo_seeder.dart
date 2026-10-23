@@ -91,8 +91,20 @@ class DemoSeeder {
     for (final n in _notes_()) {
       await _seedNote(n, now);
     }
-    // Entradas do diário para o calendário/sequência (dias do mês atual).
-    for (final day in const [1, 2, 3, 5, 6, 8, 9, 12, 13, 14, 15, 16]) {
+    // Entradas do diário para o calendário/sequência.
+    //
+    // Dias espalhados no começo do mês + uma sequência de 3 dias terminando
+    // ONTEM (relativo a `now`), para a "Visão do mês" mostrar uma sequência
+    // viva ("3 dias seguidos"), como no design. A sequência termina ontem
+    // porque a entrada de hoje ainda não foi gravada.
+    final days = <int>{1, 2, 3, 5, 6, 8, 9, 12, 13, 14, 15, 16};
+    for (final offset in const [1, 2, 3]) {
+      final date = DateTime(now.year, now.month, now.day - offset);
+      if (date.month == now.month && date.year == now.year) {
+        days.add(date.day);
+      }
+    }
+    for (final day in days) {
       final date = DateTime(now.year, now.month, day);
       if (date.isAfter(now)) continue;
       await _diary.upsertEntry(day: date);
