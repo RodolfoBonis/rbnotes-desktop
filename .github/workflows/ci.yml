@@ -26,7 +26,19 @@ jobs:
       - run: flutter pub get
       - run: dart format --set-exit-if-changed lib test
       - run: flutter analyze
-      - run: flutter test --coverage
+      - name: Test (app)
+        run: flutter test --coverage --timeout 60s
+
+      # Plugin nativo: analisa e testa isoladamente (contrato Dart do plugin).
+      - name: Pub get (plugin)
+        working-directory: packages/rbnotes_native
+        run: flutter pub get
+      - name: Analyze (plugin)
+        working-directory: packages/rbnotes_native
+        run: flutter analyze
+      - name: Test (plugin)
+        working-directory: packages/rbnotes_native
+        run: flutter test --timeout 60s
 
   build:
     name: Build macOS
@@ -43,5 +55,9 @@ jobs:
       - run: flutter pub get
       - name: Build macOS (debug)
         run: flutter build macos --debug -t lib/main_production.dart
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      - name: Build macOS (release)
+        run: flutter build macos --release -t lib/main_production.dart
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
