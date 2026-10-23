@@ -13,13 +13,13 @@
 # Usage:
 #   scripts/build_whisper.sh            # build if missing (idempotent)
 #   FORCE=1 scripts/build_whisper.sh    # always rebuild
-#   WHISPER_ARCHS="arm64 x86_64" ...    # universal slice (default: arm64)
+#   WHISPER_ARCHS="arm64 x86_64" ...    # default: universal (arm64 x86_64), needed by release builds
 #
 set -euo pipefail
 
 WHISPER_REF="${WHISPER_REF:-v1.7.6}"
 MACOS_MIN_OS_VERSION="${MACOS_MIN_OS_VERSION:-13.0}"
-WHISPER_ARCHS="${WHISPER_ARCHS:-arm64}"
+WHISPER_ARCHS="${WHISPER_ARCHS:-arm64 x86_64}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -43,6 +43,10 @@ command -v cmake >/dev/null 2>&1 || {
 mkdir -p "${BUILD_ROOT}"
 
 # --- Fetch pinned source -----------------------------------------------------
+if [[ -d "${SRC}" && ! -d "${SRC}/.git" ]]; then
+  log "Discarding incomplete source dir (no .git)..."
+  rm -rf "${SRC}"
+fi
 if [[ ! -d "${SRC}/.git" ]]; then
   log "Cloning whisper.cpp ${WHISPER_REF}..."
   git clone --depth 1 --branch "${WHISPER_REF}" \
