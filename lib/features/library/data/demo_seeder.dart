@@ -2,6 +2,7 @@
 // adjacentes (concatenação) de propósito, para legibilidade.
 // ignore_for_file: no_adjacent_strings_in_list
 import 'package:drift/drift.dart';
+import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/domain/note_ai.dart';
 import 'package:rbnotes/features/diary/data/diary_repository.dart';
@@ -9,6 +10,8 @@ import 'package:rbnotes/features/library/data/library_repository.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/domain/note_models.dart';
+import 'package:rbnotes/features/sync/data/sync_client.dart';
+import 'package:rbnotes/features/sync/data/sync_entities.dart';
 import 'package:uuid/uuid.dart';
 
 /// Palavra com baixa confiança no design (o Whisper ouviu "Taís").
@@ -69,17 +72,20 @@ class DemoSeeder {
     required NoteAiRepository noteAi,
     required LibraryRepository library,
     required DiaryRepository diary,
+    SyncClient? sync,
     Uuid? uuid,
   }) : _notes = notes,
        _noteAi = noteAi,
        _library = library,
        _diary = diary,
+       _sync = sync,
        _uuid = uuid ?? const Uuid();
 
   final NoteRepository _notes;
   final NoteAiRepository _noteAi;
   final LibraryRepository _library;
   final DiaryRepository _diary;
+  final SyncClient? _sync;
   final Uuid _uuid;
 
   /// Ids das notas de seed (fixos). Usados para limpar o seed que vazou para o
@@ -91,19 +97,70 @@ class DemoSeeder {
   /// originais e `updatedAt == createdAt` (o seeder grava os dois iguais; toda
   /// renomeação, re-transcrição ou re-enriquecimento mexe em `updatedAt`).
   /// Notas tocadas pelo usuário são preservadas. Idempotente.
+  ///
+  /// O seed vazou para o servidor antes de o seeder ser desligado em produção
+  /// (o resumo do diário do servidor chega a citar o "kickoff"). Como
+  /// [NoteRepository.purgeLocal] não gera tombstone, enviamos **tombstones
+  /// explícitos** (`deleted=true`) para o servidor — só para os ids fixos do
+  /// seeder — antes de purgar localmente. Sem [SyncClient] (modo local-first),
+  /// apenas purga localmente, como antes.
   Future<int> purgeSeedNotes() async {
-    var removed = 0;
+    final pristineIds = <String>[];
     for (final demo in _notes_()) {
       final note = await _notes.getNote(demo.id);
       if (note == null) continue;
       final pristine =
           note.title == demo.title &&
           note.updatedAt.isAtSameMomentAs(note.createdAt);
-      if (!pristine) continue;
-      await _notes.purgeLocal(demo.id);
-      removed++;
+      if (pristine) pristineIds.add(demo.id);
     }
-    return removed;
+    if (pristineIds.isEmpty) return 0;
+
+    // Envia os tombstones primeiro; só purga localmente se der certo (ou se não
+    // há sync), para não perder a chance de limpar o servidor quando offline —
+    // o próximo boot tenta de novo.
+    if (_sync != null && !await _pushSeedTombstones(pristineIds)) {
+      return 0;
+    }
+    for (final id in pristineIds) {
+      await _notes.purgeLocal(id);
+    }
+    return pristineIds.length;
+  }
+
+  /// Envia tombstones (`deleted=true`) das entidades que o seeder criou (note,
+  /// note_ai, segment_set) para os ids dados. Retorna `false` em falha (ex.:
+  /// offline), para o purge local ser adiado ao próximo boot.
+  Future<bool> _pushSeedTombstones(List<String> ids) async {
+    final now = DateTime.now();
+    final tombstones = <SyncChange>[
+      for (final id in ids) ...[
+        for (final entity in const [
+          SyncEntities.note,
+          SyncEntities.noteAi,
+          SyncEntities.segmentSet,
+        ])
+          SyncChange(
+            entity: entity,
+            id: id,
+            updatedAt: now,
+            deleted: true,
+            data: const {},
+          ),
+      ],
+    ];
+    try {
+      await _sync!.push(tombstones);
+      return true;
+    } on Object catch (e, st) {
+      await AppLogger.error(
+        e,
+        st,
+        reason: 'purge_seed_tombstones',
+        category: 'sync',
+      );
+      return false;
+    }
   }
 
   Future<void> seedIfEmpty() async {

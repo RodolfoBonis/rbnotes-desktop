@@ -211,6 +211,8 @@ Future<void> configureDependencies(AppConfig config) async {
     noteAi: noteAi,
     library: library,
     diary: diary,
+    // Em produção o purge usa o sync para mandar tombstones do seed vazado.
+    sync: config.demoSeed ? null : sync,
   );
   if (config.demoSeed) {
     await seeder.seedIfEmpty();
