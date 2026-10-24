@@ -13,6 +13,7 @@ import 'package:rbnotes/core/ui/traffic_lights.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
 import 'package:rbnotes/features/ai/data/ai_usage_client.dart';
 import 'package:rbnotes/features/ai/presentation/ai_usage_cubit.dart';
+import 'package:rbnotes/features/dictation/data/dictation_service.dart';
 import 'package:rbnotes/features/recording/data/mac_key_codes.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/security/data/note_key_store.dart';
@@ -79,6 +80,7 @@ class SettingsModal extends StatefulWidget {
     required this.onClose,
     required this.onLogout,
     required this.onEraseAllData,
+    this.dictation,
     this.noteKeyStore,
     this.onMenuBarChanged,
     this.onRecoveryKeyChanged,
@@ -98,6 +100,10 @@ class SettingsModal extends StatefulWidget {
 
   /// Cliente de consumo de IA para a aba "Uso" (GET /v1/ai/usage).
   final AiUsageClient aiUsageClient;
+
+  /// Ditado global, para o editor do atalho de ditado (aba Gravação). Null em
+  /// testes/goldens: a linha cai para o atalho estático.
+  final DictationService? dictation;
 
   /// Chave das notas bloqueadas (aba Privacidade → "Chave de recuperação").
   /// Null esconde a linha (ex.: em testes de golden do shell).
@@ -140,6 +146,7 @@ class _SettingsModalState extends State<SettingsModal> {
   final _downloading = <WhisperModel, double>{};
   final _subs = <WhisperModel, StreamSubscription<double>>{};
   StreamSubscription<RecordNoteHotkeyStatus>? _recordHotkeySub;
+  StreamSubscription<DictationHotkeyStatus>? _dictationSub;
   bool? _notifPermission;
   List<AudioInputDevice> _micDevices = const [];
 
@@ -152,6 +159,9 @@ class _SettingsModalState extends State<SettingsModal> {
     unawaited(_refreshVocabCount());
     // Reflete a (re)registração do atalho "Gravar nota" ao vivo na aba Atalhos.
     _recordHotkeySub = widget.recordNoteHotkey.statusChanges.listen((_) {
+      if (mounted) setState(() {});
+    });
+    _dictationSub = widget.dictation?.statusChanges.listen((_) {
       if (mounted) setState(() {});
     });
     unawaited(_loadNotifPermission());
@@ -206,6 +216,7 @@ class _SettingsModalState extends State<SettingsModal> {
       unawaited(s.cancel());
     }
     unawaited(_recordHotkeySub?.cancel());
+    unawaited(_dictationSub?.cancel());
     super.dispose();
   }
 
@@ -380,7 +391,11 @@ class _SettingsModalState extends State<SettingsModal> {
     _Group(
       rows: [
         _micRow(),
-        _keys('Atalho global', const ['⌥', 'Espaço']),
+        if (widget.dictation != null) ...[
+          _dictationRow(),
+          if (_s.dictationEnabled) _dictationModeRow(),
+        ] else
+          _keys('Atalho de ditado', const ['⌥', 'Espaço']),
         _toggle(
           'Gravar áudio do sistema',
           'Capta as duas vozes em chamadas no Meet, Zoom e Teams',
@@ -573,6 +588,66 @@ class _SettingsModalState extends State<SettingsModal> {
       ],
     ),
   ]);
+
+  Widget _dictationRow() {
+    final status = widget.dictation!.hotkeyStatus;
+    final enabled = _s.dictationEnabled;
+    final sub = switch (status) {
+      _ when !enabled => 'Desativado',
+      DictationHotkeyStatus(hasError: true) =>
+        'Não foi possível registrar: '
+            '${status.error}',
+      _ => 'Dite em qualquer app; o texto é colado no foco',
+    };
+    return _SettingRow(
+      label: 'Ditado',
+      sub: sub,
+      subColor: status.hasError && enabled ? RbTokens.destructive : null,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (enabled) ...[
+            _Keys(keys: MacKeyCodes.symbols(_s.hotkey)),
+            const SizedBox(width: 10),
+            _PillButton(label: 'Alterar', onTap: _changeDictationHotkey),
+            const SizedBox(width: 8),
+          ],
+          _Toggle(
+            value: enabled,
+            onChanged: (v) async {
+              await _s.setDictationEnabled(value: v);
+              await widget.dictation!.applySettings();
+              if (mounted) setState(() {});
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dictationModeRow() => _segRow(
+    'Modo do ditado',
+    const ['Segurar', 'Alternar'],
+    _s.dictationMode == DictationMode.holdToTalk ? 'Segurar' : 'Alternar',
+    (v) async {
+      await _s.setDictationMode(
+        v == 'Segurar' ? DictationMode.holdToTalk : DictationMode.toggle,
+      );
+      await widget.dictation!.applySettings();
+      if (mounted) setState(() {});
+    },
+  );
+
+  Future<void> _changeDictationHotkey() async {
+    final captured = await showDialog<Hotkey>(
+      context: context,
+      builder: (_) => _HotkeyCaptureDialog(current: _s.hotkey),
+    );
+    if (captured == null) return;
+    await _s.setHotkey(captured);
+    await widget.dictation!.applySettings();
+    if (mounted) setState(() {});
+  }
 
   Widget _recordNoteRow() {
     final status = widget.recordNoteHotkey.status;

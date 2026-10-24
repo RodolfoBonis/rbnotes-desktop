@@ -144,6 +144,32 @@ void main() {
     await pump();
     expect(native.overlayHideCount, greaterThanOrEqualTo(1));
   });
+
+  group('editor do atalho de ditado (pedido 6)', () {
+    test('statusChanges emite registrado ao aplicar', () async {
+      final events = <DictationHotkeyStatus>[];
+      final sub = service.statusChanges.listen(events.add);
+      await store.setDictationEnabled(value: true);
+      await service.applySettings();
+      await pump();
+      expect(events.last.registered, isTrue);
+      expect(events.last.hasError, isFalse);
+      await sub.cancel();
+    });
+
+    test('desabilitar desregistra o atalho', () async {
+      await service.start();
+      await store.setDictationEnabled(value: false);
+      await service.applySettings();
+      expect(service.hotkeyStatus.registered, isFalse);
+    });
+
+    test('trocar o modo re-registra com o novo modo', () async {
+      await store.setDictationMode(DictationMode.toggle);
+      await service.applySettings();
+      expect(native.registeredMode, DictationMode.toggle);
+    });
+  });
 }
 
 class _PasteFailNative extends FakeRbNative {

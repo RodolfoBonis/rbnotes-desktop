@@ -24,6 +24,7 @@ import 'package:rbnotes/features/collections/domain/forgotten_tasks.dart';
 import 'package:rbnotes/features/collections/presentation/tasks_pane.dart';
 import 'package:rbnotes/features/diary/presentation/diary_cubit.dart';
 import 'package:rbnotes/features/diary/presentation/diary_pane.dart';
+import 'package:rbnotes/features/dictation/data/dictation_service.dart';
 import 'package:rbnotes/features/library/data/library_repository.dart';
 import 'package:rbnotes/features/library/presentation/library_cubit.dart';
 import 'package:rbnotes/features/library/presentation/note_list.dart';
@@ -509,6 +510,9 @@ class _SettingsLayer extends StatelessWidget {
       vocabulary: di(),
       recordNoteHotkey: di(),
       aiUsageClient: di(),
+      dictation: di.isRegistered<DictationService>()
+          ? di<DictationService>()
+          : null,
       noteKeyStore: di(),
       onMenuBarChanged: (enabled) {
         if (di.isRegistered<TrayController>()) {

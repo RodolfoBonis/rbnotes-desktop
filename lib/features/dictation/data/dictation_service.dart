@@ -23,6 +23,8 @@ class DictationHotkeyStatus {
   final String? error;
 
   static const disabled = DictationHotkeyStatus(registered: false);
+
+  bool get hasError => error != null;
 }
 
 /// Ditado global: escuta o atalho, transcreve o áudio do mic, cola no app em
@@ -52,12 +54,17 @@ class DictationService {
   DictationHotkeyStatus _hotkeyStatus = DictationHotkeyStatus.disabled;
 
   final _notices = StreamController<String>.broadcast();
+  final _statusController = StreamController<DictationHotkeyStatus>.broadcast();
 
   /// Último texto ditado, disponível para "Colar último ditado".
   String? get lastDictatedText => _lastText;
 
   /// Estado atual do registro do atalho (para a tela de configurações).
   DictationHotkeyStatus get hotkeyStatus => _hotkeyStatus;
+
+  /// Mudanças no estado do registro, para a tela de Configurações refletir uma
+  /// re-registração ao vivo (igual ao atalho "Gravar nota").
+  Stream<DictationHotkeyStatus> get statusChanges => _statusController.stream;
 
   /// Avisos para o usuário (ex.: a colagem falhou mas o texto foi salvo). A
   /// casca do app assina e mostra um snackbar/tray.
@@ -91,18 +98,20 @@ class DictationService {
           _settings.hotkey,
           _settings.dictationMode,
         );
-        _hotkeyStatus = const DictationHotkeyStatus(registered: true);
+        _setStatus(const DictationHotkeyStatus(registered: true));
       } else {
         await _native.unregisterDictationHotkey();
-        _hotkeyStatus = DictationHotkeyStatus.disabled;
+        _setStatus(DictationHotkeyStatus.disabled);
       }
     } on Object catch (e) {
       // Não é erro de servidor: tipicamente falta Acessibilidade ou conflito de
       // atalho. Guardamos para exibir nas configurações; só breadcrumb (sem
       // evento de erro no Sentry a cada boot).
-      _hotkeyStatus = DictationHotkeyStatus(
-        registered: false,
-        error: e is RbNativeException ? e.message : e.toString(),
+      _setStatus(
+        DictationHotkeyStatus(
+          registered: false,
+          error: e is RbNativeException ? e.message : e.toString(),
+        ),
       );
       AppLogger.warning(
         'dictation hotkey registration failed',
@@ -285,9 +294,15 @@ class DictationService {
     unawaited(op.catchError((Object _) {}));
   }
 
+  void _setStatus(DictationHotkeyStatus status) {
+    _hotkeyStatus = status;
+    if (!_statusController.isClosed) _statusController.add(status);
+  }
+
   Future<void> dispose() async {
     await _sub?.cancel();
     await _notices.close();
+    await _statusController.close();
     try {
       await _native.unregisterDictationHotkey();
     } on Object catch (_) {
