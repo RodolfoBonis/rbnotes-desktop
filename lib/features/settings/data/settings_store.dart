@@ -60,6 +60,7 @@ class SettingsStore {
   static const _kSync = 'settings.sync';
   static const _kSendAudio = 'settings.send_audio';
   static const _kTouchId = 'settings.touch_id';
+  static const _kKeyCheck = 'settings.note_lock.key_check';
   static const _kRetention = 'settings.retention';
   static const _kDeleteAudio = 'settings.delete_audio';
   // Aparência
@@ -320,6 +321,13 @@ class SettingsStore {
   bool get touchIdLock => _prefs.getBool(_kTouchId) ?? false;
   Future<void> setTouchIdLock({required bool value}) =>
       _prefs.setBool(_kTouchId, value);
+
+  /// Sentinela da chave das notas bloqueadas (M10): um envelope cifrado com a
+  /// chave atual, guardado em claro (é só ciphertext) para validar uma chave de
+  /// recuperação importada — se não decifrar o sentinela, não abre as notas.
+  String? get noteKeyCheck => _prefs.getString(_kKeyCheck);
+  Future<void> setNoteKeyCheck(String value) =>
+      _prefs.setString(_kKeyCheck, value);
 
   String get retention => _prefs.getString(_kRetention) ?? '1 ano';
   Future<void> setRetention(String value) =>

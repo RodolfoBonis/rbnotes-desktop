@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,16 +8,40 @@ import 'package:rbnotes/features/security/data/note_cipher.dart';
 import 'package:rbnotes/features/security/data/note_key.dart';
 import 'package:rbnotes/features/security/data/note_key_store.dart';
 
+/// Valor claro do sentinela da chave (M10): um envelope cifrado com a chave
+/// guardado localmente; uma chave de recuperação importada só é aceita se
+/// decifrar o sentinela de volta a este valor.
+const _keyCheckClear = {'check': 'rbnotes-key-check'};
+
+/// Tempo até limpar a área de transferência depois de copiar a chave (M13).
+const _clipboardClearAfter = Duration(seconds: 60);
+
+/// Limpa a área de transferência (M13), mas só se ela ainda contiver [value] —
+/// o usuário pode ter copiado outra coisa nesse meio-tempo. Exposto para teste.
+@visibleForTesting
+Future<void> clearRecoveryClipboard(
+  String value, {
+  Future<ClipboardData?> Function()? read,
+  Future<void> Function(ClipboardData) write = Clipboard.setData,
+}) async {
+  final readData = read ?? () => Clipboard.getData(Clipboard.kTextPlain);
+  final data = await readData();
+  if (data?.text == value) {
+    await write(const ClipboardData(text: ''));
+  }
+}
+
 /// Diálogo "Chave de recuperação" da aba Privacidade.
 ///
-/// Mostra e copia a chave AES das notas bloqueadas em base32 agrupado e
-/// deixa
-/// importar uma chave de outro Mac (com teste de round-trip antes de
-/// salvar).
+/// Mostra e copia a chave AES das notas bloqueadas em base32 agrupado e deixa
+/// importar uma chave de outro Mac. A chave fica só neste Mac (ver A3); a chave
+/// de recuperação é o caminho para abrir as notas bloqueadas em outro Mac.
 class RecoveryKeyDialog extends StatefulWidget {
   const RecoveryKeyDialog({
     required this.keyStore,
     this.onKeyChanged,
+    this.loadKeyCheck,
+    this.saveKeyCheck,
     super.key,
   });
 
@@ -25,6 +50,13 @@ class RecoveryKeyDialog extends StatefulWidget {
   /// Chamado depois de importar/gerar uma chave (para invalidar caches, ex.: o
   /// `SyncCrypto`).
   final VoidCallback? onKeyChanged;
+
+  /// Carrega o sentinela cifrado atual (M10), ou null se não houver. Quando há,
+  /// uma chave importada precisa decifrá-lo para ser aceita.
+  final Future<Map<String, dynamic>?> Function()? loadKeyCheck;
+
+  /// Persiste um novo sentinela cifrado com a chave recém-importada.
+  final Future<void> Function(Map<String, dynamic> envelope)? saveKeyCheck;
 
   @override
   State<RecoveryKeyDialog> createState() => _RecoveryKeyDialogState();
@@ -37,6 +69,7 @@ class _RecoveryKeyDialogState extends State<RecoveryKeyDialog> {
   bool _revealed = false;
   String? _message;
   bool _messageOk = false;
+  Timer? _clearClipboardTimer;
 
   @override
   void initState() {
@@ -51,10 +84,16 @@ class _RecoveryKeyDialogState extends State<RecoveryKeyDialog> {
       _current = key;
       _loading = false;
     });
+    // Backfill do sentinela no Mac de origem: se já há chave mas nenhum
+    // sentinela guardado, grava um agora para validar importações futuras.
+    if (key != null && await widget.loadKeyCheck?.call() == null) {
+      await _persistCheck(key);
+    }
   }
 
   @override
   void dispose() {
+    _clearClipboardTimer?.cancel();
     _import.dispose();
     super.dispose();
   }
@@ -62,26 +101,52 @@ class _RecoveryKeyDialogState extends State<RecoveryKeyDialog> {
   Future<void> _copy() async {
     final key = _current;
     if (key == null) return;
-    await Clipboard.setData(ClipboardData(text: key.recovery));
+    final value = key.recovery;
+    await Clipboard.setData(ClipboardData(text: value));
+    // Não deixa a chave parada na área de transferência (M13): limpa em 60 s,
+    // mas só se ela ainda contiver a chave (o usuário pode ter copiado outra).
+    _clearClipboardTimer?.cancel();
+    _clearClipboardTimer = Timer(
+      _clipboardClearAfter,
+      () => unawaited(_clearClipboardIfKey(value)),
+    );
     if (mounted) {
       setState(() {
-        _message = 'Chave copiada.';
+        _message = 'Chave copiada. A área de transferência será limpa em 60 s.';
         _messageOk = true;
       });
     }
   }
 
+  Future<void> _clearClipboardIfKey(String value) =>
+      clearRecoveryClipboard(value);
+
   Future<void> _importKey() async {
     final raw = _import.text.trim();
     if (raw.isEmpty) return;
+
+    final NoteKey key;
     try {
-      final key = NoteKey.fromRecovery(raw);
-      // Teste de round-trip antes de salvar: a chave precisa cifrar/decifrar.
-      final cipher = NoteCipher(key);
-      final probe = await cipher.encrypt({'probe': 'ok'});
-      final back = await cipher.decrypt(probe);
-      if (back['probe'] != 'ok') throw const FormatException('round-trip');
+      key = NoteKey.fromRecovery(raw);
+    } on Object {
+      _setMessage('Chave de recuperação inválida.', ok: false);
+      return;
+    }
+
+    // Validação de verdade (M10): a chave precisa abrir o sentinela existente.
+    // Sem sentinela (primeiro Mac), não há como validar — aceitamos.
+    final check = await widget.loadKeyCheck?.call();
+    if (check != null && !await _opensCheck(key, check)) {
+      _setMessage('Esta chave não abre suas notas bloqueadas.', ok: false);
+      return;
+    }
+
+    // Confirma antes de sobrescrever uma chave já existente neste Mac.
+    if (_current != null && !await _confirmOverwrite()) return;
+
+    try {
       await widget.keyStore.import(key);
+      await _persistCheck(key);
       widget.onKeyChanged?.call();
       if (mounted) {
         setState(() {
@@ -92,13 +157,57 @@ class _RecoveryKeyDialogState extends State<RecoveryKeyDialog> {
         });
       }
     } on Object {
-      if (mounted) {
-        setState(() {
-          _message = 'Chave de recuperação inválida.';
-          _messageOk = false;
-        });
-      }
+      _setMessage('Chave de recuperação inválida.', ok: false);
     }
+  }
+
+  Future<bool> _opensCheck(NoteKey key, Map<String, dynamic> envelope) async {
+    try {
+      final clear = await NoteCipher(key).decrypt(envelope);
+      return jsonEncode(clear) == jsonEncode(_keyCheckClear);
+    } on Object {
+      return false;
+    }
+  }
+
+  Future<void> _persistCheck(NoteKey key) async {
+    final save = widget.saveKeyCheck;
+    if (save == null) return;
+    final envelope = await NoteCipher(key).encrypt(Map.of(_keyCheckClear));
+    await save(envelope);
+  }
+
+  Future<bool> _confirmOverwrite() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Substituir a chave deste Mac?'),
+        content: const Text(
+          'Já existe uma chave neste Mac. Importar vai substituí-la pela chave '
+          'colada. As notas bloqueadas com a chave antiga só abrem com ela.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: RbTokens.destructive),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Substituir'),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
+
+  void _setMessage(String message, {required bool ok}) {
+    if (!mounted) return;
+    setState(() {
+      _message = message;
+      _messageOk = ok;
+    });
   }
 
   @override
@@ -114,8 +223,9 @@ class _RecoveryKeyDialogState extends State<RecoveryKeyDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Guarde esta chave em local seguro. Com ela, outro Mac consegue '
-              'abrir suas notas bloqueadas sincronizadas.',
+              'A chave das notas bloqueadas fica só neste Mac. Guarde esta '
+              'chave de recuperação em local seguro: é com ela que você abre '
+              'as notas bloqueadas em outro Mac.',
               style: context.bodyText(
                 size: 12,
                 height: 1.4,

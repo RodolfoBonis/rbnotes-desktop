@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -920,6 +921,16 @@ class _SettingsModalState extends State<SettingsModal> {
       builder: (_) => RecoveryKeyDialog(
         keyStore: store,
         onKeyChanged: widget.onRecoveryKeyChanged,
+        loadKeyCheck: () async {
+          final raw = _s.noteKeyCheck;
+          if (raw == null || raw.isEmpty) return null;
+          try {
+            return (jsonDecode(raw) as Map).cast<String, dynamic>();
+          } on Object {
+            return null;
+          }
+        },
+        saveKeyCheck: (envelope) => _s.setNoteKeyCheck(jsonEncode(envelope)),
       ),
     );
   }
