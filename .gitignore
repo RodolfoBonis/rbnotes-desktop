@@ -25,3 +25,6 @@ pubspec_overrides.yaml
 
 # Assinatura local (certificado do dono)
 macos/Runner/Configs/Signing.local.xcconfig
+
+# Artefatos de golden falho
+**/failures/
