@@ -21,6 +21,7 @@ final class AudioCapture {
   private var _firstBufferHostTime: Double?
   private var configObserver: NSObjectProtocol?
   private var inputDeviceId: AudioDeviceID?
+  private var noiseReduction = false
 
   /// Called on the audio thread with converted s16le bytes to persist.
   var onData: ((Data) -> Void)?
@@ -43,8 +44,9 @@ final class AudioCapture {
 
   /// Starts capture, optionally on an explicit [deviceId] (nil = system
   /// default input).
-  func start(deviceId: AudioDeviceID? = nil) throws {
+  func start(deviceId: AudioDeviceID? = nil, noiseReduction: Bool = false) throws {
     inputDeviceId = deviceId
+    self.noiseReduction = noiseReduction
     try startEngine()
     observeConfigurationChanges()
   }
@@ -52,6 +54,10 @@ final class AudioCapture {
   private func startEngine() throws {
     let input = engine.inputNode
     applyInputDeviceIfNeeded(input)
+    applyNoiseReductionIfNeeded(input)
+    // Voice processing changes the input node's format (sample rate and channel
+    // count), so the format must be read AFTER enabling it and the converter
+    // built from the resulting format.
     let inputFormat = input.inputFormat(forBus: 0)
     guard inputFormat.sampleRate > 0 else {
       throw RbNativeError.notRecording("microphone input unavailable")
@@ -92,6 +98,27 @@ final class AudioCapture {
         NativeDiagnostic(
           DiagnosticCode.audioConfigChanged,
           "selected microphone unavailable; using the default input"))
+    }
+  }
+
+  /// Enables Apple's voice processing (noise + echo cancellation) on the input
+  /// node when requested. Voice processing must be toggled while the engine is
+  /// stopped and it alters the node's output format; callers read the format
+  /// afterwards. On failure it degrades to raw capture and emits a diagnostic —
+  /// it never aborts the recording, and it does not touch system-audio capture
+  /// or live transcription (both consume the converted 16 kHz mono stream).
+  private func applyNoiseReductionIfNeeded(_ input: AVAudioInputNode) {
+    guard noiseReduction else { return }
+    do {
+      try input.setVoiceProcessingEnabled(true)
+      RbLog.recording.info("voice processing (noise reduction) enabled")
+    } catch {
+      RbLog.recording.error(
+        "voice processing could not be enabled: \(error.localizedDescription)")
+      onError?(
+        NativeDiagnostic(
+          DiagnosticCode.noiseReductionUnavailable,
+          "redução de ruído indisponível; gravando sem ela: \(error.localizedDescription)"))
     }
   }
 

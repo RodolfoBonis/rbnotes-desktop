@@ -17,6 +17,9 @@ enum RbNativeError: Error {
   case hotkeyConflict(String)
   case pasteFailed(String)
   case invalidArgument(String)
+  case diarizationModelMissing(String)
+  case diarizationFailed(String)
+  case loginItemFailed(String)
 
   var code: String {
     switch self {
@@ -31,6 +34,9 @@ enum RbNativeError: Error {
     case .hotkeyConflict: return "hotkey_conflict"
     case .pasteFailed: return "paste_failed"
     case .invalidArgument: return "invalid_argument"
+    case .diarizationModelMissing: return "diarization_model_missing"
+    case .diarizationFailed: return "diarization_failed"
+    case .loginItemFailed: return "login_item_failed"
     }
   }
 
@@ -39,7 +45,8 @@ enum RbNativeError: Error {
     case .permissionDenied(let m), .alreadyRecording(let m), .notRecording(let m),
       .systemAudioUnavailable(let m), .modelMissing(let m), .modelDownloadFailed(let m),
       .transcriptionFailed(let m), .transcriptionCancelled(let m), .hotkeyConflict(let m),
-      .pasteFailed(let m), .invalidArgument(let m):
+      .pasteFailed(let m), .invalidArgument(let m), .diarizationModelMissing(let m),
+      .diarizationFailed(let m), .loginItemFailed(let m):
       return m
     }
   }

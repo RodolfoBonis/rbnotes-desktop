@@ -31,4 +31,5 @@ enum DiagnosticCode {
   static let tapDisabled = "tap_disabled"
   static let dictationWatchdog = "dictation_watchdog"
   static let dictationKeyStuck = "dictation_key_stuck"
+  static let noiseReductionUnavailable = "noise_reduction_unavailable"
 }

@@ -5,6 +5,10 @@ platform :osx, '13.0'
 system('bash', File.expand_path('../../scripts/build_whisper.sh', __dir__)) ||
   raise('build_whisper.sh failed — see output above')
 
+# Self-healing: ensure the sherpa-onnx frameworks exist (local diarization).
+system('bash', File.expand_path('../../scripts/build_sherpa.sh', __dir__)) ||
+  raise('build_sherpa.sh failed — see output above')
+
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 

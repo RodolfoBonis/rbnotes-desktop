@@ -22,6 +22,10 @@ final class OverlayViewModel: ObservableObject {
   @Published var reduceMotion = false
   /// True while the dictation pill is showing the "Colado" confirmation.
   @Published var pasted = false
+  /// Accent color used for the finish button, progress bar and checkmarks.
+  /// Defaults to the brand accent (#E0512E); the app can override it per show
+  /// via `showActivityOverlay(accentArgb:)`.
+  @Published var accent: Color = OverlayPalette.defaultAccent
 
   /// Called with a wire action name (`pause`/`resume`/`stop`/`discard`/`openApp`).
   var onAction: ((String) -> Void)?
@@ -46,10 +50,28 @@ final class OverlayViewModel: ObservableObject {
   func act(_ name: String) { onAction?(name) }
 }
 
+/// Shared overlay colors. `OverlayPalette` is also used by the controller to
+/// decode the ARGB accent sent by the app (fallback: the brand accent #E0512E).
+@available(macOS 13.0, *)
+enum OverlayPalette {
+  static let defaultAccent = Color(red: 0xE0 / 255, green: 0x51 / 255, blue: 0x2E / 255)
+
+  /// Decodes a 0xAARRGGBB integer into a `Color`, falling back to the default
+  /// accent for nil. The alpha channel is honored.
+  static func accent(fromArgb argb: Int?) -> Color {
+    guard let argb else { return defaultAccent }
+    let a = Double((argb >> 24) & 0xFF) / 255
+    let r = Double((argb >> 16) & 0xFF) / 255
+    let g = Double((argb >> 8) & 0xFF) / 255
+    let b = Double(argb & 0xFF) / 255
+    return Color(.sRGB, red: r, green: g, blue: b, opacity: a == 0 ? 1 : a)
+  }
+}
+
 @available(macOS 13.0, *)
 private enum OverlayStyle {
   static let pill = Color(red: 0x1D / 255, green: 0x1D / 255, blue: 0x1F / 255)
-  static let accent = Color(red: 0xE0 / 255, green: 0x51 / 255, blue: 0x2E / 255)
+  static let accent = OverlayPalette.defaultAccent
   static let recRed = Color(red: 0xFF / 255, green: 0x45 / 255, blue: 0x3A / 255)
   static let paused = Color(red: 0xFE / 255, green: 0xBC / 255, blue: 0x2E / 255)
   static let corner: CGFloat = 20
@@ -119,11 +141,12 @@ struct OverlayView: View {
             .font(.system(size: 11))
             .foregroundStyle(.white.opacity(0.5))
           Spacer()
-          PillButton(title: "Descartar", kind: .ghost) { model.act("discard") }
+          PillButton(title: "Descartar", kind: .ghost, accent: model.accent) { model.act("discard") }
           PillButton(
-            title: model.paused ? "Retomar" : "Pausar", kind: .soft
+            title: model.paused ? "Retomar" : "Pausar", kind: .soft,
+            accent: model.accent
           ) { model.act(model.paused ? "resume" : "pause") }
-          PillButton(title: "Concluir", kind: .finish) { model.act("stop") }
+          PillButton(title: "Concluir", kind: .finish, accent: model.accent) { model.act("stop") }
         }
       }
     }
@@ -138,7 +161,7 @@ struct OverlayView: View {
       if model.pasted {
         Image(systemName: "checkmark")
           .font(.system(size: 13, weight: .bold))
-          .foregroundStyle(OverlayStyle.accent)
+          .foregroundStyle(model.accent)
         Text("Colado")
           .font(.system(size: 13, weight: .semibold))
       } else {
@@ -164,7 +187,7 @@ struct OverlayView: View {
         .font(.system(size: 12, weight: .semibold))
         .foregroundStyle(.white.opacity(0.7))
       ProgressView(value: model.progress)
-        .tint(OverlayStyle.accent)
+        .tint(model.accent)
         .frame(height: 3)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -174,7 +197,7 @@ struct OverlayView: View {
     HStack(spacing: 10) {
       Image(systemName: "checkmark.circle.fill")
         .font(.system(size: 16))
-        .foregroundStyle(OverlayStyle.accent)
+        .foregroundStyle(model.accent)
       Text(model.message.isEmpty ? "Pronto" : model.message)
         .font(.system(size: 13, weight: .semibold))
         .lineLimit(1)
@@ -291,6 +314,7 @@ private struct PillButton: View {
   enum Kind { case ghost, soft, finish }
   let title: String
   let kind: Kind
+  var accent: Color = OverlayPalette.defaultAccent
   let action: () -> Void
   @State private var hovering = false
 
@@ -299,7 +323,7 @@ private struct PillButton: View {
       HStack(spacing: 7) {
         if kind == .finish {
           RoundedRectangle(cornerRadius: 2)
-            .fill(OverlayStyle.accent)
+            .fill(accent)
             .frame(width: 9, height: 9)
         }
         Text(title)

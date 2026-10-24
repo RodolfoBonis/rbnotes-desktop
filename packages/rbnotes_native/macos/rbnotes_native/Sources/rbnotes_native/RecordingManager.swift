@@ -13,6 +13,13 @@ final class RecordingManager {
   /// drops) to the plugin's diagnostics channel.
   var onDiagnostic: ((NativeDiagnostic) -> Void)?
 
+  /// True while any recording is in progress (so meeting detection can ignore
+  /// RbNotes' own microphone use).
+  var hasActiveRecording: Bool {
+    lock.lock(); defer { lock.unlock() }
+    return !sessions.isEmpty || !reserving.isEmpty
+  }
+
   func session(for id: String) -> RecordingSession? {
     lock.lock(); defer { lock.unlock() }
     return sessions[id]
@@ -20,7 +27,8 @@ final class RecordingManager {
 
   func start(
     id: String, directory: String, captureSystemAudio: Bool,
-    liveTranscription: Bool, inputDeviceId: String?
+    liveTranscription: Bool, inputDeviceId: String?,
+    noiseReduction: Bool, language: String?
   ) async throws -> [String: Any] {
     // Atomic check-then-reserve.
     lock.lock()
@@ -40,7 +48,8 @@ final class RecordingManager {
     do {
       session = try RecordingSession(
         id: id, directory: dirURL, captureSystemAudio: captureSystemAudio,
-        liveTranscription: liveTranscription, inputDeviceId: inputDeviceId)
+        liveTranscription: liveTranscription, inputDeviceId: inputDeviceId,
+        noiseReduction: noiseReduction, language: language)
       session.onDiagnostic = { [weak self] diag in self?.onDiagnostic?(diag) }
       try await session.start()
     } catch {

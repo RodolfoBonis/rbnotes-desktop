@@ -5,6 +5,10 @@ platform :osx, '13.0'
 system('bash', File.expand_path('../packages/rbnotes_native/scripts/build_whisper.sh', __dir__)) ||
   raise('build_whisper.sh falhou — veja a saída acima')
 
+# Fase 3: garante os frameworks do sherpa-onnx (diarização local) antes do pod install.
+system('bash', File.expand_path('../packages/rbnotes_native/scripts/build_sherpa.sh', __dir__)) ||
+  raise('build_sherpa.sh falhou — veja a saída acima')
+
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 

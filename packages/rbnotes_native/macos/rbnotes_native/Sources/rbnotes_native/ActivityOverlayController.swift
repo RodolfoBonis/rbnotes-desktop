@@ -28,9 +28,10 @@ final class ActivityOverlayController {
 
   // MARK: - Public API (main thread)
 
-  func show(mode: OverlayMode, startedAt: Date) {
+  func show(mode: OverlayMode, startedAt: Date, accentArgb: Int? = nil) {
     cancelPendingHide()
     self.startedAt = startedAt
+    model.accent = OverlayPalette.accent(fromArgb: accentArgb)
     model.mode = mode
     model.phase = .live
     model.paused = false

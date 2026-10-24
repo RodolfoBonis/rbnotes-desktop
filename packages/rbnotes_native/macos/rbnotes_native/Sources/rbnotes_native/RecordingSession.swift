@@ -11,6 +11,8 @@ final class RecordingSession {
   private let captureSystemAudio: Bool
   private let liveTranscriptionEnabled: Bool
   private let inputDeviceUid: String?
+  private let noiseReduction: Bool
+  private let liveLanguage: String
 
   private let micCapture = AudioCapture()
   private var systemCapture: AnyObject?  // SystemAudioCapture (macOS 13+)
@@ -46,13 +48,18 @@ final class RecordingSession {
 
   init(
     id: String, directory: URL, captureSystemAudio: Bool,
-    liveTranscription: Bool = false, inputDeviceId: String? = nil
+    liveTranscription: Bool = false, inputDeviceId: String? = nil,
+    noiseReduction: Bool = false, language: String? = nil
   ) throws {
     self.id = id
     self.directory = directory
     self.captureSystemAudio = captureSystemAudio
     self.liveTranscriptionEnabled = liveTranscription
     self.inputDeviceUid = inputDeviceId
+    self.noiseReduction = noiseReduction
+    // 'pt' keeps the historical default; the app may override with
+    // 'auto'/'en'/'es' from its Transcription settings.
+    self.liveLanguage = (language?.isEmpty == false) ? language! : "pt"
     self.startedAt = Date()
     try FileManager.default.createDirectory(
       at: directory, withIntermediateDirectories: true)
@@ -65,7 +72,7 @@ final class RecordingSession {
   func start() async throws {
     if liveTranscriptionEnabled {
       let live = LiveTranscriber(
-        language: "pt",
+        language: liveLanguage,
         emit: { [weak self] text, isFinal in self?.onLiveTranscript?(text, isFinal) })
       liveTranscriber = live
       live.start()
@@ -89,7 +96,7 @@ final class RecordingSession {
     }
 
     do {
-      try micCapture.start(deviceId: resolvedDeviceId)
+      try micCapture.start(deviceId: resolvedDeviceId, noiseReduction: noiseReduction)
     } catch {
       cleanupFiles()
       throw error

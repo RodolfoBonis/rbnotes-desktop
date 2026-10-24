@@ -13,6 +13,8 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
   private let transcriber = Transcriber()
   private let dictation = DictationManager()
   private let globalHotkeys = GlobalHotkeyManager()
+  private let lockTriggers = LockTriggerManager()
+  private let meetingDetector = MeetingDetector()
 
   // Active event sinks — MAIN-THREAD ONLY.
   private var levelsSink: FlutterEventSink?
@@ -27,6 +29,12 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
   private var overlayActionsSink: FlutterEventSink?
   // Single, permanent global-hotkey stream: emits the pressed hotkey's id.
   private var globalHotkeysSink: FlutterEventSink?
+  // Single, permanent app-lock-trigger stream: emits a wire trigger name.
+  private var lockTriggersSink: FlutterEventSink?
+  // Single, permanent meeting-signal stream: emits {app, micInUse, startedAtMs}.
+  private var meetingSignalsSink: FlutterEventSink?
+  // Single, permanent diarization-download progress stream (onListen triggers it).
+  private var diarizationDownloadSink: FlutterEventSink?
   // Notch activity overlay controller (macOS 13+); created lazily on first use.
   private var _overlay: AnyObject?
 
@@ -47,9 +55,13 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
   deinit {
     let hotkeys = globalHotkeys
     let dictationManager = dictation
+    let lock = lockTriggers
+    let meeting = meetingDetector
     let cleanup = {
       hotkeys.unregisterAll()
       dictationManager.unregister()
+      lock.stop()
+      meeting.setEnabled(false)
     }
     if Thread.isMainThread { cleanup() } else { DispatchQueue.main.async(execute: cleanup) }
   }
@@ -60,6 +72,14 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     globalHotkeys.onPressed = { [weak self] id in self?.emitGlobalHotkey(id) }
     // Reject a global hotkey that would collide with the dictation shortcut.
     globalHotkeys.dictationCombo = { [weak self] in self?.dictation.activeHotkey }
+    lockTriggers.onTrigger = { [weak self] name in self?.emitLockTrigger(name) }
+    lockTriggers.start()
+    meetingDetector.onSignal = { [weak self] app, inUse, startedAt in
+      self?.emitMeetingSignal(app: app, micInUse: inUse, startedAt: startedAt)
+    }
+    meetingDetector.isSelfUsingMic = { [weak self] in
+      self?.recordingManager.hasActiveRecording ?? false
+    }
   }
 
   private func setupEventChannels(messenger: FlutterBinaryMessenger) {
@@ -173,6 +193,45 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
             self?.globalHotkeysSink = nil
             return nil
           }))
+
+    // App lock triggers: single permanent stream, emits a wire trigger name.
+    FlutterEventChannel(name: "rbnotes_native/lock_triggers", binaryMessenger: messenger)
+      .setStreamHandler(
+        ClosureStreamHandler(
+          onListen: { [weak self] _, sink in
+            self?.lockTriggersSink = sink
+            return nil
+          },
+          onCancel: { [weak self] _ in
+            self?.lockTriggersSink = nil
+            return nil
+          }))
+
+    // Meeting signals: single permanent stream, emits {app, micInUse, startedAtMs}.
+    FlutterEventChannel(name: "rbnotes_native/meeting_signals", binaryMessenger: messenger)
+      .setStreamHandler(
+        ClosureStreamHandler(
+          onListen: { [weak self] _, sink in
+            self?.meetingSignalsSink = sink
+            return nil
+          },
+          onCancel: { [weak self] _ in
+            self?.meetingSignalsSink = nil
+            return nil
+          }))
+
+    // Diarization model download (onListen triggers it; onCancel cancels it).
+    FlutterEventChannel(name: "rbnotes_native/diarization_download", binaryMessenger: messenger)
+      .setStreamHandler(
+        ClosureStreamHandler(
+          onListen: { [weak self] _, sink in
+            self?.startDiarizationDownload(sink: sink)
+            return nil
+          },
+          onCancel: { _ in
+            DiarizationModelManager.shared.cancelDownload()
+            return nil
+          }))
   }
 
   // MARK: - Method dispatch
@@ -230,6 +289,18 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
       handleUpdateOverlay(args, result)
     case "hideActivityOverlay":
       handleHideOverlay(args, result)
+    case "launchAtLogin":
+      reply(result, LoginItem.isEnabled())
+    case "setLaunchAtLogin":
+      handleSetLaunchAtLogin(args, result)
+    case "detectSilences":
+      handleDetectSilences(args, result)
+    case "setMeetingDetection":
+      handleSetMeetingDetection(args, result)
+    case "diarizationModelState":
+      reply(result, DiarizationModelManager.shared.state())
+    case "diarize":
+      handleDiarize(args, result)
     default:
       reply(result, FlutterMethodNotImplemented)
     }
@@ -262,11 +333,14 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     }
     let liveTranscription = (args["liveTranscription"] as? Bool) ?? false
     let inputDeviceId = args["inputDeviceId"] as? String
+    let noiseReduction = (args["noiseReduction"] as? Bool) ?? false
+    let language = args["language"] as? String
     Task {
       do {
         let map = try await recordingManager.start(
           id: id, directory: directory, captureSystemAudio: captureSystemAudio,
-          liveTranscription: liveTranscription, inputDeviceId: inputDeviceId)
+          liveTranscription: liveTranscription, inputDeviceId: inputDeviceId,
+          noiseReduction: noiseReduction, language: language)
         // Wire levels + live-transcript forwarding for this session (sinks read
         // on main only).
         recordingManager.session(for: id)?.onLevels = { [weak self] payload in
@@ -405,7 +479,78 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     reply(result, nil)
   }
 
-  // MARK: - Activity overlay
+  // MARK: - Phase 3 handlers
+
+  private func handleSetLaunchAtLogin(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    guard let enabled = args["enabled"] as? Bool else {
+      return reply(result, RbNativeError.invalidArgument("setLaunchAtLogin requires enabled").flutterError)
+    }
+    // SMAppService must be touched on the main thread.
+    onMain { [weak self] in
+      do {
+        try LoginItem.setEnabled(enabled)
+        self?.reply(result, nil)
+      } catch {
+        self?.reply(result, FlutterError.from(error))
+      }
+    }
+  }
+
+  private func handleDetectSilences(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    guard let wavPath = args["wavPath"] as? String else {
+      return reply(result, RbNativeError.invalidArgument("detectSilences requires wavPath").flutterError)
+    }
+    let minSilenceMs = (args["minSilenceMs"] as? Int) ?? 2000
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      do {
+        let ranges = try SilenceAnalyzer.detect(wavPath: wavPath, minSilenceMs: minSilenceMs)
+        self?.reply(result, ranges)
+      } catch {
+        self?.reply(result, FlutterError.from(error))
+      }
+    }
+  }
+
+  private func handleSetMeetingDetection(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    guard let enabled = args["enabled"] as? Bool else {
+      return reply(result, RbNativeError.invalidArgument("setMeetingDetection requires enabled").flutterError)
+    }
+    meetingDetector.setEnabled(enabled)
+    reply(result, nil)
+  }
+
+  private func handleDiarize(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    guard let wavPath = args["wavPath"] as? String else {
+      return reply(result, RbNativeError.invalidArgument("diarize requires wavPath").flutterError)
+    }
+    let numSpeakers = args["numSpeakers"] as? Int
+    // Diarization is CPU-heavy — keep it off the main thread.
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      do {
+        let turns = try Diarization.run(wavPath: wavPath, numSpeakers: numSpeakers)
+        self?.reply(result, turns)
+      } catch {
+        self?.reply(result, FlutterError.from(error))
+      }
+    }
+  }
+
+  private func startDiarizationDownload(sink: @escaping FlutterEventSink) {
+    DiarizationModelManager.shared.download(
+      progress: { progress in emit(sink, progress) },
+      completion: { completionResult in
+        switch completionResult {
+        case .success:
+          emit(sink, 1.0)
+          emit(sink, FlutterEndOfEventStream)
+        case .failure(let error):
+          emit(sink, FlutterError.from(error))
+          emit(sink, FlutterEndOfEventStream)
+        }
+      })
+  }
+
+    // MARK: - Activity overlay
 
   /// Lazily-created overlay controller (macOS 13+). Returns nil on older
   /// systems, where the overlay methods become no-ops.
@@ -425,9 +570,10 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
       return reply(result, RbNativeError.invalidArgument("showActivityOverlay requires mode, startedAtMs").flutterError)
     }
     let startedAt = Date(timeIntervalSince1970: Double(startedMs) / 1000)
+    let accentArgb = (args["accentArgb"] as? NSNumber)?.intValue
     onMain { [weak self] in
       if #available(macOS 13.0, *) {
-        self?.overlay.show(mode: mode, startedAt: startedAt)
+        self?.overlay.show(mode: mode, startedAt: startedAt, accentArgb: accentArgb)
       }
       self?.reply(result, nil)
     }
@@ -479,6 +625,24 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     onMain { [weak self] in
       guard let self, let sink = self.globalHotkeysSink else { return }
       sink(id)
+    }
+  }
+
+  private func emitLockTrigger(_ name: String) {
+    onMain { [weak self] in
+      guard let self, let sink = self.lockTriggersSink else { return }
+      sink(name)
+    }
+  }
+
+  private func emitMeetingSignal(app: String, micInUse: Bool, startedAt: Date) {
+    onMain { [weak self] in
+      guard let self, let sink = self.meetingSignalsSink else { return }
+      sink([
+        "app": app,
+        "micInUse": micInUse,
+        "startedAtMs": Int(startedAt.timeIntervalSince1970 * 1000),
+      ])
     }
   }
 

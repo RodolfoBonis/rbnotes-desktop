@@ -109,9 +109,12 @@ final class WhisperContext {
     params.abort_callback_user_data = boxPtr
 
     // `language` and `initial_prompt` must outlive the whisper_full call.
+    // "auto" asks whisper.cpp to detect the language (detect_language + the
+    // special "auto" tag); any other value forces that language.
     let langCString = strdup(language)
     defer { free(langCString) }
     params.language = UnsafePointer(langCString)
+    params.detect_language = (language == "auto")
 
     let promptCString: UnsafeMutablePointer<CChar>? =
       (initialPrompt?.isEmpty == false) ? strdup(initialPrompt!) : nil

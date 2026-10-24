@@ -13,4 +13,8 @@ enum RbLog {
   static let whisper = Logger(subsystem: subsystem, category: "whisper")
   static let dictation = Logger(subsystem: subsystem, category: "dictation")
   static let plugin = Logger(subsystem: subsystem, category: "plugin")
+  static let lock = Logger(subsystem: subsystem, category: "lock")
+  static let meeting = Logger(subsystem: subsystem, category: "meeting")
+  static let diarization = Logger(subsystem: subsystem, category: "diarization")
+  static let loginItem = Logger(subsystem: subsystem, category: "login-item")
 }

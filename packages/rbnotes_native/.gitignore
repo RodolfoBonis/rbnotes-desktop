@@ -35,5 +35,8 @@ migrate_working_dir/
 # whisper.cpp build artifacts (built locally / in CI via scripts/build_whisper.sh)
 .whisper-build/
 macos/Frameworks/
+
+# sherpa-onnx build artifacts (built locally / in CI via scripts/build_sherpa.sh)
+.sherpa-build/
 # Downloaded ggml models live in Application Support, never in the repo
 *.bin

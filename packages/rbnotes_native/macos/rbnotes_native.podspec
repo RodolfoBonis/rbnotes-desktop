@@ -24,12 +24,17 @@ local whisper.cpp (Metal) transcription and global dictation for RbNotes.
 
   # whisper.cpp (Metal, shaders embedded) built from source by
   # scripts/build_whisper.sh. Not committed to git; see README.
-  s.vendored_frameworks = 'Frameworks/whisper.xcframework'
+  s.vendored_frameworks = [
+    'Frameworks/whisper.xcframework',
+    'Frameworks/sherpa_onnx.xcframework',
+    'Frameworks/onnxruntime.xcframework',
+  ]
 
   # System frameworks used by the Swift sources.
   s.frameworks = [
     'AVFoundation', 'ScreenCaptureKit', 'CoreGraphics', 'CoreMedia',
-    'Carbon', 'AppKit', 'Accelerate', 'Metal', 'CoreAudio', 'AudioToolbox'
+    'Carbon', 'AppKit', 'Accelerate', 'Metal', 'CoreAudio', 'AudioToolbox',
+    'ServiceManagement', 'ApplicationServices'
   ]
 
   s.pod_target_xcconfig = {
@@ -37,13 +42,13 @@ local whisper.cpp (Metal) transcription and global dictation for RbNotes.
     'CLANG_ENABLE_MODULES' => 'YES',
     # Link the vendored whisper framework (CocoaPods copies the matching slice
     # into PODS_XCFRAMEWORKS_BUILD_DIR, already on FRAMEWORK_SEARCH_PATHS).
-    'OTHER_LDFLAGS' => '-framework whisper',
+    'OTHER_LDFLAGS' => '-framework whisper -framework sherpa_onnx -framework onnxruntime',
     # On a fresh build Xcode may compile this target's Swift before the
     # "[CP] Copy XCFrameworks" phase extracts whisper into
     # PODS_XCFRAMEWORKS_BUILD_DIR (seen on Xcode 26.6 CI: "Unable to resolve
     # module dependency: 'whisper'"). Also search the source slice, which exists
     # before the build starts (scripts/build_whisper.sh runs at pod install).
-    'FRAMEWORK_SEARCH_PATHS' => '$(inherited) "${PODS_XCFRAMEWORKS_BUILD_DIR}/rbnotes_native" "${PODS_TARGET_SRCROOT}/Frameworks/whisper.xcframework/macos-arm64_x86_64" "${PODS_TARGET_SRCROOT}/Frameworks/whisper.xcframework/macos-arm64"',
+    'FRAMEWORK_SEARCH_PATHS' => '$(inherited) "${PODS_XCFRAMEWORKS_BUILD_DIR}/rbnotes_native" "${PODS_TARGET_SRCROOT}/Frameworks/whisper.xcframework/macos-arm64_x86_64" "${PODS_TARGET_SRCROOT}/Frameworks/whisper.xcframework/macos-arm64" "${PODS_TARGET_SRCROOT}/Frameworks/sherpa_onnx.xcframework/macos-arm64_x86_64" "${PODS_TARGET_SRCROOT}/Frameworks/onnxruntime.xcframework/macos-arm64_x86_64"',
     'SWIFT_ENABLE_EXPLICIT_MODULES' => 'NO',
   }
 
@@ -51,9 +56,16 @@ local whisper.cpp (Metal) transcription and global dictation for RbNotes.
   # missing (e.g. a fresh checkout). The Podfile also runs this at evaluation
   # time so vendored_frameworks resolves; this phase is a fallback for IDE
   # builds. No-op when the framework already exists.
-  s.script_phase = {
-    :name => 'Build whisper.cpp framework',
-    :script => 'bash "${PODS_TARGET_SRCROOT}/../scripts/build_whisper.sh"',
-    :execution_position => :before_compile
-  }
+  s.script_phases = [
+    {
+      :name => 'Build whisper.cpp framework',
+      :script => 'bash "${PODS_TARGET_SRCROOT}/../scripts/build_whisper.sh"',
+      :execution_position => :before_compile
+    },
+    {
+      :name => 'Build sherpa-onnx frameworks',
+      :script => 'bash "${PODS_TARGET_SRCROOT}/../scripts/build_sherpa.sh"',
+      :execution_position => :before_compile
+    }
+  ]
 end
