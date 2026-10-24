@@ -287,6 +287,9 @@ class _SidebarColumn extends StatelessWidget {
       userEmail: user?.email ?? '',
       modelLabel: modelLabel,
       aiStatus: di.isRegistered<AiActivity>() ? di<AiActivity>().stream : null,
+      syncStatus: di.isRegistered<SyncService>()
+          ? di<SyncService>().status
+          : null,
       onOpenNewCollection: context.read<ShellOverlayCubit>().openNewCollection,
       onOpenSettings: context.read<ShellOverlayCubit>().openSettings,
       onOpenWeekly: context.read<ShellOverlayCubit>().openWeekly,

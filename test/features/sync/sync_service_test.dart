@@ -160,6 +160,44 @@ void main() {
     expect(service.current.phase, SyncPhase.error);
   });
 
+  test('falha persiste erro e conta pendências', () async {
+    await insertNote('n1', title: 'Local');
+    client.pushError = const ApiError(statusCode: 500);
+    await service.syncNow(manual: true);
+    expect(service.current.phase, SyncPhase.error);
+    expect(service.current.pendingCount, greaterThan(0));
+    expect(prefs.getInt('sync.pending'), greaterThan(0));
+    expect(prefs.getString('sync.last_error'), isNotNull);
+  });
+
+  test('sucesso zera pendências e persiste a última sincronização', () async {
+    await insertNote('n1', title: 'Local');
+    await service.syncNow();
+    expect(service.current.pendingCount, 0);
+    expect(prefs.getInt('sync.pending'), 0);
+    expect(prefs.getString('sync.last_sync_at'), isNotNull);
+    expect(prefs.getString('sync.last_error'), isNull);
+  });
+
+  test('restaura o último estado conhecido no boot', () async {
+    SharedPreferences.setMockInitialValues({
+      'sync.last_sync_at': t1.toUtc().toIso8601String(),
+      'sync.pending': 3,
+      'sync.last_error': 'Falha anterior',
+    });
+    final prefs2 = await SharedPreferences.getInstance();
+    final restored = SyncService(
+      client: _FakeSyncClient(),
+      store: SyncLocalStore(db),
+      settings: SettingsStore(prefs2),
+      prefs: prefs2,
+    );
+    expect(restored.current.pendingCount, 3);
+    expect(restored.current.lastSyncAt, isNotNull);
+    expect(restored.current.message, 'Falha anterior');
+    await restored.dispose();
+  });
+
   group('onEnabledChanged', () {
     test('ligar dispara um sync imediato', () async {
       await settings.setSyncEnabled(value: true);

@@ -28,7 +28,9 @@ class SyncService {
        _store = store,
        _settings = settings,
        _prefs = prefs,
-       _random = random ?? Random();
+       _random = random ?? Random() {
+    _restorePersisted();
+  }
 
   final SyncClient _client;
   final SyncLocalStore _store;
@@ -43,6 +45,9 @@ class SyncService {
 
   static const _kCursor = 'sync.cursor';
   static const _kWatermark = 'sync.watermark';
+  static const _kLastSyncAt = 'sync.last_sync_at';
+  static const _kLastError = 'sync.last_error';
+  static const _kPending = 'sync.pending';
   static const _pushLimit = 400;
 
   final _statusController = StreamController<SyncStatus>.broadcast();
@@ -115,26 +120,33 @@ class SyncService {
       await _push();
       _failures = 0;
       _lastSyncAt = DateTime.now();
+      await _persist(lastSyncAt: _lastSyncAt, pending: 0);
       _emit(SyncStatus(lastSyncAt: _lastSyncAt));
       AppLogger.info('Sync concluído', category: 'sync');
     } on ApiError catch (e) {
       _failures++;
+      final pending = await _countPending();
+      await _persist(error: e.message, pending: pending);
       _emit(
         SyncStatus(
           phase: e.isNetwork ? SyncPhase.offline : SyncPhase.error,
           lastSyncAt: _lastSyncAt,
           message: e.message,
+          pendingCount: pending,
         ),
       );
       AppLogger.warning('Falha no sync', category: 'sync', error: e);
       if (!manual) _scheduleBackoff();
     } on Object catch (e, st) {
       _failures++;
+      final pending = await _countPending();
+      await _persist(error: 'Falha ao sincronizar.', pending: pending);
       _emit(
         SyncStatus(
           phase: SyncPhase.error,
           lastSyncAt: _lastSyncAt,
           message: 'Falha ao sincronizar.',
+          pendingCount: pending,
         ),
       );
       await AppLogger.error(e, st, reason: 'sync', category: 'sync');
@@ -214,6 +226,48 @@ class SyncService {
   void _emit(SyncStatus status) {
     _status = status;
     if (!_statusController.isClosed) _statusController.add(status);
+  }
+
+  /// Recupera o último estado conhecido (última sincronização, último erro e
+  /// pendências) para o indicador aparecer certo já no boot, antes do 1º ciclo.
+  void _restorePersisted() {
+    final rawAt = _prefs.getString(_kLastSyncAt);
+    _lastSyncAt = rawAt == null ? null : DateTime.tryParse(rawAt);
+    final error = _prefs.getString(_kLastError);
+    final pending = _prefs.getInt(_kPending) ?? 0;
+    _status = SyncStatus(
+      lastSyncAt: _lastSyncAt,
+      message: error,
+      pendingCount: pending,
+    );
+  }
+
+  /// Conta as alterações locais ainda não confirmadas (limitado por
+  /// [_pushLimit] — suficiente para um indicador).
+  Future<int> _countPending() async {
+    try {
+      final changes = await _store.collectChanges(since: _readWatermark());
+      return changes.length;
+    } on Object {
+      return _status.pendingCount;
+    }
+  }
+
+  Future<void> _persist({
+    required int pending,
+    DateTime? lastSyncAt,
+    String? error,
+  }) async {
+    final at = lastSyncAt;
+    if (at != null) {
+      await _prefs.setString(_kLastSyncAt, at.toUtc().toIso8601String());
+    }
+    if (error == null) {
+      await _prefs.remove(_kLastError);
+    } else {
+      await _prefs.setString(_kLastError, error);
+    }
+    await _prefs.setInt(_kPending, pending);
   }
 
   Future<void> dispose() async {

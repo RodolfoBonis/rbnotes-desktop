@@ -937,15 +937,21 @@ class _SettingsModalState extends State<SettingsModal> {
     initialData: sync.current,
     builder: (context, snap) {
       final status = snap.data ?? const SyncStatus();
+      final pendingSuffix = status.hasPending
+          ? ' · ${status.pendingCount} '
+                '${status.pendingCount == 1 ? 'pendente' : 'pendentes'}'
+          : '';
       final text = switch (status.phase) {
         SyncPhase.syncing => 'Sincronizando…',
-        SyncPhase.offline => 'Sem conexão',
-        SyncPhase.error => status.message ?? 'Falha ao sincronizar',
+        SyncPhase.offline => 'Sem conexão$pendingSuffix',
+        SyncPhase.error =>
+          '${status.message ?? 'Falha ao sincronizar'}$pendingSuffix',
         SyncPhase.disabled => 'Desligado',
         SyncPhase.idle =>
-          status.lastSyncAt == null
-              ? 'Nunca sincronizado'
-              : _ago(status.lastSyncAt!),
+          (status.lastSyncAt == null
+                  ? 'Nunca sincronizado'
+                  : _ago(status.lastSyncAt!)) +
+              pendingSuffix,
       };
       return _SettingRow(
         label: 'Última sincronização',

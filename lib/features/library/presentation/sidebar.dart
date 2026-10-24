@@ -6,6 +6,7 @@ import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/ai_activity.dart';
 import 'package:rbnotes/features/library/presentation/library_cubit.dart';
 import 'package:rbnotes/features/library/presentation/sidebar_icons.dart';
+import 'package:rbnotes/features/sync/data/sync_status.dart';
 
 /// Sidebar translúcida (228px): biblioteca, pastas, coleções, status e perfil.
 class Sidebar extends StatelessWidget {
@@ -19,6 +20,7 @@ class Sidebar extends StatelessWidget {
     required this.onToggleAppearance,
     required this.onOpenWeekly,
     this.aiStatus,
+    this.syncStatus,
     super.key,
   });
 
@@ -34,6 +36,9 @@ class Sidebar extends StatelessWidget {
   /// Fase da IA (real): muda o card "Claude" para refletir fila/erro/limite.
   /// Null = local-first (sempre "pronto").
   final Stream<AiPhase>? aiStatus;
+
+  /// Estado do sync (real): alimenta o indicador discreto. Null = sem backend.
+  final Stream<SyncStatus>? syncStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -137,6 +142,7 @@ class Sidebar extends StatelessWidget {
                   ],
                 ),
               ),
+              if (syncStatus != null) SyncIndicator(status: syncStatus!),
               _StatusCard(modelLabel: modelLabel, aiStatus: aiStatus),
               _ProfileRow(
                 name: userName,
@@ -596,6 +602,115 @@ class _IconButton extends StatelessWidget {
         child: Icon(icon, size: 16, color: context.rb.secondary(0.75)),
       ),
     );
+  }
+}
+
+/// Indicador discreto de sincronização (sincronizado, sincronizando, erro,
+/// pendências), com tooltip detalhado. Fica logo acima do card de status.
+class SyncIndicator extends StatelessWidget {
+  const SyncIndicator({required this.status, super.key});
+
+  final Stream<SyncStatus> status;
+
+  @override
+  Widget build(BuildContext context) {
+    final rb = context.rb;
+    return StreamBuilder<SyncStatus>(
+      stream: status,
+      builder: (context, snap) {
+        final s = snap.data ?? const SyncStatus();
+        final (label, color, tip, busy) = _describe(s);
+        return Tooltip(
+          message: tip,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 2, 20, 2),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 8,
+                  height: 8,
+                  child: busy
+                      ? CircularProgressIndicator(
+                          strokeWidth: 1.4,
+                          valueColor: AlwaysStoppedAnimation(color),
+                        )
+                      : Container(
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.bodyText(size: 11, color: rb.secondary(0.6)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  static const Color _red = RbTokens.destructive;
+  static const Color _amber = RbTokens.warning;
+  static const _gray = Color(0xFF8E8E93);
+
+  (String, Color, String, bool) _describe(SyncStatus s) {
+    final pending = s.pendingCount;
+    final pendingText = pending == 1
+        ? '1 alteração pendente'
+        : '$pending alterações pendentes';
+    switch (s.phase) {
+      case SyncPhase.syncing:
+        return ('Sincronizando…', _amber, 'Sincronizando suas notas…', true);
+      case SyncPhase.offline:
+        return (
+          'Sem conexão',
+          _red,
+          'Sem conexão. ${pending > 0 ? pendingText : 'Nada pendente'}.',
+          false,
+        );
+      case SyncPhase.error:
+        return (
+          'Erro de sincronização',
+          _red,
+          s.message ?? 'Não foi possível sincronizar.',
+          false,
+        );
+      case SyncPhase.disabled:
+        return (
+          'Sincronização desligada',
+          _gray,
+          'Ligue "Sincronizar entre dispositivos" em Configurações.',
+          false,
+        );
+      case SyncPhase.idle:
+        if (pending > 0) {
+          return (pendingText, _amber, '$pendingText aguardando envio.', false);
+        }
+        final at = s.lastSyncAt;
+        final when = at == null ? 'ainda não sincronizado' : _ago(at);
+        return (
+          'Sincronizado',
+          RbTokens.statusGreen,
+          'Atualizado · $when',
+          false,
+        );
+    }
+  }
+
+  static String _ago(DateTime at) {
+    final diff = DateTime.now().difference(at);
+    if (diff.inMinutes < 1) return 'agora mesmo';
+    if (diff.inMinutes < 60) return 'há ${diff.inMinutes} min';
+    if (diff.inHours < 24) return 'há ${diff.inHours} h';
+    return 'há ${diff.inDays} d';
   }
 }
 
