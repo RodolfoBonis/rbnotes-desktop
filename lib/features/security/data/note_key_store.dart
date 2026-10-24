@@ -32,11 +32,18 @@ NoteKey generateNoteKey([Random? random]) {
 }
 
 /// Implementação sobre `flutter_secure_storage`, guardando a chave no Keychain
-/// como item **synchronizable** (iCloud Keychain) para os outros Macs do dono.
+/// **só neste Mac**.
 ///
-/// Se a sincronização via iCloud exigir um `keychain-access-groups`
-/// (documentado no README), o item cai para o Keychain local automaticamente —
-/// o dono então usa a "chave de recuperação" para levá-la a outro Mac.
+/// Decisão do dono (revisão de segurança A3): a chave fica com
+/// `first_unlock_this_device` e **sem** `synchronizable`, ou seja, ela não sai
+/// deste Mac pelo iCloud Keychain. A cifra protege o sync e o servidor; a chave
+/// de recuperação (base32) é o caminho para abrir as notas bloqueadas em outro
+/// Mac. Localmente o Touch ID é apenas um gate de UI — o `notes` local guarda o
+/// texto claro e a chave fica acessível ao app depois do primeiro desbloqueio.
+///
+/// Chaves gravadas por versões antigas (quando o item era `synchronizable`) são
+/// migradas de forma transparente no primeiro [load]/[getOrCreate]: a chave
+/// antiga é relida, regravada com a nova opção e apagada do slot antigo.
 class SecureNoteKeyStore implements NoteKeyStore {
   SecureNoteKeyStore({FlutterSecureStorage? storage})
     : _storage = storage ?? const FlutterSecureStorage();
@@ -45,23 +52,42 @@ class SecureNoteKeyStore implements NoteKeyStore {
 
   static const _keyName = 'rbnotes.note_lock.aes256';
 
-  /// `synchronizable: true` liga o iCloud Keychain. `first_unlock` mantém a
-  /// chave acessível para o sync em background depois do primeiro desbloqueio.
+  /// Chave presa a este Mac (sem iCloud Keychain). `first_unlock_this_device`
+  /// mantém a chave acessível ao sync em background depois do 1º desbloqueio.
   static const _mac = MacOsOptions(
+    accessibility: KeychainAccessibility.first_unlock_this_device,
+  );
+  static const _ios = IOSOptions(
+    accessibility: KeychainAccessibility.first_unlock_this_device,
+  );
+
+  /// Opções legadas (item `synchronizable`), lidas apenas para migrar.
+  static const _legacyMac = MacOsOptions(
     synchronizable: true,
     accessibility: KeychainAccessibility.first_unlock,
   );
-  static const _ios = IOSOptions(
+  static const _legacyIos = IOSOptions(
     synchronizable: true,
     accessibility: KeychainAccessibility.first_unlock,
   );
 
   @override
   Future<NoteKey?> load() async {
+    final current = await _read(_mac, _ios);
+    if (current != null) return current;
+    // Migração: relê do slot antigo (synchronizable) e reescreve neste Mac.
+    final legacy = await _read(_legacyMac, _legacyIos);
+    if (legacy == null) return null;
+    await _persist(legacy);
+    await _deleteLegacy();
+    return legacy;
+  }
+
+  Future<NoteKey?> _read(MacOsOptions mac, IOSOptions ios) async {
     final raw = await _storage.read(
       key: _keyName,
-      mOptions: _mac,
-      iOptions: _ios,
+      mOptions: mac,
+      iOptions: ios,
     );
     if (raw == null || raw.isEmpty) return null;
     try {
@@ -92,6 +118,18 @@ class SecureNoteKeyStore implements NoteKeyStore {
     mOptions: _mac,
     iOptions: _ios,
   );
+
+  Future<void> _deleteLegacy() async {
+    try {
+      await _storage.delete(
+        key: _keyName,
+        mOptions: _legacyMac,
+        iOptions: _legacyIos,
+      );
+    } on Object {
+      // O slot antigo pode não existir em todas as plataformas; ignore.
+    }
+  }
 }
 
 /// Store em memória para dev/testes (sem Keychain).
