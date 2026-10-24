@@ -20,7 +20,8 @@ As três frentes (API, plugin e app) trabalham em paralelo contra estes contrato
 `DELETE /v1/notes/{id}/audio` → 204. É idempotente: se o objeto ou o upload não existirem, também responde 204. Aborta o multipart em andamento, se houver.
 
 ### Notas bloqueadas (cifradas)
-- **No sync:** `data` de `note`, `segment_set`, `note_ai` ou `chat_message` pode chegar como `{"enc":"v1","nonce":"<b64>","ct":"<b64>"}`. Nesse caso o servidor:
+- **Envelope (cliente):** o `data` cifrado é `{"enc":"v2","nonce":"<b64>","ct":"<b64>"}`. O `ct` é AES-256-GCM (texto cifrado + tag de 16 bytes). A partir do `v2`, o envelope autentica um AAD (*additional authenticated data*) `rbnotes|<entity>|<id>` ligando o texto cifrado à sua entidade/id — mover o `ct` entre entidades/ids diferentes falha na decifragem. O AAD **não** inclui `updatedAt` (para o LWW não quebrar a decifragem). O `v1` (legado, sem AAD) continua sendo decifrado. **O servidor guarda o envelope opaco e não muda** — não lê, não valida e não precisa conhecer o AAD.
+- **No sync:** `data` de `note`, `segment_set`, `note_ai` ou `chat_message` pode chegar como `{"enc":"v2"|"v1","nonce":"<b64>","ct":"<b64>"}`. Nesse caso o servidor:
   - guarda o valor como está;
   - não indexa no FTS e remove o que já estava indexado da nota;
   - exclui a nota de `ask`, `diary_month` e `weekly_summary`;

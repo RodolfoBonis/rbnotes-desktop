@@ -64,6 +64,45 @@ void main() {
         expect(NoteCipher.isEncrypted(back.data), isTrue);
       },
     );
+
+    // A4: o AAD prende o ciphertext à entidade/id. Mover o `ct` entre notas
+    // diferentes, ou entre entidades diferentes, falha na decifragem.
+    test('moving the ct to another note id fails to decrypt', () async {
+      final crypto = SyncCrypto(InMemoryNoteKeyStore(key));
+      final enc = (await crypto.encryptOutgoing([note('n1')], {'n1'})).single;
+      final moved = SyncChange(
+        entity: SyncEntities.note,
+        id: 'n2', // id diferente → AAD diferente
+        updatedAt: enc.updatedAt,
+        deleted: false,
+        data: Map<String, dynamic>.from(enc.data),
+      );
+      final back = await crypto.decryptIncoming(moved);
+      // Não decifrou: o change volta ainda cifrado (o store cai no fallback).
+      expect(NoteCipher.isEncrypted(back.data), isTrue);
+      expect(back.data.containsKey('title'), isFalse);
+    });
+
+    test('moving the ct from note_ai to chat_message fails', () async {
+      final crypto = SyncCrypto(InMemoryNoteKeyStore(key));
+      final aiChange = SyncChange(
+        entity: SyncEntities.noteAi,
+        id: 'n1',
+        updatedAt: DateTime(2026, 10, 24),
+        deleted: false,
+        data: const {'title': 'Confidencial', 'tldr': 'x'},
+      );
+      final enc = (await crypto.encryptOutgoing([aiChange], {'n1'})).single;
+      final moved = SyncChange(
+        entity: SyncEntities.chatMessage,
+        id: 'n1',
+        updatedAt: enc.updatedAt,
+        deleted: false,
+        data: Map<String, dynamic>.from(enc.data)..['noteId'] = 'n1',
+      );
+      final back = await crypto.decryptIncoming(moved);
+      expect(NoteCipher.isEncrypted(back.data), isTrue);
+    });
   });
 
   group('SyncLocalStore with crypto', () {

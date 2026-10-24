@@ -4,6 +4,9 @@ import 'package:flutter/foundation.dart';
 ///
 /// Expõe a "chave de recuperação" como base32 (RFC 4648, sem padding) agrupada
 /// em blocos de 4 para o dono conseguir anotar/digitar e importar em outro Mac.
+/// O formato novo acrescenta um **dígito verificador** (um caractere base32 ao
+/// final) para pegar erros de digitação cedo; o formato antigo (sem o dígito)
+/// continua sendo lido.
 @immutable
 class NoteKey {
   NoteKey(this.bytes) {
@@ -12,9 +15,22 @@ class NoteKey {
     }
   }
 
-  /// Decodifica uma chave de recuperação (base32, com ou sem separadores).
+  /// Decodifica uma chave de recuperação (base32, com ou sem separadores, com
+  /// ou sem dígito verificador).
   factory NoteKey.fromRecovery(String recovery) {
-    final bytes = _base32Decode(recovery);
+    final cleaned = _clean(recovery);
+    // 52 chars = 32 bytes sem dígito (formato antigo); 53 = com dígito.
+    String body;
+    if (cleaned.length == _bodyLen + 1) {
+      body = cleaned.substring(0, _bodyLen);
+      final check = cleaned.substring(_bodyLen);
+      final bytes = _base32Decode(body);
+      if (bytes.length != 32 || _checkChar(bytes) != check) {
+        throw const FormatException('Chave de recuperação inválida.');
+      }
+      return NoteKey(bytes);
+    }
+    final bytes = _base32Decode(body = cleaned);
     if (bytes.length != 32) {
       throw const FormatException('Chave de recuperação inválida.');
     }
@@ -23,9 +39,12 @@ class NoteKey {
 
   final Uint8List bytes;
 
-  /// A chave em base32 agrupada (ex.: `ABCD-EFGH-…`).
+  /// Nº de caracteres base32 de uma chave de 32 bytes (260 bits ⌈/5⌉ = 52).
+  static const _bodyLen = 52;
+
+  /// A chave em base32 agrupada (ex.: `ABCD-EFGH-…-X`), com dígito verificador.
   String get recovery {
-    final raw = _base32Encode(bytes);
+    final raw = _base32Encode(bytes) + _checkChar(bytes);
     final groups = <String>[];
     for (var i = 0; i < raw.length; i += 4) {
       groups.add(raw.substring(i, (i + 4).clamp(0, raw.length)));
@@ -53,6 +72,18 @@ class NoteKey {
 
   static const _alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
+  static String _clean(String input) =>
+      input.toUpperCase().replaceAll(RegExp('[^A-Z2-7]'), '');
+
+  /// Dígito verificador: soma dos bytes (mod 32) mapeada ao alfabeto base32.
+  static String _checkChar(Uint8List bytes) {
+    var sum = 0;
+    for (final b in bytes) {
+      sum = (sum + b) & 0x7fffffff;
+    }
+    return _alphabet[sum % 32];
+  }
+
   static String _base32Encode(Uint8List data) {
     final out = StringBuffer();
     var buffer = 0;
@@ -72,7 +103,7 @@ class NoteKey {
   }
 
   static Uint8List _base32Decode(String input) {
-    final cleaned = input.toUpperCase().replaceAll(RegExp('[^A-Z2-7]'), '');
+    final cleaned = _clean(input);
     final out = <int>[];
     var buffer = 0;
     var bits = 0;

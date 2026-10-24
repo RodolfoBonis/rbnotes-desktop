@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:rbnotes/features/security/data/note_cipher.dart';
 import 'package:rbnotes/features/security/data/note_key_store.dart';
 import 'package:rbnotes/features/sync/data/sync_client.dart';
@@ -6,12 +8,17 @@ import 'package:rbnotes/features/sync/data/sync_entities.dart';
 /// Cifra/decifra o `data` das entidades de notas bloqueadas no sync.
 ///
 /// Push: para notas bloqueadas, `note`, `segment_set`, `note_ai` e
-/// `chat_message` sobem com `data = {enc:"v1", nonce, ct}` — nunca texto claro.
+/// `chat_message` sobem com `data = {enc:"v2", nonce, ct}` — nunca texto claro.
 /// Tombstones (`deleted`) passam sem cifrar (não carregam conteúdo).
 ///
 /// Pull: um envelope `enc` é decifrado se houver chave; sem chave, o change é
 /// devolvido como está (o `SyncLocalStore` grava a nota como "bloqueada em
 /// outro Mac" e ignora os filhos cifrados).
+///
+/// Cada envelope `v2` autentica um AAD `rbnotes|<entity>|<id>` (ver
+/// [NoteCipher]): mover um `ct` entre entidades/ids diferentes falha na
+/// decifragem. O AAD é derivado do `entity`/`id` do próprio [SyncChange], que
+/// são os mesmos no push e no pull.
 ///
 /// A chave é resolvida *lazy* no [NoteKeyStore] (ela só nasce no primeiro
 /// bloqueio ou via importação da chave de recuperação), então o serviço não
@@ -29,6 +36,10 @@ class SyncCrypto {
     SyncEntities.noteAi,
     SyncEntities.chatMessage,
   };
+
+  /// AAD que prende o texto cifrado à sua entidade/id (envelope `v2`).
+  static List<int> _aad(String entity, String id) =>
+      utf8.encode('rbnotes|$entity|$id');
 
   /// Esquece a chave em cache (ex.: depois de importar a chave de recuperação).
   void invalidate() => _cipher = null;
@@ -75,7 +86,9 @@ class SyncCrypto {
     if (NoteCipher.isEncrypted(c.data)) return c;
     final noteId = noteIdOf(c);
     if (noteId == null || !lockedNoteIds.contains(noteId)) return c;
-    return c.copyWith(data: await cipher.encrypt(c.data));
+    return c.copyWith(
+      data: await cipher.encrypt(c.data, aad: _aad(c.entity, c.id)),
+    );
   }
 
   /// Decifra um change cifrado (pull). Sem chave ou em falha, devolve o change
@@ -85,7 +98,9 @@ class SyncCrypto {
     final cipher = await _resolve();
     if (cipher == null) return c;
     try {
-      return c.copyWith(data: await cipher.decrypt(c.data));
+      return c.copyWith(
+        data: await cipher.decrypt(c.data, aad: _aad(c.entity, c.id)),
+      );
     } on NoteDecryptException {
       return c;
     }
