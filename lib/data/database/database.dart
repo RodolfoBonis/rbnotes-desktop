@@ -89,6 +89,10 @@ class Tags extends Table {
   TextColumn get emoji => text().nullable()();
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
 
+  // ---- v6 (sync) ----
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
@@ -99,6 +103,10 @@ class NoteTags extends Table {
       text().references(Notes, #id, onDelete: KeyAction.cascade)();
   TextColumn get tagId =>
       text().references(Tags, #id, onDelete: KeyAction.cascade)();
+
+  // ---- v6 (sync) ----
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column<Object>> get primaryKey => {noteId, tagId};
@@ -366,7 +374,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(

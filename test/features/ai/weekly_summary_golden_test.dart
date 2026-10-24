@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,10 +19,14 @@ Future<Widget> _app({required bool dark}) async {
     darkTheme: RbNotesTheme.dark(),
     themeMode: dark ? ThemeMode.dark : ThemeMode.light,
     home: BlocProvider(
-      create: (_) => WeeklySummaryCubit(
-        ai: FakeAiClient(thinkDelay: Duration.zero),
-        settings: settings,
-      )..generate(),
+      create: (_) {
+        final cubit = WeeklySummaryCubit(
+          ai: FakeAiClient(thinkDelay: Duration.zero),
+          settings: settings,
+        );
+        unawaited(cubit.generate());
+        return cubit;
+      },
       child: WeeklySummaryScreen(onClose: () {}),
     ),
   );

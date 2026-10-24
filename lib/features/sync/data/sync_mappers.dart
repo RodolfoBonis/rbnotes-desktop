@@ -290,6 +290,80 @@ abstract final class SyncMappers {
     return '{}';
   }
 
+  // ---------------- diary_entry (id = day) ----------------
+
+  static SyncChange diaryEntryToChange(DiaryEntryRow e) => SyncChange(
+    entity: SyncEntities.diaryEntry,
+    id: e.day,
+    updatedAt: e.updatedAt,
+    deleted: e.deleted,
+    data: {
+      'day': e.day,
+      'noteId': e.noteId,
+      'promptId': e.promptId,
+      'createdAt': e.createdAt.toUtc().toIso8601String(),
+    },
+  );
+
+  static DiaryEntriesCompanion diaryEntryCompanion(SyncChange c) {
+    final d = c.data;
+    return DiaryEntriesCompanion(
+      day: Value((d['day'] as String?) ?? c.id),
+      noteId: Value(d['noteId'] as String?),
+      promptId: Value(d['promptId'] as String?),
+      createdAt: Value(_date(d['createdAt']) ?? c.updatedAt),
+      updatedAt: Value(c.updatedAt),
+      deleted: Value(c.deleted),
+    );
+  }
+
+  // ---------------- tag ----------------
+
+  static SyncChange tagToChange(TagRow t) => SyncChange(
+    entity: SyncEntities.tag,
+    id: t.id,
+    updatedAt: t.updatedAt,
+    deleted: t.deleted,
+    data: {'name': t.name, 'emoji': t.emoji, 'pinned': t.pinned},
+  );
+
+  static TagsCompanion tagCompanion(SyncChange c) {
+    final d = c.data;
+    return TagsCompanion(
+      id: Value(c.id),
+      name: Value((d['name'] as String?) ?? ''),
+      emoji: Value(d['emoji'] as String?),
+      pinned: Value((d['pinned'] as bool?) ?? false),
+      updatedAt: Value(c.updatedAt),
+      deleted: Value(c.deleted),
+    );
+  }
+
+  // ---------------- note_tag (id = "<noteId>:<tagId>") ----------------
+
+  static String noteTagId(String noteId, String tagId) => '$noteId:$tagId';
+
+  static SyncChange noteTagToChange(NoteTagRow r) => SyncChange(
+    entity: SyncEntities.noteTag,
+    id: noteTagId(r.noteId, r.tagId),
+    updatedAt: r.updatedAt,
+    deleted: r.deleted,
+    data: {'noteId': r.noteId, 'tagId': r.tagId},
+  );
+
+  static NoteTagsCompanion noteTagCompanion(SyncChange c) {
+    final d = c.data;
+    final parts = c.id.split(':');
+    return NoteTagsCompanion(
+      noteId: Value((d['noteId'] as String?) ?? parts.first),
+      tagId: Value(
+        (d['tagId'] as String?) ?? (parts.length > 1 ? parts[1] : ''),
+      ),
+      updatedAt: Value(c.updatedAt),
+      deleted: Value(c.deleted),
+    );
+  }
+
   // ---------------- helpers ----------------
 
   /// Citações do servidor (`[{atMs: 188000}, ...]`) no formato local (lista de

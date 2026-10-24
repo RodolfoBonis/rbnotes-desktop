@@ -78,6 +78,15 @@ class SyncLocalStore {
     for (final r in await _db.select(_db.noteAiTable).get()) {
       if (fresh(r.updatedAt)) changes.add(SyncMappers.noteAiToChange(r));
     }
+    for (final e in await _db.select(_db.diaryEntries).get()) {
+      if (fresh(e.updatedAt)) changes.add(SyncMappers.diaryEntryToChange(e));
+    }
+    for (final t in await _db.select(_db.tags).get()) {
+      if (fresh(t.updatedAt)) changes.add(SyncMappers.tagToChange(t));
+    }
+    for (final nt in await _db.select(_db.noteTags).get()) {
+      if (fresh(nt.updatedAt)) changes.add(SyncMappers.noteTagToChange(nt));
+    }
 
     changes.sort((a, b) => a.updatedAt.compareTo(b.updatedAt));
     final trimmed = changes.length > limit
@@ -167,6 +176,21 @@ class SyncLocalStore {
               .into(_db.noteAiTable)
               .insertOnConflictUpdate(SyncMappers.noteAiCompanion(c));
         }
+      case SyncEntities.diaryEntry:
+        await _db
+            .into(_db.diaryEntries)
+            .insertOnConflictUpdate(SyncMappers.diaryEntryCompanion(c));
+      case SyncEntities.tag:
+        await _db
+            .into(_db.tags)
+            .insertOnConflictUpdate(SyncMappers.tagCompanion(c));
+      case SyncEntities.noteTag:
+        final noteId = c.data['noteId'] as String?;
+        final tagId = c.data['tagId'] as String?;
+        if (await _noteMissing(noteId) || await _tagMissing(tagId)) return;
+        await _db
+            .into(_db.noteTags)
+            .insertOnConflictUpdate(SyncMappers.noteTagCompanion(c));
     }
     if (c.entity == SyncEntities.note) {
       await _db.recomposeSearchBody(c.id);
@@ -239,8 +263,36 @@ class SyncLocalStore {
           _db.noteAiTable,
         )..where((t) => t.noteId.equals(id))).getSingleOrNull();
         return r?.updatedAt;
+      case SyncEntities.diaryEntry:
+        final r = await (_db.select(
+          _db.diaryEntries,
+        )..where((e) => e.day.equals(id))).getSingleOrNull();
+        return r?.updatedAt;
+      case SyncEntities.tag:
+        final r = await (_db.select(
+          _db.tags,
+        )..where((t) => t.id.equals(id))).getSingleOrNull();
+        return r?.updatedAt;
+      case SyncEntities.noteTag:
+        final parts = id.split(':');
+        if (parts.length < 2) return null;
+        final r =
+            await (_db.select(_db.noteTags)..where(
+                  (nt) =>
+                      nt.noteId.equals(parts.first) & nt.tagId.equals(parts[1]),
+                ))
+                .getSingleOrNull();
+        return r?.updatedAt;
     }
     return null;
+  }
+
+  Future<bool> _tagMissing(String? tagId) async {
+    if (tagId == null || tagId.isEmpty) return true;
+    final row = await (_db.select(
+      _db.tags,
+    )..where((t) => t.id.equals(tagId))).getSingleOrNull();
+    return row == null;
   }
 
   /// Marca d'água própria do `segment_set` da nota (`null` se nunca gravada).
@@ -288,6 +340,7 @@ class SyncLocalStore {
   static int _priority(String entity) => switch (entity) {
     SyncEntities.note || SyncEntities.folder => 0,
     SyncEntities.collection || SyncEntities.vocabulary => 0,
+    SyncEntities.tag || SyncEntities.diaryEntry => 0,
     _ => 1,
   };
 }

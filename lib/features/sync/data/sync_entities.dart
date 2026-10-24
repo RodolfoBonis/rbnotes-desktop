@@ -12,6 +12,9 @@ abstract final class SyncEntities {
   static const vocabulary = 'vocabulary';
   static const chatMessage = 'chat_message';
   static const noteAi = 'note_ai';
+  static const diaryEntry = 'diary_entry';
+  static const tag = 'tag';
+  static const noteTag = 'note_tag';
 
   static const List<String> all = [
     note,
@@ -22,5 +25,8 @@ abstract final class SyncEntities {
     vocabulary,
     chatMessage,
     noteAi,
+    diaryEntry,
+    tag,
+    noteTag,
   ];
 }

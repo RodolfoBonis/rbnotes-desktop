@@ -1594,8 +1594,42 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
   @override
-  List<GeneratedColumn> get $columns => [id, name, emoji, pinned];
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _deletedMeta = const VerificationMeta(
+    'deleted',
+  );
+  @override
+  late final GeneratedColumn<bool> deleted = GeneratedColumn<bool>(
+    'deleted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("deleted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    emoji,
+    pinned,
+    updatedAt,
+    deleted,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1633,6 +1667,18 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
         pinned.isAcceptableOrUnknown(data['pinned']!, _pinnedMeta),
       );
     }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    if (data.containsKey('deleted')) {
+      context.handle(
+        _deletedMeta,
+        deleted.isAcceptableOrUnknown(data['deleted']!, _deletedMeta),
+      );
+    }
     return context;
   }
 
@@ -1658,6 +1704,14 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
         DriftSqlType.bool,
         data['${effectivePrefix}pinned'],
       )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}deleted'],
+      )!,
     );
   }
 
@@ -1672,11 +1726,15 @@ class TagRow extends DataClass implements Insertable<TagRow> {
   final String name;
   final String? emoji;
   final bool pinned;
+  final DateTime updatedAt;
+  final bool deleted;
   const TagRow({
     required this.id,
     required this.name,
     this.emoji,
     required this.pinned,
+    required this.updatedAt,
+    required this.deleted,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1687,6 +1745,8 @@ class TagRow extends DataClass implements Insertable<TagRow> {
       map['emoji'] = Variable<String>(emoji);
     }
     map['pinned'] = Variable<bool>(pinned);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    map['deleted'] = Variable<bool>(deleted);
     return map;
   }
 
@@ -1698,6 +1758,8 @@ class TagRow extends DataClass implements Insertable<TagRow> {
           ? const Value.absent()
           : Value(emoji),
       pinned: Value(pinned),
+      updatedAt: Value(updatedAt),
+      deleted: Value(deleted),
     );
   }
 
@@ -1711,6 +1773,8 @@ class TagRow extends DataClass implements Insertable<TagRow> {
       name: serializer.fromJson<String>(json['name']),
       emoji: serializer.fromJson<String?>(json['emoji']),
       pinned: serializer.fromJson<bool>(json['pinned']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deleted: serializer.fromJson<bool>(json['deleted']),
     );
   }
   @override
@@ -1721,6 +1785,8 @@ class TagRow extends DataClass implements Insertable<TagRow> {
       'name': serializer.toJson<String>(name),
       'emoji': serializer.toJson<String?>(emoji),
       'pinned': serializer.toJson<bool>(pinned),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deleted': serializer.toJson<bool>(deleted),
     };
   }
 
@@ -1729,11 +1795,15 @@ class TagRow extends DataClass implements Insertable<TagRow> {
     String? name,
     Value<String?> emoji = const Value.absent(),
     bool? pinned,
+    DateTime? updatedAt,
+    bool? deleted,
   }) => TagRow(
     id: id ?? this.id,
     name: name ?? this.name,
     emoji: emoji.present ? emoji.value : this.emoji,
     pinned: pinned ?? this.pinned,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deleted: deleted ?? this.deleted,
   );
   TagRow copyWithCompanion(TagsCompanion data) {
     return TagRow(
@@ -1741,6 +1811,8 @@ class TagRow extends DataClass implements Insertable<TagRow> {
       name: data.name.present ? data.name.value : this.name,
       emoji: data.emoji.present ? data.emoji.value : this.emoji,
       pinned: data.pinned.present ? data.pinned.value : this.pinned,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deleted: data.deleted.present ? data.deleted.value : this.deleted,
     );
   }
 
@@ -1750,13 +1822,15 @@ class TagRow extends DataClass implements Insertable<TagRow> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('emoji: $emoji, ')
-          ..write('pinned: $pinned')
+          ..write('pinned: $pinned, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deleted: $deleted')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, emoji, pinned);
+  int get hashCode => Object.hash(id, name, emoji, pinned, updatedAt, deleted);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1764,7 +1838,9 @@ class TagRow extends DataClass implements Insertable<TagRow> {
           other.id == this.id &&
           other.name == this.name &&
           other.emoji == this.emoji &&
-          other.pinned == this.pinned);
+          other.pinned == this.pinned &&
+          other.updatedAt == this.updatedAt &&
+          other.deleted == this.deleted);
 }
 
 class TagsCompanion extends UpdateCompanion<TagRow> {
@@ -1772,12 +1848,16 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
   final Value<String> name;
   final Value<String?> emoji;
   final Value<bool> pinned;
+  final Value<DateTime> updatedAt;
+  final Value<bool> deleted;
   final Value<int> rowid;
   const TagsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
     this.emoji = const Value.absent(),
     this.pinned = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deleted = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TagsCompanion.insert({
@@ -1785,6 +1865,8 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
     required String name,
     this.emoji = const Value.absent(),
     this.pinned = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deleted = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name);
@@ -1793,6 +1875,8 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
     Expression<String>? name,
     Expression<String>? emoji,
     Expression<bool>? pinned,
+    Expression<DateTime>? updatedAt,
+    Expression<bool>? deleted,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1800,6 +1884,8 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
       if (name != null) 'name': name,
       if (emoji != null) 'emoji': emoji,
       if (pinned != null) 'pinned': pinned,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deleted != null) 'deleted': deleted,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1809,6 +1895,8 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
     Value<String>? name,
     Value<String?>? emoji,
     Value<bool>? pinned,
+    Value<DateTime>? updatedAt,
+    Value<bool>? deleted,
     Value<int>? rowid,
   }) {
     return TagsCompanion(
@@ -1816,6 +1904,8 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
       name: name ?? this.name,
       emoji: emoji ?? this.emoji,
       pinned: pinned ?? this.pinned,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deleted: deleted ?? this.deleted,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1835,6 +1925,12 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
     if (pinned.present) {
       map['pinned'] = Variable<bool>(pinned.value);
     }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (deleted.present) {
+      map['deleted'] = Variable<bool>(deleted.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1848,6 +1944,8 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
           ..write('name: $name, ')
           ..write('emoji: $emoji, ')
           ..write('pinned: $pinned, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deleted: $deleted, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1884,8 +1982,35 @@ class $NoteTagsTable extends NoteTags
       'REFERENCES tags (id) ON DELETE CASCADE',
     ),
   );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
   @override
-  List<GeneratedColumn> get $columns => [noteId, tagId];
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _deletedMeta = const VerificationMeta(
+    'deleted',
+  );
+  @override
+  late final GeneratedColumn<bool> deleted = GeneratedColumn<bool>(
+    'deleted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("deleted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [noteId, tagId, updatedAt, deleted];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1914,6 +2039,18 @@ class $NoteTagsTable extends NoteTags
     } else if (isInserting) {
       context.missing(_tagIdMeta);
     }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    if (data.containsKey('deleted')) {
+      context.handle(
+        _deletedMeta,
+        deleted.isAcceptableOrUnknown(data['deleted']!, _deletedMeta),
+      );
+    }
     return context;
   }
 
@@ -1931,6 +2068,14 @@ class $NoteTagsTable extends NoteTags
         DriftSqlType.string,
         data['${effectivePrefix}tag_id'],
       )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}deleted'],
+      )!,
     );
   }
 
@@ -1943,17 +2088,31 @@ class $NoteTagsTable extends NoteTags
 class NoteTagRow extends DataClass implements Insertable<NoteTagRow> {
   final String noteId;
   final String tagId;
-  const NoteTagRow({required this.noteId, required this.tagId});
+  final DateTime updatedAt;
+  final bool deleted;
+  const NoteTagRow({
+    required this.noteId,
+    required this.tagId,
+    required this.updatedAt,
+    required this.deleted,
+  });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['note_id'] = Variable<String>(noteId);
     map['tag_id'] = Variable<String>(tagId);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    map['deleted'] = Variable<bool>(deleted);
     return map;
   }
 
   NoteTagsCompanion toCompanion(bool nullToAbsent) {
-    return NoteTagsCompanion(noteId: Value(noteId), tagId: Value(tagId));
+    return NoteTagsCompanion(
+      noteId: Value(noteId),
+      tagId: Value(tagId),
+      updatedAt: Value(updatedAt),
+      deleted: Value(deleted),
+    );
   }
 
   factory NoteTagRow.fromJson(
@@ -1964,6 +2123,8 @@ class NoteTagRow extends DataClass implements Insertable<NoteTagRow> {
     return NoteTagRow(
       noteId: serializer.fromJson<String>(json['noteId']),
       tagId: serializer.fromJson<String>(json['tagId']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deleted: serializer.fromJson<bool>(json['deleted']),
     );
   }
   @override
@@ -1972,15 +2133,28 @@ class NoteTagRow extends DataClass implements Insertable<NoteTagRow> {
     return <String, dynamic>{
       'noteId': serializer.toJson<String>(noteId),
       'tagId': serializer.toJson<String>(tagId),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deleted': serializer.toJson<bool>(deleted),
     };
   }
 
-  NoteTagRow copyWith({String? noteId, String? tagId}) =>
-      NoteTagRow(noteId: noteId ?? this.noteId, tagId: tagId ?? this.tagId);
+  NoteTagRow copyWith({
+    String? noteId,
+    String? tagId,
+    DateTime? updatedAt,
+    bool? deleted,
+  }) => NoteTagRow(
+    noteId: noteId ?? this.noteId,
+    tagId: tagId ?? this.tagId,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deleted: deleted ?? this.deleted,
+  );
   NoteTagRow copyWithCompanion(NoteTagsCompanion data) {
     return NoteTagRow(
       noteId: data.noteId.present ? data.noteId.value : this.noteId,
       tagId: data.tagId.present ? data.tagId.value : this.tagId,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deleted: data.deleted.present ? data.deleted.value : this.deleted,
     );
   }
 
@@ -1988,44 +2162,58 @@ class NoteTagRow extends DataClass implements Insertable<NoteTagRow> {
   String toString() {
     return (StringBuffer('NoteTagRow(')
           ..write('noteId: $noteId, ')
-          ..write('tagId: $tagId')
+          ..write('tagId: $tagId, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deleted: $deleted')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(noteId, tagId);
+  int get hashCode => Object.hash(noteId, tagId, updatedAt, deleted);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is NoteTagRow &&
           other.noteId == this.noteId &&
-          other.tagId == this.tagId);
+          other.tagId == this.tagId &&
+          other.updatedAt == this.updatedAt &&
+          other.deleted == this.deleted);
 }
 
 class NoteTagsCompanion extends UpdateCompanion<NoteTagRow> {
   final Value<String> noteId;
   final Value<String> tagId;
+  final Value<DateTime> updatedAt;
+  final Value<bool> deleted;
   final Value<int> rowid;
   const NoteTagsCompanion({
     this.noteId = const Value.absent(),
     this.tagId = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deleted = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   NoteTagsCompanion.insert({
     required String noteId,
     required String tagId,
+    this.updatedAt = const Value.absent(),
+    this.deleted = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : noteId = Value(noteId),
        tagId = Value(tagId);
   static Insertable<NoteTagRow> custom({
     Expression<String>? noteId,
     Expression<String>? tagId,
+    Expression<DateTime>? updatedAt,
+    Expression<bool>? deleted,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (noteId != null) 'note_id': noteId,
       if (tagId != null) 'tag_id': tagId,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deleted != null) 'deleted': deleted,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2033,11 +2221,15 @@ class NoteTagsCompanion extends UpdateCompanion<NoteTagRow> {
   NoteTagsCompanion copyWith({
     Value<String>? noteId,
     Value<String>? tagId,
+    Value<DateTime>? updatedAt,
+    Value<bool>? deleted,
     Value<int>? rowid,
   }) {
     return NoteTagsCompanion(
       noteId: noteId ?? this.noteId,
       tagId: tagId ?? this.tagId,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deleted: deleted ?? this.deleted,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2051,6 +2243,12 @@ class NoteTagsCompanion extends UpdateCompanion<NoteTagRow> {
     if (tagId.present) {
       map['tag_id'] = Variable<String>(tagId.value);
     }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (deleted.present) {
+      map['deleted'] = Variable<bool>(deleted.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2062,6 +2260,8 @@ class NoteTagsCompanion extends UpdateCompanion<NoteTagRow> {
     return (StringBuffer('NoteTagsCompanion(')
           ..write('noteId: $noteId, ')
           ..write('tagId: $tagId, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deleted: $deleted, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -7292,6 +7492,8 @@ typedef $$TagsTableCreateCompanionBuilder =
       required String name,
       Value<String?> emoji,
       Value<bool> pinned,
+      Value<DateTime> updatedAt,
+      Value<bool> deleted,
       Value<int> rowid,
     });
 typedef $$TagsTableUpdateCompanionBuilder =
@@ -7300,6 +7502,8 @@ typedef $$TagsTableUpdateCompanionBuilder =
       Value<String> name,
       Value<String?> emoji,
       Value<bool> pinned,
+      Value<DateTime> updatedAt,
+      Value<bool> deleted,
       Value<int> rowid,
     });
 
@@ -7351,6 +7555,16 @@ class $$TagsTableFilterComposer extends Composer<_$AppDatabase, $TagsTable> {
 
   ColumnFilters<bool> get pinned => $composableBuilder(
     column: $table.pinned,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get deleted => $composableBuilder(
+    column: $table.deleted,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7407,6 +7621,16 @@ class $$TagsTableOrderingComposer extends Composer<_$AppDatabase, $TagsTable> {
     column: $table.pinned,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get deleted => $composableBuilder(
+    column: $table.deleted,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TagsTableAnnotationComposer
@@ -7429,6 +7653,12 @@ class $$TagsTableAnnotationComposer
 
   GeneratedColumn<bool> get pinned =>
       $composableBuilder(column: $table.pinned, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get deleted =>
+      $composableBuilder(column: $table.deleted, builder: (column) => column);
 
   Expression<T> noteTagsRefs<T extends Object>(
     Expression<T> Function($$NoteTagsTableAnnotationComposer a) f,
@@ -7488,12 +7718,16 @@ class $$TagsTableTableManager
                 Value<String> name = const Value.absent(),
                 Value<String?> emoji = const Value.absent(),
                 Value<bool> pinned = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<bool> deleted = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TagsCompanion(
                 id: id,
                 name: name,
                 emoji: emoji,
                 pinned: pinned,
+                updatedAt: updatedAt,
+                deleted: deleted,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -7502,12 +7736,16 @@ class $$TagsTableTableManager
                 required String name,
                 Value<String?> emoji = const Value.absent(),
                 Value<bool> pinned = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<bool> deleted = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TagsCompanion.insert(
                 id: id,
                 name: name,
                 emoji: emoji,
                 pinned: pinned,
+                updatedAt: updatedAt,
+                deleted: deleted,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -7563,12 +7801,16 @@ typedef $$NoteTagsTableCreateCompanionBuilder =
     NoteTagsCompanion Function({
       required String noteId,
       required String tagId,
+      Value<DateTime> updatedAt,
+      Value<bool> deleted,
       Value<int> rowid,
     });
 typedef $$NoteTagsTableUpdateCompanionBuilder =
     NoteTagsCompanion Function({
       Value<String> noteId,
       Value<String> tagId,
+      Value<DateTime> updatedAt,
+      Value<bool> deleted,
       Value<int> rowid,
     });
 
@@ -7620,6 +7862,16 @@ class $$NoteTagsTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get deleted => $composableBuilder(
+    column: $table.deleted,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$NotesTableFilterComposer get noteId {
     final $$NotesTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -7676,6 +7928,16 @@ class $$NoteTagsTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get deleted => $composableBuilder(
+    column: $table.deleted,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$NotesTableOrderingComposer get noteId {
     final $$NotesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -7732,6 +7994,12 @@ class $$NoteTagsTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get deleted =>
+      $composableBuilder(column: $table.deleted, builder: (column) => column);
+
   $$NotesTableAnnotationComposer get noteId {
     final $$NotesTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -7809,17 +8077,28 @@ class $$NoteTagsTableTableManager
               ({
                 Value<String> noteId = const Value.absent(),
                 Value<String> tagId = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<bool> deleted = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
-              }) =>
-                  NoteTagsCompanion(noteId: noteId, tagId: tagId, rowid: rowid),
+              }) => NoteTagsCompanion(
+                noteId: noteId,
+                tagId: tagId,
+                updatedAt: updatedAt,
+                deleted: deleted,
+                rowid: rowid,
+              ),
           createCompanionCallback:
               ({
                 required String noteId,
                 required String tagId,
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<bool> deleted = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => NoteTagsCompanion.insert(
                 noteId: noteId,
                 tagId: tagId,
+                updatedAt: updatedAt,
+                deleted: deleted,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

@@ -448,6 +448,8 @@ class NoteRepository {
         name: parts.length > 1 ? parts[1] : '',
         emoji: emoji,
         pinned: false,
+        updatedAt: DateTime.fromMillisecondsSinceEpoch(0),
+        deleted: false,
       );
     }).toList();
   }

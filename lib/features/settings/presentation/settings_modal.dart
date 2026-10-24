@@ -473,8 +473,8 @@ class _SettingsModalState extends State<SettingsModal> {
     _Group(
       title: 'Privacidade',
       foot:
-          'O Claude recebe apenas o texto transcrito. O áudio nunca sai '
-          'do seu Mac.',
+          'O Claude recebe apenas o texto transcrito. O áudio só sobe se '
+          '"Enviar áudios" estiver ligado.',
       rows: [
         _toggle(
           'Não enviar notas da pasta Pessoal',
@@ -499,7 +499,8 @@ class _SettingsModalState extends State<SettingsModal> {
       rows: [
         _toggle(
           'Sincronizar entre dispositivos',
-          'Texto criptografado de ponta a ponta',
+          'Suas notas sincronizam entre seus Macs. Notas bloqueadas sobem '
+              'cifradas de ponta a ponta.',
           _s.syncEnabled,
           (v) => _s.setSyncEnabled(value: v),
         ),
