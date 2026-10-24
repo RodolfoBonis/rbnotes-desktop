@@ -270,6 +270,22 @@ class SyncService {
     await _prefs.setInt(_kPending, pending);
   }
 
+  /// Reseta o cursor/marca d'água e o estado persistido (último sync, erro e
+  /// pendências). Usado ao apagar os dados locais ou todos os dados.
+  Future<void> resetCursor() async {
+    _periodic?.cancel();
+    _debounceTimer?.cancel();
+    _backoffTimer?.cancel();
+    await _prefs.remove(_kCursor);
+    await _prefs.remove(_kWatermark);
+    await _prefs.remove(_kLastSyncAt);
+    await _prefs.remove(_kLastError);
+    await _prefs.remove(_kPending);
+    _lastSyncAt = null;
+    _failures = 0;
+    _emit(const SyncStatus());
+  }
+
   Future<void> dispose() async {
     _periodic?.cancel();
     _debounceTimer?.cancel();

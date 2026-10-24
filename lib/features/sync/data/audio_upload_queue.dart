@@ -238,6 +238,16 @@ class AudioUploadQueue {
     _retry = Timer(delay, () => unawaited(process()));
   }
 
+  /// Esvazia a fila e o estado (usado ao apagar os dados locais no logout).
+  Future<void> clear() async {
+    _retry?.cancel();
+    _activeId = null;
+    _activeProgress = 0;
+    _lastFailed = false;
+    await _prefs.remove(_kQueue);
+    _emit();
+  }
+
   void dispose() {
     _retry?.cancel();
     unawaited(_itemsController.close());

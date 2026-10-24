@@ -69,6 +69,9 @@ enum SettingsTab {
   privacidade,
 }
 
+/// Escolha do diálogo de saída: manter os dados locais ou apagá-los.
+enum _LogoutChoice { keep, wipe }
+
 /// Janela modal de Configurações com as 7 abas do design v3.
 class SettingsModal extends StatefulWidget {
   const SettingsModal({
@@ -130,7 +133,10 @@ class SettingsModal extends StatefulWidget {
   final String userEmail;
   final String userInitials;
   final VoidCallback onClose;
-  final VoidCallback onLogout;
+
+  /// Encerra a sessão. `wipe` = o dono escolheu "Apagar dados locais" no
+  /// diálogo de saída (limpa banco, cursor, filas e caches de áudio).
+  final Future<void> Function({required bool wipe}) onLogout;
 
   /// Apaga todas as notas, áudios e dados locais (ação destrutiva da aba
   /// Privacidade).
@@ -576,7 +582,7 @@ class _SettingsModalState extends State<SettingsModal> {
           'Sessão neste Mac',
           widget.userEmail,
           'Sair',
-          onTap: widget.onLogout,
+          onTap: _confirmLogout,
           destructive: true,
         ),
       ],
@@ -859,6 +865,36 @@ class _SettingsModalState extends State<SettingsModal> {
       builder: (_) => VocabularyEditorDialog(repository: widget.vocabulary),
     );
     await _refreshVocabCount();
+  }
+
+  Future<void> _confirmLogout() async {
+    final choice = await showDialog<_LogoutChoice>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sair do RbNotes?'),
+        content: const Text(
+          'Você pode manter suas notas neste Mac para quando entrar de novo, '
+          'ou apagar os dados locais agora. O que está na nuvem não é afetado.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(_LogoutChoice.keep),
+            child: const Text('Manter dados neste Mac'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(_LogoutChoice.wipe),
+            style: TextButton.styleFrom(foregroundColor: RbTokens.destructive),
+            child: const Text('Apagar dados locais'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null) return;
+    await widget.onLogout(wipe: choice == _LogoutChoice.wipe);
   }
 
   Future<void> _confirmEraseAllData() async {

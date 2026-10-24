@@ -38,6 +38,7 @@ import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart'
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/recording/presentation/recording_hud.dart';
 import 'package:rbnotes/features/recording/presentation/recovery_cubit.dart';
+import 'package:rbnotes/features/settings/data/local_data_wiper.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/settings/presentation/settings_modal.dart';
@@ -538,8 +539,9 @@ class _SettingsLayer extends StatelessWidget {
           : null,
       notes: di<NoteRepository>(),
       onClose: overlay.closeSettings,
-      onLogout: () async {
+      onLogout: ({required wipe}) async {
         overlay.closeSettings();
+        if (wipe) await _wipeLocalData();
         await di<AuthService>().signOut();
       },
       onEraseAllData: () async {
@@ -566,6 +568,21 @@ class _WeeklyLayer extends StatelessWidget {
       child: WeeklySummaryScreen(onClose: overlay.closeWeekly),
     );
   }
+}
+
+/// "Apagar dados locais" do logout: banco, cursor/marca d'água, fila de áudio e
+/// os caches de áudio (recordings + audio_cache).
+Future<void> _wipeLocalData() async {
+  final wiper = LocalDataWiper(
+    db: di<AppDatabase>(),
+    notes: di<NoteRepository>(),
+    paths: di<AppPaths>(),
+    sync: di.isRegistered<SyncService>() ? di<SyncService>() : null,
+    audioQueue: di.isRegistered<AudioUploadQueue>()
+        ? di<AudioUploadQueue>()
+        : null,
+  );
+  await wiper.wipe();
 }
 
 /// Apaga todas as notas, diário, vocabulário e arquivos de áudio locais.
