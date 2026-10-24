@@ -31,6 +31,7 @@ class _StubAiClient implements AiClient {
     required List<AiSegment> segments,
     required List<String> speakers,
     required String message,
+    bool ephemeral = false,
   }) => const Stream.empty();
 
   @override

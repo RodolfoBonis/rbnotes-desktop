@@ -21,6 +21,8 @@ enum NoteAction {
   copyTranscript,
   retryTranscription,
   regenerateSummary,
+  lock,
+  unlock,
   delete,
 }
 
@@ -83,6 +85,20 @@ Future<void> showNoteContextMenu({
         label: 'Gerar resumo de novo',
         icon: Icons.auto_awesome_outlined,
       ),
+      if (note.locked)
+        const RbMenuItem(
+          value: NoteAction.unlock,
+          label: 'Desbloquear',
+          icon: Icons.lock_open_outlined,
+          dividerAbove: true,
+        )
+      else
+        const RbMenuItem(
+          value: NoteAction.lock,
+          label: 'Bloquear nota com Touch ID',
+          icon: Icons.lock_outline,
+          dividerAbove: true,
+        ),
       const RbMenuItem(
         value: NoteAction.delete,
         label: 'Apagar',
@@ -142,6 +158,10 @@ Future<void> runNoteAction({
       await library.retryTranscription(note.id);
     case NoteAction.regenerateSummary:
       await library.regenerateSummary(note.id);
+    case NoteAction.lock:
+      await library.lockNote(note.id);
+    case NoteAction.unlock:
+      await library.unlockNote(note.id);
     case NoteAction.delete:
       final ok = await _confirmDelete(context, note.title);
       if (ok) await library.deleteNote(note.id);

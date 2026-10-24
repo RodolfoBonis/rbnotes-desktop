@@ -423,6 +423,7 @@ class NoteViewCubit extends Cubit<NoteViewState> {
           segments: aiSegments,
           speakers: speakers,
           message: text,
+          ephemeral: state.note?.locked ?? false,
         )
         .listen(
           (delta) {

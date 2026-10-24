@@ -51,6 +51,7 @@ class ApiAiClient implements AiClient {
       'length': request.length.name,
       'extractTasks': request.extractTasks,
       'model': _model(),
+      if (request.ephemeral) 'ephemeral': true,
     });
     final obj = await _collect(id);
     return NoteAi.fromJson(obj);
@@ -62,6 +63,7 @@ class ApiAiClient implements AiClient {
     required List<AiSegment> segments,
     required List<String> speakers,
     required String message,
+    bool ephemeral = false,
   }) {
     return _stream(
       path: '/ai/notes/$noteId/chat',
@@ -69,6 +71,7 @@ class ApiAiClient implements AiClient {
         'message': message,
         'transcript': [for (final s in segments) _segment(s)],
         'model': _model(),
+        if (ephemeral) 'ephemeral': true,
       },
       toDelta: (obj, {required done}) => AiDelta(
         text: (obj['text'] as String?) ?? '',

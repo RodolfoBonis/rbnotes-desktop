@@ -414,9 +414,15 @@ class _NoteCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 7),
+                  if (note.locked) ...[
+                    Icon(Icons.lock_outline, size: 13, color: fg),
+                    const SizedBox(width: 5),
+                  ],
                   Expanded(
                     child: Text(
-                      note.title.isEmpty ? 'Sem título' : note.title,
+                      note.locked
+                          ? 'Nota bloqueada'
+                          : (note.title.isEmpty ? 'Sem título' : note.title),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: context.bodyText(
@@ -426,10 +432,11 @@ class _NoteCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  _NoteProgressBadge(note: note, selected: selected),
+                  if (!note.locked)
+                    _NoteProgressBadge(note: note, selected: selected),
                 ],
               ),
-              if (excerpt.isNotEmpty)
+              if (!note.locked && excerpt.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(left: 14, top: 3),
                   child: Text(

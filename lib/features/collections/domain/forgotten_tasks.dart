@@ -27,6 +27,7 @@ class TaskNoteInput {
     required this.createdAt,
     required this.isDiary,
     required this.actions,
+    this.isLocked = false,
   });
 
   final String noteId;
@@ -34,6 +35,10 @@ class TaskNoteInput {
   final DateTime createdAt;
   final bool isDiary;
   final List<TaskActionInput> actions;
+
+  /// Nota bloqueada: a tarefa aparece como "tarefa em nota bloqueada" sem o
+  /// texto nem o título.
+  final bool isLocked;
 }
 
 /// Uma tarefa esquecida: ação aberta de uma nota parada há vários dias.
@@ -45,6 +50,7 @@ class ForgottenTask extends Equatable {
     required this.text,
     required this.owner,
     required this.ageDays,
+    this.locked = false,
   });
 
   final String noteId;
@@ -54,8 +60,12 @@ class ForgottenTask extends Equatable {
   final String? owner;
   final int ageDays;
 
+  /// A tarefa está numa nota bloqueada: a UI mostra "tarefa em nota bloqueada"
+  /// sem o texto.
+  final bool locked;
+
   @override
-  List<Object?> get props => [noteId, actionId, text, owner, ageDays];
+  List<Object?> get props => [noteId, actionId, text, owner, ageDays, locked];
 }
 
 /// Retorna as tarefas abertas há [minAgeDays] dias ou mais, ignorando o diário,
@@ -84,11 +94,13 @@ List<ForgottenTask> forgottenTasks({
       out.add(
         ForgottenTask(
           noteId: note.noteId,
-          noteTitle: note.title,
+          // Nota bloqueada: sem título nem texto da tarefa.
+          noteTitle: note.isLocked ? '' : note.title,
           actionId: a.id,
-          text: a.text,
-          owner: a.owner,
+          text: note.isLocked ? '' : a.text,
+          owner: note.isLocked ? null : a.owner,
           ageDays: ageDays,
+          locked: note.isLocked,
         ),
       );
     }

@@ -40,6 +40,7 @@ class EnrichRequest extends Equatable {
     this.style = SummaryStyle.objetivo,
     this.length = SummaryLength.medio,
     this.extractTasks = true,
+    this.ephemeral = false,
   });
 
   final String noteId;
@@ -50,6 +51,10 @@ class EnrichRequest extends Equatable {
   final SummaryLength length;
   final bool extractTasks;
 
+  /// Nota bloqueada: o servidor roda o enrich mas não grava `note_ai` em texto
+  /// claro (o cliente salva e cifra); o resultado volta só pelo SSE.
+  final bool ephemeral;
+
   @override
   List<Object?> get props => [
     noteId,
@@ -59,6 +64,7 @@ class EnrichRequest extends Equatable {
     style,
     length,
     extractTasks,
+    ephemeral,
   ];
 }
 
@@ -130,6 +136,7 @@ abstract interface class AiClient {
     required List<AiSegment> segments,
     required List<String> speakers,
     required String message,
+    bool ephemeral = false,
   });
 
   /// "Perguntar às notas": responde a partir das notas candidatas (streaming +

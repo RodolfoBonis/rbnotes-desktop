@@ -8,12 +8,14 @@ void main() {
     required String id,
     required int ageDays,
     bool isDiary = false,
+    bool isLocked = false,
     List<TaskActionInput> actions = const [],
   }) => TaskNoteInput(
     noteId: id,
     title: 'Nota $id',
     createdAt: now.subtract(Duration(days: ageDays)),
     isDiary: isDiary,
+    isLocked: isLocked,
     actions: actions,
   );
 
@@ -86,5 +88,18 @@ void main() {
       now: now,
     );
     expect(tasks.map((t) => t.noteId), ['b', 'c', 'a']);
+  });
+
+  test('redacts tasks from locked notes', () {
+    final tasks = forgottenTasks(
+      notes: [
+        note(id: 'a', ageDays: 5, isLocked: true, actions: [action('a1')]),
+      ],
+      now: now,
+    );
+    expect(tasks.single.locked, isTrue);
+    expect(tasks.single.text, '');
+    expect(tasks.single.noteTitle, '');
+    expect(tasks.single.owner, isNull);
   });
 }

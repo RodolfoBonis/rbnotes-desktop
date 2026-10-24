@@ -183,32 +183,49 @@ class _TaskCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  task.text,
-                  style: context.bodyText(
-                    size: 14,
-                    weight: FontWeight.w500,
-                    height: 1.45,
-                  ),
+                Row(
+                  children: [
+                    if (task.locked) ...[
+                      Icon(
+                        Icons.lock_outline,
+                        size: 14,
+                        color: rb.secondary(0.6),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Flexible(
+                      child: Text(
+                        task.locked ? 'Tarefa em nota bloqueada' : task.text,
+                        style: context.bodyText(
+                          size: 14,
+                          weight: FontWeight.w500,
+                          height: 1.45,
+                          color: task.locked ? rb.secondary(0.7) : null,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Wrap(
                   spacing: 6,
                   children: [
-                    GestureDetector(
-                      onTap: onOpenNote,
-                      child: Text(
-                        task.noteTitle,
-                        style: context.bodyText(size: 12, color: rb.accent),
+                    if (!task.locked) ...[
+                      GestureDetector(
+                        onTap: onOpenNote,
+                        child: Text(
+                          task.noteTitle,
+                          style: context.bodyText(size: 12, color: rb.accent),
+                        ),
                       ),
-                    ),
-                    Text(
-                      '·',
-                      style: context.bodyText(
-                        size: 12,
-                        color: rb.secondary(0.65),
+                      Text(
+                        '·',
+                        style: context.bodyText(
+                          size: 12,
+                          color: rb.secondary(0.65),
+                        ),
                       ),
-                    ),
+                    ],
                     Text(
                       'há ${task.ageDays} dias',
                       style: context.bodyText(

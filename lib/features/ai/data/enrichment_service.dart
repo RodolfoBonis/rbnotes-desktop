@@ -101,6 +101,7 @@ class EnrichmentService {
           style: _settings.summaryStyle,
           length: _settings.summaryLength,
           extractTasks: _settings.extractTasks,
+          ephemeral: note.locked,
         ),
       );
 

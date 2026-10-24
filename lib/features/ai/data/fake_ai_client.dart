@@ -129,6 +129,7 @@ class FakeAiClient implements AiClient {
     required List<AiSegment> segments,
     required List<String> speakers,
     required String message,
+    bool ephemeral = false,
   }) {
     final answer = _chatAnswer(segments, speakers, message);
     return _stream(answer.text, cites: answer.cites);

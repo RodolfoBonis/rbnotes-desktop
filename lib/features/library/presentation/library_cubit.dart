@@ -12,6 +12,8 @@ import 'package:rbnotes/features/library/data/library_repository.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/domain/note_models.dart';
+import 'package:rbnotes/features/security/data/biometric_auth.dart';
+import 'package:rbnotes/features/security/data/note_key_store.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:uuid/uuid.dart';
 
@@ -162,6 +164,7 @@ class LibraryState extends Equatable {
     final rule = CollectionRule.decode(row.ruleJson);
     return notes
         .where((n) => n.kind != NoteKind.diary)
+        .where((n) => !n.locked)
         .where((n) => rule.matches(_candidate(n, now)))
         .toList();
   }
@@ -189,6 +192,7 @@ class LibraryState extends Equatable {
           title: n.title,
           createdAt: n.createdAt,
           isDiary: false,
+          isLocked: n.locked,
           actions: actions
               .where((a) => a.noteId == n.id)
               .map(
@@ -216,6 +220,7 @@ class LibraryState extends Equatable {
     final rule = CollectionRule.decode(row.ruleJson);
     return notes
         .where((n) => n.kind != NoteKind.diary)
+        .where((n) => !n.locked)
         .where((n) => rule.matches(_candidate(n, now)))
         .length;
   }
@@ -236,12 +241,16 @@ class LibraryCubit extends Cubit<LibraryState> {
     required LibraryRepository library,
     TranscriptionQueue? queue,
     EnrichmentService? enrichment,
+    BiometricAuth? auth,
+    NoteKeyStore? noteKeyStore,
     Uuid? uuid,
   }) : _notes = notes,
        _noteAi = noteAi,
        _library = library,
        _queue = queue,
        _enrichment = enrichment,
+       _auth = auth,
+       _noteKeyStore = noteKeyStore,
        _uuid = uuid ?? const Uuid(),
        super(const LibraryState()) {
     _folders = _library.watchFolders().listen((v) {
@@ -267,7 +276,31 @@ class LibraryCubit extends Cubit<LibraryState> {
   final LibraryRepository _library;
   final TranscriptionQueue? _queue;
   final EnrichmentService? _enrichment;
+  final BiometricAuth? _auth;
+  final NoteKeyStore? _noteKeyStore;
   final Uuid _uuid;
+
+  /// Bloqueia a nota por Touch ID: pede autenticação, garante a chave de cifra
+  /// e marca `locked` (sai do FTS/⌘K/coleções/resumos; cifrada no sync).
+  Future<bool> lockNote(String id) async {
+    final auth = _auth;
+    if (auth != null && !await auth.authenticate('Bloquear esta nota')) {
+      return false;
+    }
+    await _noteKeyStore?.getOrCreate();
+    await _notes.setLocked(id, locked: true);
+    return true;
+  }
+
+  /// Desbloqueia a nota (pede Touch ID) e reindexa a busca.
+  Future<bool> unlockNote(String id) async {
+    final auth = _auth;
+    if (auth != null && !await auth.authenticate('Desbloquear esta nota')) {
+      return false;
+    }
+    await _notes.setLocked(id, locked: false);
+    return true;
+  }
 
   StreamSubscription<List<FolderRow>>? _folders;
   StreamSubscription<List<CollectionRow>>? _collections;

@@ -50,6 +50,8 @@ class RootView extends StatelessWidget {
                   library: di(),
                   queue: di(),
                   enrichment: di(),
+                  auth: di(),
+                  noteKeyStore: di(),
                 ),
               ),
               BlocProvider(
