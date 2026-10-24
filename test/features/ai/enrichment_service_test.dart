@@ -211,6 +211,28 @@ void main() {
     },
   );
 
+  // M9: a nota bloqueada não revela o título na notificação "Nota pronta".
+  test('nota bloqueada: "Nota pronta" usa texto genérico', () async {
+    await seedNoteWithSegment('nl');
+    await notes.setLocked('nl', locked: true);
+    String? readyTitle;
+    var readyCalls = 0;
+    final service = EnrichmentService(
+      ai: _StubAiClient(_good),
+      notes: notes,
+      noteAi: noteAi,
+      vocabulary: VocabularyRepository(db),
+      settings: settings,
+      onNoteReady: ({required noteId, required title, required failed}) {
+        readyCalls++;
+        readyTitle = title;
+      },
+    );
+    await service.enrichNote('nl', force: true);
+    expect(readyCalls, 1);
+    expect(readyTitle, '', reason: 'título vazio -> notificação genérica');
+  });
+
   test('boot NÃO troca um título renomeado pelo usuário', () async {
     await seedNote(db, id: 'n10', title: 'Meu título');
     await notes.replaceSegments('n10', const [

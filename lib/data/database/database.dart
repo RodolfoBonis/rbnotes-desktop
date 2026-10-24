@@ -291,11 +291,19 @@ END''',
 CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
   DELETE FROM notes_fts WHERE rowid = old.rowid;
 END''',
-  '''
-CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE OF title ON notes BEGIN
-  UPDATE notes_fts SET title = new.title WHERE rowid = new.rowid;
-END''',
+  _notesAuTrigger,
 ];
+
+/// Trigger de UPDATE do título no FTS. Uma nota bloqueada mantém o título fora
+/// do índice (`''`), como o bloqueio já faz em `removeFromSearchIndex` — assim
+/// um `updateTitle` (ex.: título gerado pela IA) não reexpõe a nota bloqueada
+/// na busca (M11).
+const _notesAuTrigger = '''
+CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE OF title ON notes BEGIN
+  UPDATE notes_fts
+  SET title = CASE WHEN new.locked = 1 THEN '' ELSE new.title END
+  WHERE rowid = new.rowid;
+END''';
 
 const _legacyFtsTriggers = <String>[
   'notes_ai',
@@ -374,7 +382,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -405,6 +413,12 @@ class AppDatabase extends _$AppDatabase {
       await _repairSchema(m);
       if (from < 3) {
         await _seedV3();
+      }
+      if (from < 7) {
+        // v7: recria o trigger `notes_au` para não reindexar o título de uma
+        // nota bloqueada (M11).
+        await customStatement('DROP TRIGGER IF EXISTS notes_au');
+        await customStatement(_notesAuTrigger);
       }
     },
   );

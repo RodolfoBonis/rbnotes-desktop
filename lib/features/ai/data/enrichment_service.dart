@@ -147,9 +147,12 @@ class EnrichmentService {
         await _notes.updateTitle(noteId, ai.title.trim(), autoTitle: true);
       }
       await _notes.setAiStatus(noteId, AiStatus.ready);
-      final finalTitle = ai.title.trim().isNotEmpty
-          ? ai.title.trim()
-          : note.title;
+      // Nota bloqueada: a notificação "Nota pronta" nunca revela o título
+      // (M9). O título vazio faz o scheduler usar o texto genérico. O FTS
+      // também não é reexposto — o trigger `notes_au` grava '' para bloqueadas.
+      final finalTitle = note.locked
+          ? ''
+          : (ai.title.trim().isNotEmpty ? ai.title.trim() : note.title);
       _onNoteReady?.call(noteId: noteId, title: finalTitle, failed: false);
     } on Object catch (e, st) {
       await AppLogger.error(e, st, reason: 'enrich', category: 'ai');
