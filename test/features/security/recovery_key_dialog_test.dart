@@ -157,7 +157,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(await store.load(), otherKey);
   });
-
 }
 
 void _unitTests() {
