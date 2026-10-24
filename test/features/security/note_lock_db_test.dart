@@ -58,7 +58,7 @@ void main() {
           .customSelect(
             'SELECT title, body FROM notes_fts WHERE rowid = '
             '(SELECT rowid FROM notes WHERE id = ?1)',
-            variables: [Variable<String>('n1')],
+            variables: [const Variable<String>('n1')],
           )
           .getSingle();
       expect(fts.read<String>('title'), '');
