@@ -272,7 +272,11 @@ class TranscriptionQueue {
 
       if (note.title.trim().isEmpty) {
         final title = titleFromSegments(merged);
-        if (title.isNotEmpty) await _repository.updateTitle(noteId, title);
+        // Título provisório (primeiras palavras): marcado como automático
+        // para o título gerado pelo Claude poder substituí-lo depois.
+        if (title.isNotEmpty) {
+          await _repository.updateTitle(noteId, title, autoTitle: true);
+        }
       }
       await _repository.setStatus(noteId, NoteStatus.ready);
       _controller.add(

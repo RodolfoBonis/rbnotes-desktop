@@ -178,4 +178,47 @@ void main() {
     expect((await notes.getNote('n5'))!.aiStatus, AiStatus.ready);
     expect((await noteAi.getNoteAi('n5'))!.title, 'Bom titulo');
   });
+
+  test(
+    'boot adota o título do Claude quando o título é o provisório',
+    () async {
+      // Estado de versões antigas: título provisório (primeiras palavras),
+      // autoTitle=false, resumo pronto com título próprio.
+      await seedNote(db, id: 'n9', title: 'Oi');
+      await notes.replaceSegments('n9', const [
+        DraftSegment(
+          speaker: SegmentSpeaker.me,
+          startMs: 0,
+          endMs: 1000,
+          content: 'oi',
+        ),
+      ]);
+      await notes.setAiStatus('n9', AiStatus.ready);
+      await noteAi.saveNoteAi('n9', _good);
+
+      await make(_good).requeuePending();
+
+      final note = await notes.getNote('n9');
+      expect(note!.title, 'Bom titulo');
+      expect(note.autoTitle, isTrue);
+    },
+  );
+
+  test('boot NÃO troca um título renomeado pelo usuário', () async {
+    await seedNote(db, id: 'n10', title: 'Meu título');
+    await notes.replaceSegments('n10', const [
+      DraftSegment(
+        speaker: SegmentSpeaker.me,
+        startMs: 0,
+        endMs: 1000,
+        content: 'oi',
+      ),
+    ]);
+    await notes.setAiStatus('n10', AiStatus.ready);
+    await noteAi.saveNoteAi('n10', _good);
+
+    await make(_good).requeuePending();
+
+    expect((await notes.getNote('n10'))!.title, 'Meu título');
+  });
 }

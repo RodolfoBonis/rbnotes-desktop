@@ -7,9 +7,11 @@ import 'package:rbnotes/features/ai/domain/note_ai.dart';
 import 'package:rbnotes/features/ai/domain/privacy_masker.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
+import 'package:rbnotes/features/notes/domain/note_models.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
+import 'package:rbnotes/features/transcription/domain/transcription_logic.dart';
 import 'package:uuid/uuid.dart';
 
 /// Após a transcrição, chama a IA (`enrich`) e salva resumo/insights/título/
@@ -154,6 +156,7 @@ class EnrichmentService {
   Future<void> requeuePending() async {
     try {
       await _repairEmptyReady();
+      await _adoptAiTitles();
       final pending = await _notes.notesWithAiStatus(AiStatus.pending);
       for (final note in pending) {
         unawaited(enrichNote(note.id, force: true));
@@ -183,6 +186,33 @@ class EnrichmentService {
       if (ai != null && _hasContent(ai)) continue;
       await _noteAi.deleteLocal(note.id);
       await _notes.setAiStatus(note.id, AiStatus.pending);
+    }
+  }
+
+  /// Notas cujo título ainda é o provisório (primeiras palavras da
+  /// transcrição, gravado sem a marca de automático por versões antigas)
+  /// adotam o título do Claude. Um título renomeado pelo usuário nunca casa
+  /// com o provisório, então nunca é sobrescrito.
+  Future<void> _adoptAiTitles() async {
+    final ready = await _notes.notesWithAiStatus(AiStatus.ready);
+    for (final note in ready) {
+      if (note.autoTitle) continue;
+      final ai = await _noteAi.getNoteAi(note.id);
+      final aiTitle = ai?.title.trim() ?? '';
+      if (aiTitle.isEmpty || aiTitle == note.title.trim()) continue;
+      final segments = await _notes.getSegments(note.id);
+      final provisional = titleFromSegments([
+        for (final s in segments)
+          DraftSegment(
+            speaker: s.speaker,
+            startMs: s.startMs,
+            endMs: s.endMs,
+            content: s.content,
+          ),
+      ]);
+      if (provisional.isNotEmpty && provisional == note.title.trim()) {
+        await _notes.updateTitle(note.id, aiTitle, autoTitle: true);
+      }
     }
   }
 
