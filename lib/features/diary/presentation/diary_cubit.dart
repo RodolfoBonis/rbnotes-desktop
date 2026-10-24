@@ -9,11 +9,9 @@ import 'package:rbnotes/features/diary/data/diary_repository.dart';
 import 'package:rbnotes/features/diary/domain/diary_calendar.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
-import 'package:rbnotes/features/settings/data/settings_store.dart';
 
 class DiaryState extends Equatable {
   const DiaryState({
-    this.locked = false,
     this.promptIndex = 0,
     this.prompts = const [],
     this.calendar = const DiaryCalendar(cells: [], streak: 0),
@@ -21,9 +19,9 @@ class DiaryState extends Equatable {
     this.themes = const [],
     this.entriesCount = 0,
     this.loading = true,
+    this.monthLoaded = false,
   });
 
-  final bool locked;
   final int promptIndex;
   final List<DiaryPromptRow> prompts;
   final DiaryCalendar calendar;
@@ -32,11 +30,14 @@ class DiaryState extends Equatable {
   final int entriesCount;
   final bool loading;
 
+  /// O resumo do mês já foi carregado (só roda após o app estar desbloqueado,
+  /// para o diaryMonth nunca sair com o app travado).
+  final bool monthLoaded;
+
   String get prompt =>
       prompts.isEmpty ? '' : prompts[promptIndex % prompts.length].question;
 
   DiaryState copyWith({
-    bool? locked,
     int? promptIndex,
     List<DiaryPromptRow>? prompts,
     DiaryCalendar? calendar,
@@ -44,8 +45,8 @@ class DiaryState extends Equatable {
     List<DiaryTheme>? themes,
     int? entriesCount,
     bool? loading,
+    bool? monthLoaded,
   }) => DiaryState(
-    locked: locked ?? this.locked,
     promptIndex: promptIndex ?? this.promptIndex,
     prompts: prompts ?? this.prompts,
     calendar: calendar ?? this.calendar,
@@ -53,11 +54,11 @@ class DiaryState extends Equatable {
     themes: themes ?? this.themes,
     entriesCount: entriesCount ?? this.entriesCount,
     loading: loading ?? this.loading,
+    monthLoaded: monthLoaded ?? this.monthLoaded,
   );
 
   @override
   List<Object?> get props => [
-    locked,
     promptIndex,
     prompts,
     calendar,
@@ -65,6 +66,7 @@ class DiaryState extends Equatable {
     themes,
     entriesCount,
     loading,
+    monthLoaded,
   ];
 }
 
@@ -76,22 +78,16 @@ class DiaryCubit extends Cubit<DiaryState> {
     required NoteRepository notes,
     required NoteAiRepository noteAi,
     required AiClient ai,
-    required SettingsStore settings,
-    Future<bool> Function()? authenticate,
   }) : _diary = diary,
        _notes = notes,
        _noteAi = noteAi,
        _ai = ai,
-       _settings = settings,
-       _authenticate = authenticate,
        super(const DiaryState());
 
   final DiaryRepository _diary;
   final NoteRepository _notes;
   final NoteAiRepository _noteAi;
   final AiClient _ai;
-  final SettingsStore _settings;
-  final Future<bool> Function()? _authenticate;
 
   Future<void> load() async {
     final now = DateTime.now();
@@ -104,14 +100,20 @@ class DiaryCubit extends Cubit<DiaryState> {
     );
     emit(
       state.copyWith(
-        locked: _settings.touchIdLock,
         prompts: prompts,
         calendar: calendar,
         entriesCount: days.length,
         loading: false,
       ),
     );
-    await _loadMonth(now);
+  }
+
+  /// Carrega o resumo do mês (diaryMonth). Só deve ser chamado com o app
+  /// desbloqueado; é idempotente (não repete se já carregou).
+  Future<void> loadMonth() async {
+    if (state.monthLoaded) return;
+    emit(state.copyWith(monthLoaded: true));
+    await _loadMonth(DateTime.now());
   }
 
   Future<void> _loadMonth(DateTime now) async {
@@ -135,13 +137,4 @@ class DiaryCubit extends Cubit<DiaryState> {
   }
 
   void nextPrompt() => emit(state.copyWith(promptIndex: state.promptIndex + 1));
-
-  Future<void> unlock() async {
-    try {
-      final ok = await (_authenticate?.call() ?? Future.value(true));
-      if (ok) emit(state.copyWith(locked: false));
-    } on Object catch (e, st) {
-      await AppLogger.error(e, st, reason: 'touch_id', category: 'diary');
-    }
-  }
 }

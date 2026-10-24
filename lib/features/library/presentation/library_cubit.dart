@@ -139,11 +139,17 @@ class LibraryState extends Equatable {
       case SectionKind.all:
         return nonDiary.toList();
       case SectionKind.fav:
-        return notes.where((n) => n.favorite).toList();
+        // Diário não vaza para Favoritas (fica só na seção Diário, atrás da
+        // trava do app).
+        return notes
+            .where((n) => n.favorite && n.kind != NoteKind.diary)
+            .toList();
       case SectionKind.diary:
         return notes.where((n) => n.kind == NoteKind.diary).toList();
       case SectionKind.folder:
-        return notes.where((n) => n.folderId == section.id).toList();
+        return notes
+            .where((n) => n.folderId == section.id && n.kind != NoteKind.diary)
+            .toList();
       case SectionKind.collection:
         return _collectionNotes(now);
     }
@@ -229,7 +235,8 @@ class LibraryState extends Equatable {
       notes.where((n) => n.folderId == folderId).length;
 
   int get allCount => notes.where((n) => n.kind != NoteKind.diary).length;
-  int get favCount => notes.where((n) => n.favorite).length;
+  int get favCount =>
+      notes.where((n) => n.favorite && n.kind != NoteKind.diary).length;
   int get diaryCount => notes.where((n) => n.kind == NoteKind.diary).length;
 }
 

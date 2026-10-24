@@ -10,7 +10,6 @@ import 'package:rbnotes/features/library/presentation/library_cubit.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/presentation/note_view_cubit.dart';
-import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/native/fake_rb_native.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -25,7 +24,6 @@ void main() {
   late DiaryRepository diary;
   late FakeRbNative native;
   late FakeAiClient ai;
-  late SettingsStore settings;
 
   Future<void> settle() =>
       Future<void>.delayed(const Duration(milliseconds: 50));
@@ -39,7 +37,6 @@ void main() {
     diary = DiaryRepository(db);
     native = FakeRbNative();
     ai = FakeAiClient(stepDelay: Duration.zero, thinkDelay: Duration.zero);
-    settings = SettingsStore(await SharedPreferences.getInstance());
     await DemoSeeder(
       notes: notes,
       noteAi: noteAi,
@@ -166,12 +163,14 @@ void main() {
         notes: notes,
         noteAi: noteAi,
         ai: ai,
-        settings: settings,
       );
       await cubit.load();
       await settle();
       expect(cubit.state.prompts, isNotEmpty);
       expect(cubit.state.calendar.cells, isNotEmpty);
+      // O resumo do mês só carrega após o app desbloqueado.
+      await cubit.loadMonth();
+      await settle();
       expect(cubit.state.monthSummary, isNotEmpty);
       final before = cubit.state.prompt;
       cubit.nextPrompt();

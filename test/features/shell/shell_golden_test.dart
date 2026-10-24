@@ -161,7 +161,6 @@ void main() {
           notes: di(),
           noteAi: di(),
           ai: di(),
-          settings: di(),
         ),
       ),
     ],

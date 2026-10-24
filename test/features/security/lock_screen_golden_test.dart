@@ -24,10 +24,10 @@ Future<Widget> _app({required bool dark}) async {
         settings: settings,
       ),
       child: Builder(
-        builder: (context) => Stack(
+        builder: (context) => const Stack(
           children: [
-            const Scaffold(body: Center(child: Text('conteúdo secreto'))),
-            const LockScreen(),
+            Scaffold(body: Center(child: Text('conteúdo secreto'))),
+            LockScreen(),
           ],
         ),
       ),

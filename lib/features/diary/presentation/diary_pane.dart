@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
@@ -5,6 +7,7 @@ import 'package:rbnotes/app/shell/detail_toolbar.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/features/diary/domain/diary_calendar.dart';
 import 'package:rbnotes/features/diary/presentation/diary_cubit.dart';
+import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
 
 /// Painel do Diário: pergunta do dia, gravar resposta, calendário com sequência
 /// e "seu mês até agora". Protegido por Touch ID.
@@ -34,7 +37,14 @@ class DiaryPane extends StatelessWidget {
           Expanded(
             child: BlocBuilder<DiaryCubit, DiaryState>(
               builder: (context, state) {
-                if (state.locked) return _LockScreen();
+                // O diário é coberto pela trava do app; o resumo do mês só é
+                // gerado (diaryMonth) depois que o app está desbloqueado.
+                final appLocked = context.watch<AppLockCubit>().state.locked;
+                if (!appLocked && !state.monthLoaded) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    unawaited(context.read<DiaryCubit>().loadMonth());
+                  });
+                }
                 return SingleChildScrollView(
                   child: Align(
                     alignment: Alignment.topCenter,
@@ -48,50 +58,6 @@ class DiaryPane extends StatelessWidget {
                   ),
                 );
               },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LockScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final rb = context.rb;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.lock_outline, size: 40, color: rb.secondary(0.5)),
-          const SizedBox(height: 16),
-          Text('Diário protegido', style: context.serif(size: 22)),
-          const SizedBox(height: 6),
-          Text(
-            'Desbloqueie com Touch ID para ver suas entradas.',
-            style: context.bodyText(size: 13, color: rb.secondary(0.65)),
-          ),
-          const SizedBox(height: 20),
-          GestureDetector(
-            onTap: context.read<DiaryCubit>().unlock,
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              height: 34,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: rb.accent,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'Desbloquear com Touch ID',
-                style: context.bodyText(
-                  size: 13,
-                  weight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
             ),
           ),
         ],

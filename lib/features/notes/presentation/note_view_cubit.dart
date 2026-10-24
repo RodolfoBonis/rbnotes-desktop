@@ -16,6 +16,7 @@ import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/domain/note_summary_status.dart';
 import 'package:rbnotes/features/notes/presentation/audio_player_controller.dart';
+import 'package:rbnotes/features/security/data/biometric_auth.dart';
 import 'package:rbnotes/features/sync/data/audio_sync.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:rbnotes/native/rb_native.dart';
@@ -42,6 +43,7 @@ class NoteViewState extends Equatable {
     this.streamingCites = const [],
     this.audioDownloadProgress,
     this.aiPhase = AiPhase.idle,
+    this.unlockedForLocked = false,
   });
 
   final NoteRow? note;
@@ -69,7 +71,14 @@ class NoteViewState extends Equatable {
   /// Alimenta o detalhe do estado "Resumo em preparação…".
   final AiPhase aiPhase;
 
+  /// Sessão de desbloqueio da nota bloqueada atual (dura até trocar de nota,
+  /// o app travar ou 5 min).
+  final bool unlockedForLocked;
+
   int get durationMs => note?.durationMs ?? 0;
+
+  /// A nota está bloqueada e ainda não foi desbloqueada nesta sessão.
+  bool get needsUnlock => (note?.locked ?? false) && !unlockedForLocked;
 
   NoteViewState copyWith({
     NoteRow? note,
@@ -91,6 +100,7 @@ class NoteViewState extends Equatable {
     double? audioDownloadProgress,
     bool clearAudioDownload = false,
     AiPhase? aiPhase,
+    bool? unlockedForLocked,
   }) => NoteViewState(
     note: note ?? this.note,
     ai: clearAi ? null : (ai ?? this.ai),
@@ -112,6 +122,7 @@ class NoteViewState extends Equatable {
         ? null
         : (audioDownloadProgress ?? this.audioDownloadProgress),
     aiPhase: aiPhase ?? this.aiPhase,
+    unlockedForLocked: unlockedForLocked ?? this.unlockedForLocked,
   );
 
   @override
@@ -132,6 +143,7 @@ class NoteViewState extends Equatable {
     streamingCites,
     audioDownloadProgress,
     aiPhase,
+    unlockedForLocked,
   ];
 
   /// Estado honesto do Resumo (bug 6), derivado dos fatos da nota + IA.
@@ -160,6 +172,7 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     TranscriptionQueue? queue,
     EnrichmentService? enrichment,
     AiActivity? aiActivity,
+    BiometricAuth? auth,
     Uuid? uuid,
   }) : _notes = notes,
        _noteAi = noteAi,
@@ -171,6 +184,7 @@ class NoteViewCubit extends Cubit<NoteViewState> {
        _queue = queue,
        _enrichment = enrichment,
        _aiActivity = aiActivity,
+       _auth = auth,
        _uuid = uuid ?? const Uuid(),
        super(const NoteViewState()) {
     _posSub = _player.positionStream.listen(
@@ -197,6 +211,7 @@ class NoteViewCubit extends Cubit<NoteViewState> {
   final TranscriptionQueue? _queue;
   final EnrichmentService? _enrichment;
   final AiActivity? _aiActivity;
+  final BiometricAuth? _auth;
   final Uuid _uuid;
 
   String? _noteId;
@@ -209,6 +224,7 @@ class NoteViewCubit extends Cubit<NoteViewState> {
   StreamSubscription<bool>? _playSub;
   StreamSubscription<AiDelta>? _streamSub;
   StreamSubscription<AiPhase>? _aiPhaseSub;
+  Timer? _unlockTimer;
 
   final _notices = StreamController<String>.broadcast();
   Stream<String> get notices => _notices.stream;
@@ -570,7 +586,23 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     await _notes.updateTitle(noteId, clean);
   }
 
+  /// Pede Touch ID para abrir a nota bloqueada e mantém a sessão por 5 min.
+  Future<bool> unlockNote() async {
+    if (!(state.note?.locked ?? false)) return true;
+    final auth = _auth;
+    if (auth != null && !await auth.authenticate('Abrir nota bloqueada')) {
+      return false;
+    }
+    _unlockTimer?.cancel();
+    _unlockTimer = Timer(const Duration(minutes: 5), () {
+      if (!isClosed) emit(state.copyWith(unlockedForLocked: false));
+    });
+    emit(state.copyWith(unlockedForLocked: true));
+    return true;
+  }
+
   Future<void> _cancelSubs() async {
+    _unlockTimer?.cancel();
     await _noteSub?.cancel();
     await _segSub?.cancel();
     await _aiSub?.cancel();
@@ -581,6 +613,7 @@ class NoteViewCubit extends Cubit<NoteViewState> {
 
   @override
   Future<void> close() async {
+    _unlockTimer?.cancel();
     await _cancelSubs();
     await _posSub?.cancel();
     await _playSub?.cancel();

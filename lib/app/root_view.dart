@@ -68,6 +68,7 @@ class RootView extends StatelessWidget {
                   queue: di(),
                   enrichment: di(),
                   aiActivity: di(),
+                  auth: di(),
                 ),
               ),
               BlocProvider(
@@ -80,8 +81,6 @@ class RootView extends StatelessWidget {
                   notes: di(),
                   noteAi: di(),
                   ai: di(),
-                  settings: di(),
-                  authenticate: di<NotificationService>().authenticateBiometric,
                 ),
               ),
             ],

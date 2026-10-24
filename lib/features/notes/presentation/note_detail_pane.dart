@@ -70,6 +70,9 @@ class NoteDetailPane extends StatelessWidget {
                 if (state.note == null) {
                   return const SizedBox.shrink();
                 }
+                if (state.needsUnlock) {
+                  return const _LockedNotePlaceholder();
+                }
                 return SingleChildScrollView(
                   child: Center(
                     child: ConstrainedBox(
@@ -1665,4 +1668,67 @@ Future<void> _saveBytes(String suggestedName, List<int> bytes) async {
 String _safeFileName(String title) {
   final cleaned = title.replaceAll(RegExp('[^a-zA-Z0-9À-ÿ _-]'), '').trim();
   return cleaned.isEmpty ? 'nota' : cleaned;
+}
+
+/// Mostrado no lugar do conteúdo quando a nota está bloqueada e a sessão de
+/// desbloqueio ainda não foi aberta (pede Touch ID).
+class _LockedNotePlaceholder extends StatelessWidget {
+  const _LockedNotePlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    final rb = context.rb;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: rb.accentWash(0.14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.lock_outline, size: 28, color: rb.accent),
+          ),
+          const SizedBox(height: 16),
+          Text('Nota bloqueada', style: context.serif(size: 22)),
+          const SizedBox(height: 6),
+          Text(
+            'Esta nota está protegida por Touch ID.',
+            style: context.bodyText(size: 13, color: rb.secondary(0.65)),
+          ),
+          const SizedBox(height: 20),
+          GestureDetector(
+            onTap: () => unawaited(context.read<NoteViewCubit>().unlockNote()),
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              height: 38,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: rb.accent,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.fingerprint, size: 17, color: rb.onAccent),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Abrir com Touch ID',
+                    style: context.bodyText(
+                      size: 13,
+                      weight: FontWeight.w600,
+                      color: rb.onAccent,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
