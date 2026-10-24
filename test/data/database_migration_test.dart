@@ -222,8 +222,7 @@ void main() {
           startMs: 0,
           endMs: 1500,
           content: 'primeiro segmento apos a migracao',
-          wordsJson:
-            '[{"text":"primeiro","startMs":0,"endMs":300,"prob":0.9}]',
+          wordsJson: '[{"text":"primeiro","startMs":0,"endMs":300,"prob":0.9}]',
         ),
       ]);
 

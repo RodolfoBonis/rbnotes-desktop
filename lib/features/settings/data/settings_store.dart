@@ -117,8 +117,7 @@ class SettingsStore {
     modifiers: {HotkeyModifier.option, HotkeyModifier.shift},
   );
 
-  bool get recordHotkeyEnabled =>
-      _prefs.getBool(_kRecordHotkeyEnabled) ?? true;
+  bool get recordHotkeyEnabled => _prefs.getBool(_kRecordHotkeyEnabled) ?? true;
 
   Future<void> setRecordHotkeyEnabled({required bool value}) =>
       _prefs.setBool(_kRecordHotkeyEnabled, value);

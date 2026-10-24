@@ -76,28 +76,32 @@ void main() {
     await cubit.close();
   });
 
-  test('toggleRecordNote respeita captureSystemAudio das configurações',
-      () async {
-    await settings.setCaptureSystemAudio(value: true);
-    final cubit = build();
-    await cubit.toggleRecordNote();
-    expect(cubit.state.captureSystemAudio, isTrue);
-    expect(native.registeredGlobalHotkeys, isEmpty); // não registra aqui
-    await cubit.close();
-  });
+  test(
+    'toggleRecordNote respeita captureSystemAudio das configurações',
+    () async {
+      await settings.setCaptureSystemAudio(value: true);
+      final cubit = build();
+      await cubit.toggleRecordNote();
+      expect(cubit.state.captureSystemAudio, isTrue);
+      expect(native.registeredGlobalHotkeys, isEmpty); // não registra aqui
+      await cubit.close();
+    },
+  );
 
-  test('toggleRecordNote conclui (stop → processamento) quando gravando',
-      () async {
-    final cubit = build();
-    await cubit.toggleRecordNote();
-    expect(cubit.state.status, RecordingStatus.recording);
-    final created = cubit.createdNotes.first;
-    await cubit.toggleRecordNote();
-    expect(cubit.state.status, RecordingStatus.processing);
-    await created; // pipeline conclui e volta a ocioso
-    expect(cubit.state.status, RecordingStatus.idle);
-    await cubit.close();
-  });
+  test(
+    'toggleRecordNote conclui (stop → processamento) quando gravando',
+    () async {
+      final cubit = build();
+      await cubit.toggleRecordNote();
+      expect(cubit.state.status, RecordingStatus.recording);
+      final created = cubit.createdNotes.first;
+      await cubit.toggleRecordNote();
+      expect(cubit.state.status, RecordingStatus.processing);
+      await created; // pipeline conclui e volta a ocioso
+      expect(cubit.state.status, RecordingStatus.idle);
+      await cubit.close();
+    },
+  );
 
   test('start cria a nota em status recording', () async {
     final cubit = build();
@@ -159,21 +163,23 @@ void main() {
     await cubit.close();
   });
 
-  test('falha de transcricao mostra erro no HUD e nao encerra (bug/pedido 7)',
-      () async {
-    native.modelDownloaded = false; // transcribe lanca model_missing
-    final cubit = build();
-    await cubit.start();
-    await cubit.stop();
-    await cubit.stream.firstWhere((s) => s.processingFailed);
-    expect(cubit.state.failedStep, 0);
-    expect(cubit.state.hudVisible, isTrue);
-    expect(cubit.state.isProcessing, isTrue);
+  test(
+    'falha de transcricao mostra erro no HUD e nao encerra (bug/pedido 7)',
+    () async {
+      native.modelDownloaded = false; // transcribe lanca model_missing
+      final cubit = build();
+      await cubit.start();
+      await cubit.stop();
+      await cubit.stream.firstWhere((s) => s.processingFailed);
+      expect(cubit.state.failedStep, 0);
+      expect(cubit.state.hudVisible, isTrue);
+      expect(cubit.state.isProcessing, isTrue);
 
-    cubit.closeHud(); // "Fechar" encerra o HUD
-    expect(cubit.state.isActive, isFalse);
-    await cubit.close();
-  });
+      cubit.closeHud(); // "Fechar" encerra o HUD
+      expect(cubit.state.isActive, isFalse);
+      await cubit.close();
+    },
+  );
 
   test('gravacao background mostra o overlay do notch (pedido 11)', () async {
     final cubit = build();

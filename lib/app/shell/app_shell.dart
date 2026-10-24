@@ -84,8 +84,9 @@ class _AppShellState extends State<AppShell> {
     // Atalho global "Gravar nota": liga o disparo ao RecordingCubit (o serviço
     // já registrou o atalho no boot). A janela em foco → HUD interno; sem foco
     // → overlay do notch (decidido dentro de RecordingCubit.start).
-    di<RecordNoteHotkeyService>().onTriggered =
-        context.read<RecordingCubit>().toggleRecordNote;
+    di<RecordNoteHotkeyService>().onTriggered = context
+        .read<RecordingCubit>()
+        .toggleRecordNote;
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _runRecovery());
   }

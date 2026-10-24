@@ -131,6 +131,5 @@ class _FailingSync implements SyncClient {
       throw Exception('offline');
 
   @override
-  Future<PullResult> pull({String? since}) async =>
-      throw Exception('offline');
+  Future<PullResult> pull({String? since}) async => throw Exception('offline');
 }

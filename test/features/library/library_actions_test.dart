@@ -45,8 +45,9 @@ void main() {
   test('deleteNote faz soft-delete (some da UI + tombstone)', () async {
     await seed('a');
     await cubit.deleteNote('a');
-    final raw = await (db.select(db.notes)..where((n) => n.id.equals('a')))
-        .getSingleOrNull();
+    final raw = await (db.select(
+      db.notes,
+    )..where((n) => n.id.equals('a'))).getSingleOrNull();
     expect(raw, isNotNull);
     expect(raw!.deleted, isTrue);
     expect(await notes.getAllNotes(), isEmpty); // some da lista

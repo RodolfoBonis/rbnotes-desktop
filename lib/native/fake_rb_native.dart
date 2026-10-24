@@ -407,8 +407,7 @@ class FakeRbNative implements RbNative {
   Stream<OverlayAction> overlayActions() => _overlayActions.stream;
 
   /// Emite uma ação do overlay (uso em dev/testes).
-  void emitOverlayAction(OverlayAction action) =>
-      _overlayActions.add(action);
+  void emitOverlayAction(OverlayAction action) => _overlayActions.add(action);
 
   Future<void> dispose() async {
     await _dictation.close();

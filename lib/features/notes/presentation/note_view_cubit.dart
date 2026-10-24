@@ -554,9 +554,9 @@ class NoteViewCubit extends Cubit<NoteViewState> {
       );
       await _noteAi.saveNoteAi(noteId, updated);
     }
-    final speakers = EnrichmentSpeakers.of(state.note?.speakersJson)
-        .map((s) => s == oldName ? clean : s)
-        .toList();
+    final speakers = EnrichmentSpeakers.of(
+      state.note?.speakersJson,
+    ).map((s) => s == oldName ? clean : s).toList();
     await _notes.setSpeakers(noteId, speakers.join('\u001f'));
   }
 
