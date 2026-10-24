@@ -3,6 +3,44 @@
 Registro de alterações em `docs/native-contract.md` (o quê e por quê). O outro
 engenheiro lê este arquivo.
 
+## 2026-10-23 — Atalhos globais genéricos (`registerGlobalHotkey`)
+
+Estas **mudam a API pública** (aditivas; nada existente foi renomeado). Motivação:
+o atalho global "Gravar nota" — toca em qualquer app, modo toggle (⌥⇧Espaço por
+padrão), inicia/para uma gravação com o overlay do notch. Generaliza o registro
+de hotkeys que antes só existia para o ditado.
+
+- **3 métodos novos na `RbNative`:**
+  - `registerGlobalHotkey({required String id, required Hotkey hotkey})` — wire
+    `registerGlobalHotkey {id, hotkey}`. Carbon `RegisterEventHotKey` (toggle),
+    **sem Accessibility** e a tecla é consumida pelo sistema. Registrar o mesmo
+    `id` de novo re-vincula.
+  - `unregisterGlobalHotkey(String id)` — wire `unregisterGlobalHotkey {id}`.
+    No-op se o `id` não existe.
+  - `globalHotkeyPressed()` → `Stream<String>` no EventChannel **único e
+    permanente** `rbnotes_native/global_hotkeys`. Emite o `id` do atalho
+    pressionado; o app filtra pelo id que lhe interessa.
+
+- **Novo EventChannel:** `rbnotes_native/global_hotkeys` (wire: `String` = id).
+
+- **`hotkey_conflict` ganhou um novo uso:** além do ditado, `registerGlobalHotkey`
+  lança `hotkey_conflict` quando o combo colide com o atalho do ditado ou com um
+  atalho global já registrado em outro `id`. Conflito = mesmo keyCode + mesmos
+  modificadores Carbon (command/option/control/shift; `function` é ignorado, pois
+  o Carbon não o expressa).
+
+Detalhes de implementação (não afetam assinaturas):
+
+- Cada `id` mapeia um `EventHotKeyID` Carbon distinto (assinatura `RBGH`). O
+  handler roteia por id e devolve `eventNotHandledErr` para o que não é seu, de
+  modo que **convive** com o atalho de ditado em modo toggle.
+- O handler do ditado (assinatura `RBNT`, id 1) passou a **checar o próprio
+  `EventHotKeyID`** antes de disparar o toggle — antes assumia ser o único
+  hotkey registrado; com os atalhos globais isso deixou de valer.
+- A detecção de conflito é lógica pura (`HotkeyCombo` em `RbNativeCore`, testada
+  em `HotkeyComboTests`).
+- Tudo é desregistrado no `deinit` do plugin.
+
 ## 2026-10-23 — Overlay de atividade que sai do notch (HUD Dynamic Island)
 
 Estas **mudam a API pública** (aditivas; nada existente foi renomeado). O app

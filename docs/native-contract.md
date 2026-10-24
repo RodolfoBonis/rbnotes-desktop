@@ -86,6 +86,17 @@ abstract interface class RbNative {
   /// é o app que chama este método.
   Future<void> playDictationSound(DictationSound s); // start | end
 
+  // ---------- Atalhos globais ----------
+  /// Registra um atalho global (toggle) identificado por [id]. Usa Carbon
+  /// `RegisterEventHotKey` (sem Accessibility; a tecla é consumida pelo sistema).
+  /// Registrar o mesmo [id] de novo re-vincula o atalho. Conflito com o atalho
+  /// do ditado ou com um atalho já registrado em outro [id] → `hotkey_conflict`.
+  Future<void> registerGlobalHotkey({required String id, required Hotkey hotkey});
+  Future<void> unregisterGlobalHotkey(String id); // no-op se [id] não existe
+  /// Emite o [id] a cada pressionar. Stream único e permanente (broadcast),
+  /// como diagnostics(); o app filtra pelo id que interessa.
+  Stream<String> globalHotkeyPressed();
+
   // ---------- Overlay de atividade (HUD do notch) ----------
   /// Mostra a pílula que sai do notch (ou desce do menu bar sem notch). Não rouba
   /// o foco do app em uso (o ditado continua colando no app em foco), flutua
@@ -161,7 +172,8 @@ Não são erros fatais; não interrompem a gravação/ditado por si só. O app d
 `audio_config_changed` (também emitido quando o dispositivo de entrada escolhido não pôde ser selecionado e caiu no default), `audio_engine_restart_failed`, `system_audio_stopped`, `write_failed`, `tap_disabled`, `dictation_watchdog`, `dictation_key_stuck`.
 
 ## Regras
-- Canais via `MethodChannel('rbnotes_native')` + `EventChannel`s nomeados: `rbnotes_native/levels`, `rbnotes_native/dictation`, `rbnotes_native/diagnostics`, `rbnotes_native/model_download`, `rbnotes_native/transcription_progress`, `rbnotes_native/live_transcript`, `rbnotes_native/overlay_actions`.
+- Canais via `MethodChannel('rbnotes_native')` + `EventChannel`s nomeados: `rbnotes_native/levels`, `rbnotes_native/dictation`, `rbnotes_native/diagnostics`, `rbnotes_native/model_download`, `rbnotes_native/transcription_progress`, `rbnotes_native/live_transcript`, `rbnotes_native/overlay_actions`,
+  `rbnotes_native/global_hotkeys`.
 - `transcription_progress` é um **stream único e permanente** que emite `{wavPath, progress}`; o Dart filtra por `wavPath` dentro de `transcribe`.
 - `live_transcript` é um **stream único e permanente** que emite `{recordingId, text, isFinal}`; o Dart filtra por `recordingId` dentro de `liveTranscript`.
 - `diagnostics` é um **stream único e permanente** que emite `NativeDiagnostic`.
@@ -182,3 +194,13 @@ Não são erros fatais; não interrompem a gravação/ditado por si só. O app d
   menu bar. Respeita "Reduzir movimento" (fade em vez de spring). O painel é um
   `NSPanel` não-ativador (não rouba foco; o ditado cola no app em foco) acima de
   apps em tela cheia, em qualquer Space.
+- **Atalhos globais.** `global_hotkeys` é um stream **único e permanente** que
+  emite uma `String` com o `id` do atalho pressionado. Cada `id` vira um
+  `EventHotKeyID` Carbon distinto (assinatura `RBGH`); o handler roteia por id e
+  deixa passar (`eventNotHandledErr`) o que não for seu, então convive com o
+  atalho do ditado (assinatura `RBNT`, que agora também checa o próprio id).
+  Conflito = mesmo keyCode + mesmos modificadores Carbon
+  (command/option/control/shift; `function` é ignorado) do atalho do ditado ou
+  de outro `id` já registrado → `hotkey_conflict`. Wire:
+  `registerGlobalHotkey {id, hotkey}`, `unregisterGlobalHotkey {id}`. Tudo é
+  desregistrado no `deinit` do plugin.
