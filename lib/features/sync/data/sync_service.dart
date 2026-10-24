@@ -270,6 +270,11 @@ class SyncService {
     await _prefs.setInt(_kPending, pending);
   }
 
+  /// Empurra as mudanças locais pendentes (ex.: tombstones de "Apagar todos os
+  /// dados") sem passar pelo pull nem pelo toggle "Sincronizar". Propaga
+  /// [ApiError] para o chamador decidir (offline → apagar só localmente).
+  Future<void> pushNow() => _push();
+
   /// Reseta o cursor/marca d'água e o estado persistido (último sync, erro e
   /// pendências). Usado ao apagar os dados locais ou todos os dados.
   Future<void> resetCursor() async {

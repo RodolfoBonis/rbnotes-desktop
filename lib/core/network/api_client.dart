@@ -78,6 +78,10 @@ class ApiClient {
   Future<Object?> post(String path, {Object? body}) =>
       _send(() => _dio.post<Object?>(path, data: body));
 
+  /// DELETE (ex.: `DELETE /notes/{id}/audio` → 204, idempotente).
+  Future<void> delete(String path) =>
+      _send(() => _dio.delete<Object?>(path));
+
   /// Envia um chunk binário com `Content-Length` obrigatório (áudio).
   Future<Map<String, dynamic>> putBytes(
     String path, {

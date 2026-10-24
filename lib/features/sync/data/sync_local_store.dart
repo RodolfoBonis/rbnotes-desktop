@@ -97,6 +97,68 @@ class SyncLocalStore {
     return crypto.encryptOutgoing(trimmed, lockedIds);
   }
 
+  /// Marca **todas** as entidades como excluídas (tombstones) com `updatedAt`
+  /// = agora, para o próximo push propagar a exclusão ao servidor. Usado por
+  /// "Apagar todos os dados". Também marca o `segment_set` de cada nota.
+  Future<void> softDeleteAll({DateTime? now}) async {
+    final at = now ?? DateTime.now();
+    final del = Value(at);
+    await _db.transaction(() async {
+      await _db
+          .update(_db.notes)
+          .write(
+            NotesCompanion(deleted: const Value(true), updatedAt: del),
+          );
+      await _db
+          .update(_db.folders)
+          .write(
+            FoldersCompanion(deleted: const Value(true), updatedAt: del),
+          );
+      await _db
+          .update(_db.actions)
+          .write(
+            ActionsCompanion(deleted: const Value(true), updatedAt: del),
+          );
+      await _db
+          .update(_db.collections)
+          .write(
+            CollectionsCompanion(deleted: const Value(true), updatedAt: del),
+          );
+      await _db
+          .update(_db.vocabulary)
+          .write(
+            VocabularyCompanion(deleted: const Value(true), updatedAt: del),
+          );
+      await _db
+          .update(_db.chatMessages)
+          .write(
+            ChatMessagesCompanion(deleted: const Value(true), updatedAt: del),
+          );
+      await _db
+          .update(_db.diaryEntries)
+          .write(
+            DiaryEntriesCompanion(deleted: const Value(true), updatedAt: del),
+          );
+      await _db
+          .update(_db.tags)
+          .write(
+            TagsCompanion(deleted: const Value(true), updatedAt: del),
+          );
+      await _db
+          .update(_db.noteTags)
+          .write(
+            NoteTagsCompanion(deleted: const Value(true), updatedAt: del),
+          );
+      // segment_set tem marca d'água própria no sync_meta: marca como excluído
+      // com o mesmo instante para o push enviar o tombstone dos segmentos.
+      await _db
+          .update(_db.syncMeta)
+          .write(
+            SyncMetaCompanion(deleted: const Value(true), updatedAt: del),
+          );
+    });
+  }
+
   /// Maior `updatedAt` entre as mudanças (nova marca d'água após o push).
   DateTime? maxUpdatedAt(List<SyncChange> changes) {
     DateTime? max;

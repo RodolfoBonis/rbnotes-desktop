@@ -83,6 +83,11 @@ class AudioSync {
     }
   }
 
+  /// Apaga o áudio da nota no servidor (`DELETE /notes/{id}/audio`). Idempotente
+  /// por contrato (204 mesmo se o objeto/upload não existir).
+  Future<void> deleteAudio(String noteId) =>
+      _api.delete('/notes/$noteId/audio');
+
   /// Baixa o áudio para [destPath] em blocos de [chunk] bytes, com retomada via
   /// `Range` (continua do que já há em disco) e [onProgress] por bloco
   /// (`received`, `total`). Baixar em blocos limita o uso de memória e permite

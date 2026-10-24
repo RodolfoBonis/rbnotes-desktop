@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
@@ -38,12 +37,16 @@ import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart'
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/recording/presentation/recording_hud.dart';
 import 'package:rbnotes/features/recording/presentation/recovery_cubit.dart';
+import 'package:rbnotes/features/settings/data/erase_all_service.dart';
 import 'package:rbnotes/features/settings/data/local_data_wiper.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
+import 'package:rbnotes/features/settings/presentation/erase_progress_dialog.dart';
 import 'package:rbnotes/features/settings/presentation/settings_modal.dart';
+import 'package:rbnotes/features/sync/data/audio_sync.dart';
 import 'package:rbnotes/features/sync/data/audio_upload_queue.dart';
 import 'package:rbnotes/features/sync/data/sync_crypto.dart';
+import 'package:rbnotes/features/sync/data/sync_local_store.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/sync/data/sync_status.dart';
 import 'package:rbnotes/notifications/notification_coordinator.dart';
@@ -544,11 +547,7 @@ class _SettingsLayer extends StatelessWidget {
         if (wipe) await _wipeLocalData();
         await di<AuthService>().signOut();
       },
-      onEraseAllData: () async {
-        await _eraseAllData();
-        overlay.closeSettings();
-        await di<AuthService>().signOut();
-      },
+      onEraseAllData: () => _eraseAllFlow(context),
     );
   }
 }
@@ -570,61 +569,98 @@ class _WeeklyLayer extends StatelessWidget {
   }
 }
 
+/// Monta o limpador de dados locais a partir do container de DI.
+LocalDataWiper _buildWiper() => LocalDataWiper(
+  db: di<AppDatabase>(),
+  notes: di<NoteRepository>(),
+  paths: di<AppPaths>(),
+  sync: di.isRegistered<SyncService>() ? di<SyncService>() : null,
+  audioQueue: di.isRegistered<AudioUploadQueue>()
+      ? di<AudioUploadQueue>()
+      : null,
+);
+
 /// "Apagar dados locais" do logout: banco, cursor/marca d'água, fila de áudio e
 /// os caches de áudio (recordings + audio_cache).
-Future<void> _wipeLocalData() async {
-  final wiper = LocalDataWiper(
-    db: di<AppDatabase>(),
-    notes: di<NoteRepository>(),
-    paths: di<AppPaths>(),
-    sync: di.isRegistered<SyncService>() ? di<SyncService>() : null,
-    audioQueue: di.isRegistered<AudioUploadQueue>()
-        ? di<AudioUploadQueue>()
-        : null,
-  );
-  await wiper.wipe();
-}
+Future<void> _wipeLocalData() => _buildWiper().wipe();
 
-/// Apaga todas as notas, diário, vocabulário e arquivos de áudio locais.
-///
-/// "Apagar todos os dados" da aba Privacidade. Mantém o schema (as coleções
-/// embutidas são recriadas no próximo boot pelo seeder).
-Future<void> _eraseAllData() async {
-  final db = di<AppDatabase>();
-  // Remove os arquivos de áudio antes de perder as referências no banco.
-  final notes = await di<NoteRepository>().getAllNotes();
-  for (final note in notes) {
-    for (final path in [
-      note.playbackPath,
-      note.micWavPath,
-      note.systemWavPath,
-    ]) {
-      if (path == null) continue;
-      try {
-        final file = File(path);
-        if (file.existsSync()) await file.delete();
-      } on Object {
-        // Arquivo ausente ou inacessível: segue apagando o resto.
-      }
+/// "Apagar todos os dados" da aba Privacidade, com progresso. Ordem: tombstones
+/// → push → DELETE do áudio na nuvem → limpeza local → reset do cursor. Offline
+/// no push: oferece apagar só neste Mac, com aviso.
+Future<void> _eraseAllFlow(BuildContext context) async {
+  final overlay = context.read<ShellOverlayCubit>();
+  final nav = Navigator.of(context, rootNavigator: true);
+  final progress = ValueNotifier<EraseProgress?>(null);
+  final service = EraseAllService(
+    notes: di<NoteRepository>(),
+    store: SyncLocalStore(
+      di<AppDatabase>(),
+      crypto: di.isRegistered<SyncCrypto>() ? di<SyncCrypto>() : null,
+    ),
+    wiper: _buildWiper(),
+    sync: di.isRegistered<SyncService>() ? di<SyncService>() : null,
+    audio: di.isRegistered<AudioSync>() ? di<AudioSync>() : null,
+  );
+
+  void openProgress() => unawaited(
+    showDialog<void>(
+      context: nav.context,
+      barrierDismissible: false,
+      builder: (_) => EraseProgressDialog(progress: progress),
+    ),
+  );
+
+  openProgress();
+  var result = await service.eraseAll(onProgress: (p) => progress.value = p);
+
+  if (result == EraseResult.offlinePending) {
+    if (nav.canPop()) nav.pop();
+    if (!nav.mounted) {
+      progress.dispose();
+      return;
+    }
+    final goLocal = await showDialog<bool>(
+      context: nav.context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Você está offline'),
+        content: const Text(
+          'Não consegui falar com o servidor agora. Posso apagar os dados '
+          'deste Mac mesmo assim — a exclusão na nuvem acontece quando você '
+          'reconectar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Aguardar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: RbTokens.destructive),
+            child: const Text('Apagar só neste Mac'),
+          ),
+        ],
+      ),
+    );
+    if (goLocal ?? false) {
+      progress.value = null;
+      openProgress();
+      result = await service.finishLocalOnly(
+        onProgress: (p) => progress.value = p,
+      );
+    } else {
+      progress.dispose();
+      overlay
+        ..closeSettings()
+        ..showToast('Exclusão adiada — você está offline.');
+      return;
     }
   }
-  // Limpa os diretórios de gravação que tenham sobrado.
-  try {
-    final dir = Directory(di<AppPaths>().recordingsDir);
-    if (dir.existsSync()) {
-      for (final entity in dir.listSync()) {
-        try {
-          entity.deleteSync(recursive: true);
-        } on Object {
-          // ignore
-        }
-      }
-    }
-  } on Object {
-    // ignore
+
+  if (nav.canPop()) nav.pop();
+  progress.dispose();
+  overlay.closeSettings();
+  if (result == EraseResult.doneLocalOnly) {
+    overlay.showToast('Dados apagados neste Mac. A nuvem será limpa depois.');
   }
-  // Zera as tabelas de conteúdo do usuário.
-  await db.delete(db.notes).go();
-  await db.delete(db.diaryEntries).go();
-  await db.delete(db.vocabulary).go();
+  await di<AuthService>().signOut();
 }
