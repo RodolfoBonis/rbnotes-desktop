@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/sync/data/sync_client.dart';
@@ -236,12 +238,19 @@ abstract final class SyncMappers {
 
   static ChatMessagesCompanion chatMessageCompanion(SyncChange c) {
     final d = c.data;
+    // Formato do servidor (resposta do assistente gravada pelo ai-worker):
+    // `{threadId, role: "assistant", text, cites: [...]}`; threadId ausente é o
+    // id da nota (contrato). O do app: `{noteId, role, content, citesJson}`.
+    final role = d['role'] == 'assistant' ? 'ai' : d['role'];
+    final cites = d['citesJson'] as String? ?? _serverCites(d['cites']);
     return ChatMessagesCompanion(
       id: Value(c.id),
-      noteId: Value((d['noteId'] as String?) ?? ''),
-      role: Value(_enum(ChatRole.values, d['role'], ChatRole.ai)),
-      content: Value((d['content'] as String?) ?? ''),
-      citesJson: Value(d['citesJson'] as String?),
+      noteId: Value(
+        (d['noteId'] as String?) ?? (d['threadId'] as String?) ?? '',
+      ),
+      role: Value(_enum(ChatRole.values, role, ChatRole.ai)),
+      content: Value((d['content'] as String?) ?? (d['text'] as String?) ?? ''),
+      citesJson: Value(cites),
       createdAt: Value(_date(d['createdAt']) ?? c.updatedAt),
       updatedAt: Value(c.updatedAt),
       deleted: Value(c.deleted),
@@ -258,14 +267,42 @@ abstract final class SyncMappers {
     data: {'noteId': r.noteId, 'aiJson': r.json},
   );
 
+  /// Aceita os dois formatos do contrato: o do app (`{noteId, aiJson}`, com o
+  /// JSON em string) e o que o servidor grava ao concluir o enrich (o objeto
+  /// `NoteAi` puro: `{title, tldr, points, ...}`). Ler só `aiJson` apagava o
+  /// resumo vindo do servidor no pull.
   static NoteAiTableCompanion noteAiCompanion(SyncChange c) =>
       NoteAiTableCompanion(
         noteId: Value(c.id),
-        json: Value((c.data['aiJson'] as String?) ?? '{}'),
+        json: Value(noteAiJsonOf(c.data)),
         updatedAt: Value(c.updatedAt),
       );
 
+  static String noteAiJsonOf(Map<String, dynamic> d) {
+    final wrapped = d['aiJson'];
+    if (wrapped is String && wrapped.isNotEmpty) return wrapped;
+    if (wrapped is Map) return jsonEncode(wrapped);
+    if (d.containsKey('title') || d.containsKey('tldr')) {
+      return jsonEncode(Map<String, dynamic>.of(d)..remove('noteId'));
+    }
+    return '{}';
+  }
+
   // ---------------- helpers ----------------
+
+  /// Citações do servidor (`[{atMs: 188000}, ...]`) no formato local (lista de
+  /// ms em JSON). Ignora itens inválidos.
+  static String? _serverCites(Object? raw) {
+    if (raw is! List || raw.isEmpty) return null;
+    final ms = <int>[
+      for (final e in raw)
+        if (e is num)
+          e.toInt()
+        else if (e is Map && e['atMs'] is num)
+          (e['atMs'] as num).toInt(),
+    ];
+    return ms.isEmpty ? null : jsonEncode(ms);
+  }
 
   static DateTime? _date(Object? v) =>
       v is String && v.isNotEmpty ? DateTime.tryParse(v)?.toLocal() : null;

@@ -277,4 +277,63 @@ void main() {
       SyncMappers.noteAiToChange(nai),
     );
   });
+
+  group('formatos gravados pelo servidor', () {
+    final at = DateTime.utc(2026, 10, 24, 1, 10);
+
+    test('note_ai puro (NoteAi direto) não vira {} no pull', () {
+      final c = SyncChange(
+        entity: 'note_ai',
+        id: 'n-1',
+        updatedAt: at,
+        deleted: false,
+        data: {
+          'title': 'Enviar pull request do Gemini ao time',
+          'tldr': 'Lembrete para enviar amanhã o pull request.',
+          'points': ['Enviar o PR amanhã.'],
+        },
+      );
+      final json = SyncMappers.noteAiCompanion(c).json.value;
+      expect(json, contains('Enviar pull request do Gemini ao time'));
+      expect(json, isNot('{}'));
+    });
+
+    test('note_ai no formato do app ({noteId, aiJson}) continua igual', () {
+      final c = SyncChange(
+        entity: 'note_ai',
+        id: 'n-1',
+        updatedAt: at,
+        deleted: false,
+        data: {'noteId': 'n-1', 'aiJson': '{"title":"T","tldr":"R"}'},
+      );
+      expect(
+        SyncMappers.noteAiCompanion(c).json.value,
+        '{"title":"T","tldr":"R"}',
+      );
+    });
+
+    test('chat_message do assistente (threadId/text/cites) é lido', () {
+      final c = SyncChange(
+        entity: 'chat_message',
+        id: 'm-1',
+        updatedAt: at,
+        deleted: false,
+        data: {
+          'threadId': 'n-1',
+          'role': 'assistant',
+          'text': 'Você ficou de enviar o PR.',
+          'cites': [
+            {'atMs': 188000},
+            {'atMs': 352000},
+          ],
+          'createdAt': '2026-10-24T01:10:00Z',
+        },
+      );
+      final m = SyncMappers.chatMessageCompanion(c);
+      expect(m.noteId.value, 'n-1');
+      expect(m.role.value, ChatRole.ai);
+      expect(m.content.value, 'Você ficou de enviar o PR.');
+      expect(m.citesJson.value, '[188000,352000]');
+    });
+  });
 }
