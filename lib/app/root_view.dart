@@ -17,7 +17,7 @@ import 'package:rbnotes/features/onboarding/presentation/onboarding_cubit.dart';
 import 'package:rbnotes/features/onboarding/presentation/onboarding_page.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/sync/data/audio_sync.dart';
-import 'package:rbnotes/notifications/notification_service.dart';
+import 'package:rbnotes/notifications/notifier.dart';
 
 /// Decide a tela de topo (login → onboarding → app) e injeta os cubits de cada
 /// uma. `SessionCubit` e `RecordingCubit` vêm de cima (`RbNotesApp`).
@@ -37,7 +37,7 @@ class RootView extends StatelessWidget {
             create: (_) => OnboardingCubit(
               native: di(),
               settings: di(),
-              requestNotifications: di<NotificationService>().requestPermission,
+              requestNotifications: di<Notifier>().requestPermission,
             ),
             child: _Onboarding(),
           ),

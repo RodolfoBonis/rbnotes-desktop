@@ -31,6 +31,14 @@ class SettingsStore {
   static const _kDefaultFolder = 'settings.default_folder';
   static const _kWeeklySummary = 'settings.weekly_summary';
   static const _kRemindTasks = 'settings.remind_tasks';
+  static const _kNoteReadyNotif = 'settings.notif.note_ready';
+  static const _kDiaryPromptNotif = 'settings.notif.diary_prompt';
+  static const _kTaskReminderHour = 'settings.notif.task_hour';
+  static const _kTaskEveReminder = 'settings.notif.task_eve';
+  static const _kDiaryPromptHour = 'settings.notif.diary_hour';
+  static const _kWeeklySummaryHour = 'settings.notif.weekly_hour';
+  static const _kLastWeeklyAt = 'settings.notif.last_weekly_at';
+  static const _kScheduledTaskKeys = 'settings.notif.task_keys';
   // Gravação
   static const _kMicDeviceId = 'settings.mic_device_id';
   static const _kMicName = 'settings.mic_name';
@@ -169,6 +177,53 @@ class SettingsStore {
   bool get remindTasks => _prefs.getBool(_kRemindTasks) ?? true;
   Future<void> setRemindTasks({required bool value}) =>
       _prefs.setBool(_kRemindTasks, value);
+
+  /// Notificação "Nota pronta" ao fim do pipeline (janela fora de foco).
+  bool get noteReadyNotif => _prefs.getBool(_kNoteReadyNotif) ?? true;
+  Future<void> setNoteReadyNotif({required bool value}) =>
+      _prefs.setBool(_kNoteReadyNotif, value);
+
+  /// Notificação da pergunta do diário.
+  bool get diaryPromptNotif => _prefs.getBool(_kDiaryPromptNotif) ?? true;
+  Future<void> setDiaryPromptNotif({required bool value}) =>
+      _prefs.setBool(_kDiaryPromptNotif, value);
+
+  /// Hora (0..23) do lembrete de tarefas com prazo (padrão 9h).
+  int get taskReminderHour => _prefs.getInt(_kTaskReminderHour) ?? 9;
+  Future<void> setTaskReminderHour(int hour) =>
+      _prefs.setInt(_kTaskReminderHour, hour);
+
+  /// Lembrar também na véspera do prazo.
+  bool get taskEveReminder => _prefs.getBool(_kTaskEveReminder) ?? false;
+  Future<void> setTaskEveReminder({required bool value}) =>
+      _prefs.setBool(_kTaskEveReminder, value);
+
+  /// Hora (0..23) da pergunta do diário (padrão 21h).
+  int get diaryPromptHour => _prefs.getInt(_kDiaryPromptHour) ?? 21;
+  Future<void> setDiaryPromptHour(int hour) =>
+      _prefs.setInt(_kDiaryPromptHour, hour);
+
+  /// Hora (0..23) do resumo semanal, toda segunda (padrão 9h).
+  int get weeklySummaryHour => _prefs.getInt(_kWeeklySummaryHour) ?? 9;
+  Future<void> setWeeklySummaryHour(int hour) =>
+      _prefs.setInt(_kWeeklySummaryHour, hour);
+
+  /// Quando o último resumo semanal foi gerado (para gerar na 1ª abertura se o
+  /// horário passou com o app fechado).
+  DateTime? get lastWeeklySummaryAt {
+    final raw = _prefs.getString(_kLastWeeklyAt);
+    return raw == null ? null : DateTime.tryParse(raw);
+  }
+
+  Future<void> setLastWeeklySummaryAt(DateTime at) =>
+      _prefs.setString(_kLastWeeklyAt, at.toUtc().toIso8601String());
+
+  /// Keys das tarefas com lembrete agendado (para cancelar as removidas no
+  /// reagendamento).
+  List<String> get scheduledTaskKeys =>
+      _prefs.getStringList(_kScheduledTaskKeys) ?? const [];
+  Future<void> setScheduledTaskKeys(List<String> keys) =>
+      _prefs.setStringList(_kScheduledTaskKeys, keys);
 
   // ---- Gravação ----
 

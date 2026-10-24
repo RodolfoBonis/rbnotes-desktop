@@ -44,7 +44,9 @@ import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/sync/data/sync_trigger.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:rbnotes/native/rb_native.dart';
-import 'package:rbnotes/notifications/notification_service.dart';
+import 'package:rbnotes/notifications/notification_coordinator.dart';
+import 'package:rbnotes/notifications/notification_scheduler.dart';
+import 'package:rbnotes/notifications/notifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final GetIt di = GetIt.instance;
@@ -88,7 +90,11 @@ Future<void> configureDependencies(AppConfig config) async {
     settings: settings,
   );
   final diagnostics = DiagnosticsMonitor(native);
-  final notifications = NotificationService();
+  final notifier = LocalNotifier();
+  final notificationScheduler = NotificationScheduler(
+    notifier: notifier,
+    settings: settings,
+  );
   final aiActivity = AiActivity();
 
   // ---- IA / sync / auth: fakes locais ou clientes reais. ----
@@ -163,6 +169,14 @@ Future<void> configureDependencies(AppConfig config) async {
     auth = FakeAuthService();
   }
 
+  final notificationCoordinator = NotificationCoordinator(
+    notifier: notifier,
+    scheduler: notificationScheduler,
+    noteAi: noteAi,
+    ai: ai,
+    settings: settings,
+  );
+
   final enrichment = EnrichmentService(
     ai: ai,
     notes: repository,
@@ -204,7 +218,9 @@ Future<void> configureDependencies(AppConfig config) async {
     ..registerSingleton<BiometricAuth>(LocalBiometricAuth())
     ..registerSingleton<SyncCrypto>(syncCrypto)
     ..registerSingleton<AuthService>(auth)
-    ..registerSingleton<NotificationService>(notifications)
+    ..registerSingleton<Notifier>(notifier)
+    ..registerSingleton<NotificationScheduler>(notificationScheduler)
+    ..registerSingleton<NotificationCoordinator>(notificationCoordinator)
     ..registerSingleton<EnrichmentService>(enrichment)
     ..registerFactory<AudioPlayerController>(JustAudioPlayer.new);
 
@@ -236,5 +252,6 @@ Future<void> configureDependencies(AppConfig config) async {
     await seeder.purgeSeedNotes();
   }
 
-  unawaited(notifications.init());
+  unawaited(notifier.init());
+  unawaited(notificationCoordinator.start());
 }
