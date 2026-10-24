@@ -168,6 +168,27 @@ void main() {
     await cubit.close();
   });
 
+  test('travado: overlay do notch não mostra a transcrição ao vivo', () async {
+    final cubit = RecordingCubit(
+      native: native,
+      repository: repo,
+      queue: queue,
+      settings: settings,
+      paths: paths,
+      diagnostics: native.diagnostics(),
+      isForeground: () async => false, // sem foco → usa o overlay do notch
+      isLocked: () => true, // app travado
+    );
+    await cubit.start();
+    final id = cubit.state.noteId!;
+    native.emitLiveTranscript(id, 'conteúdo secreto da reunião');
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    // O overlay nunca recebe o texto ao vivo enquanto travado.
+    expect(native.overlayLiveText, anyOf(isNull, isEmpty));
+    await cubit.discard();
+    await cubit.close();
+  });
+
   test('diagnóstico system_audio_stopped marca systemAudioDropped', () async {
     final cubit = build();
     await cubit.start();

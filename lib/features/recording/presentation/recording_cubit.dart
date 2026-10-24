@@ -169,6 +169,7 @@ class RecordingCubit extends Cubit<RecordingState> {
     EnrichmentService? enrichment,
     Future<bool> Function()? isForeground,
     Future<void> Function()? onOpenApp,
+    bool Function()? isLocked,
     Uuid? uuid,
   }) : _native = native,
        _repository = repository,
@@ -179,6 +180,7 @@ class RecordingCubit extends Cubit<RecordingState> {
        _enrichment = enrichment,
        _isForeground = isForeground,
        _onOpenApp = onOpenApp,
+       _isLocked = isLocked,
        _uuid = uuid ?? const Uuid(),
        super(RecordingState(captureSystemAudio: settings.captureSystemAudio)) {
     _diagSub = diagnostics.listen(_onDiagnostic);
@@ -197,6 +199,10 @@ class RecordingCubit extends Cubit<RecordingState> {
   final EnrichmentService? _enrichment;
   final Future<bool> Function()? _isForeground;
   final Future<void> Function()? _onOpenApp;
+
+  /// Com o app travado por Touch ID, o overlay do notch não mostra a
+  /// transcrição ao vivo (só "RbNotes" e o estado da gravação).
+  final bool Function()? _isLocked;
   final Uuid _uuid;
 
   StreamSubscription<AudioLevels>? _levelsSub;
@@ -606,11 +612,13 @@ class RecordingCubit extends Cubit<RecordingState> {
           );
         }
       } else {
+        final locked = _isLocked?.call() ?? false;
         _overlay(
           _native.updateActivityOverlay(
             micLevel: s.micLevel,
             systemLevel: s.systemLevel,
-            liveText: s.liveText,
+            // Travado: sem texto ao vivo no overlay (só "RbNotes" + estado).
+            liveText: locked ? '' : s.liveText,
             phase: OverlayPhase.live,
             paused: s.status == RecordingStatus.paused,
           ),

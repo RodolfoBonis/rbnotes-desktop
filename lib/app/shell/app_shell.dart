@@ -42,6 +42,7 @@ import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/recording/presentation/recording_hud.dart';
 import 'package:rbnotes/features/recording/presentation/recovery_cubit.dart';
 import 'package:rbnotes/features/security/data/biometric_auth.dart';
+import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
 import 'package:rbnotes/features/settings/data/erase_all_service.dart';
 import 'package:rbnotes/features/settings/data/local_data_wiper.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
@@ -73,6 +74,8 @@ class _AppShellState extends State<AppShell> {
   StreamSubscription<String>? _noticesSub;
   StreamSubscription<CreatedNote>? _createdSub;
   StreamSubscription<SyncStatus>? _syncStatusSub;
+  StreamSubscription<AppLockState>? _lockSub;
+  CreatedNote? _pendingCreated;
   DateTime? _lastRescheduleSyncAt;
 
   @override
@@ -93,15 +96,25 @@ class _AppShellState extends State<AppShell> {
       if (mounted) context.read<ShellOverlayCubit>().showToast(msg);
     });
 
-    // Nota recém-gravada: seleciona e fecha o HUD.
+    // Nota recém-gravada: seleciona e fecha o HUD. Se o app está travado
+    // (gravação por atalho durante a trava), a nota só aparece após o
+    // desbloqueio — guardamos como pendente e revelamos quando destravar.
     _createdSub = context.read<RecordingCubit>().createdNotes.listen((n) {
       if (!mounted) return;
       if (di.isRegistered<SyncService>()) di<SyncService>().requestSync();
-      context.read<LibraryCubit>()
-        ..selectSection(
-          n.kind == NoteKind.diary ? LibrarySection.diary : LibrarySection.all,
-        )
-        ..selectNote(n.id);
+      if (context.read<AppLockCubit>().state.locked) {
+        _pendingCreated = n;
+      } else {
+        _revealNote(n);
+      }
+    });
+
+    // Ao destravar, revela a nota gravada enquanto o app estava bloqueado.
+    _lockSub = context.read<AppLockCubit>().stream.listen((lock) {
+      if (!lock.locked && _pendingCreated != null && mounted) {
+        _revealNote(_pendingCreated!);
+        _pendingCreated = null;
+      }
     });
 
     // Atalho global "Gravar nota": liga o disparo ao RecordingCubit (o serviço
@@ -114,18 +127,18 @@ class _AppShellState extends State<AppShell> {
     // Roteamento dos toques de notificação + resumo semanal na 1ª abertura.
     if (di.isRegistered<NotificationCoordinator>()) {
       final coord = di<NotificationCoordinator>()
-        ..onOpenNote = (id) {
-          if (!mounted) return;
+        ..onOpenNote = (id) async {
+          if (!mounted || !await _ensureUnlocked() || !mounted) return;
           context.read<LibraryCubit>()
             ..selectSection(LibrarySection.all)
             ..selectNote(id);
         }
-        ..onOpenDiary = () {
-          if (!mounted) return;
+        ..onOpenDiary = () async {
+          if (!mounted || !await _ensureUnlocked() || !mounted) return;
           context.read<LibraryCubit>().selectSection(LibrarySection.diary);
         }
-        ..onOpenWeekly = (_) {
-          if (!mounted) return;
+        ..onOpenWeekly = (_) async {
+          if (!mounted || !await _ensureUnlocked() || !mounted) return;
           context.read<ShellOverlayCubit>().openWeekly();
         };
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -164,9 +177,26 @@ class _AppShellState extends State<AppShell> {
     await cubit.close();
   }
 
+  void _revealNote(CreatedNote n) {
+    if (!mounted) return;
+    context.read<LibraryCubit>()
+      ..selectSection(
+        n.kind == NoteKind.diary ? LibrarySection.diary : LibrarySection.all,
+      )
+      ..selectNote(n.id);
+  }
+
+  /// Garante o desbloqueio antes de abrir conteúdo a partir de uma notificação.
+  Future<bool> _ensureUnlocked() async {
+    final lock = context.read<AppLockCubit>();
+    if (!lock.state.locked) return true;
+    return lock.unlock();
+  }
+
   @override
   void dispose() {
     unawaited(_noticesSub?.cancel());
+    unawaited(_lockSub?.cancel());
     unawaited(_createdSub?.cancel());
     unawaited(_syncStatusSub?.cancel());
     if (di.isRegistered<RecordNoteHotkeyService>()) {

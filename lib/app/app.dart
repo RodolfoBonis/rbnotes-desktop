@@ -30,7 +30,7 @@ class RbNotesApp extends StatelessWidget {
           create: (_) => SessionCubit(auth: di(), prefs: di()),
         ),
         BlocProvider(
-          create: (_) => RecordingCubit(
+          create: (context) => RecordingCubit(
             native: di(),
             repository: di(),
             queue: di(),
@@ -46,6 +46,8 @@ class RbNotesApp extends StatelessWidget {
               await windowManager.show();
               await windowManager.focus();
             },
+            // Travado: o overlay esconde a transcrição ao vivo.
+            isLocked: () => context.read<AppLockCubit>().state.locked,
           ),
         ),
       ],
