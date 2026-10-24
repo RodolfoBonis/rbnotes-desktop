@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart' show Value;
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -10,9 +11,11 @@ import 'package:rbnotes/app/shell/shell_overlay_cubit.dart';
 import 'package:rbnotes/app/shell/tray_controller.dart';
 import 'package:rbnotes/app/theme_mode_cubit.dart';
 import 'package:rbnotes/core/di/injector.dart';
+import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/motion.dart';
+import 'package:rbnotes/core/ui/task_progress_dialog.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/ai_activity.dart';
 import 'package:rbnotes/features/ai/presentation/weekly_summary_cubit.dart';
@@ -28,6 +31,7 @@ import 'package:rbnotes/features/library/data/library_repository.dart';
 import 'package:rbnotes/features/library/presentation/library_cubit.dart';
 import 'package:rbnotes/features/library/presentation/note_list.dart';
 import 'package:rbnotes/features/library/presentation/sidebar.dart';
+import 'package:rbnotes/features/notes/data/export_service.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/presentation/note_actions.dart';
@@ -37,6 +41,7 @@ import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart'
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/recording/presentation/recording_hud.dart';
 import 'package:rbnotes/features/recording/presentation/recovery_cubit.dart';
+import 'package:rbnotes/features/security/data/biometric_auth.dart';
 import 'package:rbnotes/features/settings/data/erase_all_service.dart';
 import 'package:rbnotes/features/settings/data/local_data_wiper.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
@@ -548,6 +553,7 @@ class _SettingsLayer extends StatelessWidget {
         await di<AuthService>().signOut();
       },
       onEraseAllData: () => _eraseAllFlow(context),
+      onExportAll: () => _exportAllFlow(context),
     );
   }
 }
@@ -566,6 +572,68 @@ class _WeeklyLayer extends StatelessWidget {
       },
       child: WeeklySummaryScreen(onClose: overlay.closeWeekly),
     );
+  }
+}
+
+/// "Exportar todas as notas": seletor de destino (file_selector), progresso e
+/// Touch ID para as notas bloqueadas (ou deixa-as de fora, com aviso).
+Future<void> _exportAllFlow(BuildContext context) async {
+  final overlay = context.read<ShellOverlayCubit>();
+  final nav = Navigator.of(context, rootNavigator: true);
+
+  final location = await getSaveLocation(
+    suggestedName: 'rbnotes-export.zip',
+    acceptedTypeGroups: const [
+      XTypeGroup(label: 'Zip', extensions: ['zip']),
+    ],
+  );
+  final path = location?.path;
+  if (path == null) return;
+
+  final message = ValueNotifier<String>('Preparando…');
+  final progress = ValueNotifier<double?>(null);
+  if (!nav.mounted) {
+    message.dispose();
+    progress.dispose();
+    return;
+  }
+  unawaited(
+    showDialog<void>(
+      context: nav.context,
+      barrierDismissible: false,
+      builder: (_) => TaskProgressDialog(
+        title: 'Exportando notas',
+        message: message,
+        progress: progress,
+      ),
+    ),
+  );
+
+  final service = ExportService(notes: di<NoteRepository>());
+  final biometric = di<BiometricAuth>();
+  try {
+    final result = await service.exportAll(
+      destinationPath: path,
+      onProgress: (done, total) {
+        message.value = 'Exportando $done de $total…';
+        progress.value = total == 0 ? null : done / total;
+      },
+      unlockLocked: () =>
+          biometric.authenticate('Desbloquear notas para exportar'),
+    );
+    if (nav.canPop()) nav.pop();
+    final extra = result.excludedLocked > 0
+        ? ' (${result.excludedLocked} bloqueada'
+              '${result.excludedLocked == 1 ? '' : 's'} ficaram de fora)'
+        : '';
+    overlay.showToast('Exportadas ${result.exported} notas$extra.');
+  } on Object catch (e, st) {
+    if (nav.canPop()) nav.pop();
+    await AppLogger.error(e, st, reason: 'export_all', category: 'notes');
+    overlay.showToast('Não foi possível exportar as notas.');
+  } finally {
+    message.dispose();
+    progress.dispose();
   }
 }
 

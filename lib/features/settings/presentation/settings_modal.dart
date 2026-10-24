@@ -95,6 +95,7 @@ class SettingsModal extends StatefulWidget {
     this.sync,
     this.audioQueue,
     this.notes,
+    this.onExportAll,
     super.key,
   });
 
@@ -152,6 +153,10 @@ class SettingsModal extends StatefulWidget {
 
   /// Repositório de notas, para resolver títulos na fila de upload.
   final NoteRepository? notes;
+
+  /// "Exportar todas as notas" (seletor de destino + progresso + Touch ID nas
+  /// bloqueadas). Null em testes/goldens.
+  final VoidCallback? onExportAll;
 
   @override
   State<SettingsModal> createState() => _SettingsModalState();
@@ -790,6 +795,7 @@ class _SettingsModalState extends State<SettingsModal> {
           'Exportar todas as notas',
           'Markdown + áudio, em um arquivo .zip',
           'Exportar',
+          onTap: widget.onExportAll,
         ),
         _button(
           'Apagar todos os dados',

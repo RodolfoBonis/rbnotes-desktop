@@ -101,6 +101,15 @@ class NoteRepository {
   Future<NoteRow?> getNote(String id) =>
       (_db.select(_db.notes)..where((n) => n.id.equals(id))).getSingleOrNull();
 
+  /// Tags da nota (versão Future, para exportação).
+  Future<List<TagRow>> getNoteTags(String noteId) async {
+    final query = _db.select(_db.tags).join([
+      innerJoin(_db.noteTags, _db.noteTags.tagId.equalsExp(_db.tags.id)),
+    ])..where(_db.noteTags.noteId.equals(noteId));
+    final rows = await query.get();
+    return rows.map((r) => r.readTable(_db.tags)).toList();
+  }
+
   Future<List<NoteRow>> notesWithStatus(NoteStatus status) =>
       (_db.select(_db.notes)..where((n) => n.status.equalsValue(status))).get();
 
