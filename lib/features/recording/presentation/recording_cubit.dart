@@ -559,6 +559,7 @@ class RecordingCubit extends Cubit<RecordingState> {
         _native.showActivityOverlay(
           mode: OverlayMode.recording,
           startedAt: _startedAt ?? DateTime.now(),
+          accentArgb: _settings.accentColor.toARGB32(),
         ),
       );
     }

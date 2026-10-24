@@ -91,9 +91,10 @@ class TasksPane extends StatelessWidget {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const RbLottie(
+                                    RbLottie(
                                       asset: 'assets/lottie/pulse.json',
                                       size: 64,
+                                      recolor: context.rb.accent,
                                     ),
                                     const SizedBox(height: 10),
                                     Text(

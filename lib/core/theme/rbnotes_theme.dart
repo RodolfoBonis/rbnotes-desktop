@@ -4,11 +4,14 @@ import 'package:rbnotes/core/theme/rb_tokens.dart';
 /// Builds the RbNotes [ThemeData] for light and dark, wiring the [RbTokens]
 /// extension and the serif/body font families from the design.
 abstract final class RbNotesTheme {
-  /// Design accent (#E0512E). Settings can swap it; the tokens carry it.
+  /// Design accent (#E0512E). Settings can swap it via `AccentCubit`; the
+  /// tokens carry the chosen accent through [light]/[dark].
   static const accent = Color(0xFFE0512E);
 
-  static ThemeData get light => _build(RbTokens.light(accent));
-  static ThemeData get dark => _build(RbTokens.dark(accent));
+  static ThemeData light([Color accent = accent]) =>
+      _build(RbTokens.light(accent));
+  static ThemeData dark([Color accent = accent]) =>
+      _build(RbTokens.dark(accent));
 
   static ThemeData _build(RbTokens t) {
     final brightness = t.brightnessIsDark ? Brightness.dark : Brightness.light;

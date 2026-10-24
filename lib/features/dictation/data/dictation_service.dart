@@ -123,6 +123,7 @@ class DictationService {
             _native.showActivityOverlay(
               mode: OverlayMode.dictation,
               startedAt: DateTime.now(),
+              accentArgb: _settings.accentColor.toARGB32(),
             ),
           );
           _overlay(

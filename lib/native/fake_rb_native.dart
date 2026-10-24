@@ -90,6 +90,32 @@ class FakeRbNative implements RbNative {
   // ---- Activity overlay (notch HUD) — hooks de teste. ----
   final _overlayActions = StreamController<OverlayAction>.broadcast();
 
+  // ---- Fase 3: trava, login item, silêncios, reunião, diarização. ----
+  final _lockTriggers = StreamController<LockTrigger>.broadcast();
+  final _meetingSignals = StreamController<MeetingSignal>.broadcast();
+
+  /// Estado do login item (SMAppService). Configurável nos testes.
+  bool launchAtLoginEnabled = false;
+
+  /// Detecção de reunião ligada/desligada (hook de teste).
+  bool meetingDetectionEnabled = false;
+
+  /// Modelos de diarização baixados (hook de teste).
+  bool diarizationModelDownloaded = true;
+
+  /// Silêncios devolvidos por [detectSilences] (configurável nos testes).
+  List<SilenceRange> silences = const [];
+
+  /// Turnos devolvidos por [diarize] (configurável nos testes).
+  List<SpeakerTurn> diarizationTurns = const [];
+
+  // Hooks do que foi passado nas chamadas.
+  bool? lastNoiseReduction;
+  String? lastStartLanguage;
+  int? overlayAccentArgb;
+  bool? lastSetLaunchAtLogin;
+  bool? lastSetMeetingDetection;
+
   /// Overlay visível no momento (null quando escondido).
   OverlayMode? overlayMode;
   DateTime? overlayStartedAt;
@@ -126,6 +152,8 @@ class FakeRbNative implements RbNative {
     required bool captureSystemAudio,
     bool liveTranscription = false,
     String? inputDeviceId,
+    bool noiseReduction = false,
+    String? language,
   }) async {
     if (_recording.contains(id)) {
       throw const RbNativeException(
@@ -137,6 +165,8 @@ class FakeRbNative implements RbNative {
     _dirs[id] = directory;
     lastLiveTranscription = liveTranscription;
     lastInputDeviceId = inputDeviceId;
+    lastNoiseReduction = noiseReduction;
+    lastStartLanguage = language;
     await Directory(directory).create(recursive: true);
     await _touch(p.join(directory, '$id.mic.wav'));
     if (captureSystemAudio && systemAudioAvailable) {
@@ -366,10 +396,12 @@ class FakeRbNative implements RbNative {
   Future<void> showActivityOverlay({
     required OverlayMode mode,
     required DateTime startedAt,
+    int? accentArgb,
   }) async {
     overlayMode = mode;
     overlayStartedAt = startedAt;
     overlayPhase = OverlayPhase.live;
+    overlayAccentArgb = accentArgb;
     overlayShowCount++;
   }
 
@@ -409,11 +441,73 @@ class FakeRbNative implements RbNative {
   /// Emite uma ação do overlay (uso em dev/testes).
   void emitOverlayAction(OverlayAction action) => _overlayActions.add(action);
 
+  @override
+  Stream<LockTrigger> lockTriggers() => _lockTriggers.stream;
+
+  /// Emite um gatilho de trava (uso em dev/testes).
+  void emitLockTrigger(LockTrigger trigger) => _lockTriggers.add(trigger);
+
+  @override
+  Future<bool> launchAtLogin() async => launchAtLoginEnabled;
+
+  @override
+  Future<void> setLaunchAtLogin(bool enabled) async {
+    lastSetLaunchAtLogin = enabled;
+    launchAtLoginEnabled = enabled;
+  }
+
+  @override
+  Future<List<SilenceRange>> detectSilences(
+    String wavPath, {
+    Duration minSilence = const Duration(seconds: 2),
+  }) async => silences.where((r) => r.duration >= minSilence).toList();
+
+  @override
+  Stream<MeetingSignal> meetingSignals() => _meetingSignals.stream;
+
+  /// Emite um sinal de reunião (uso em dev/testes).
+  void emitMeetingSignal(MeetingSignal signal) => _meetingSignals.add(signal);
+
+  @override
+  Future<void> setMeetingDetection(bool enabled) async {
+    lastSetMeetingDetection = enabled;
+    meetingDetectionEnabled = enabled;
+  }
+
+  @override
+  Future<DiarizationModelState> diarizationModelState() async =>
+      DiarizationModelState(
+        downloaded: diarizationModelDownloaded,
+        sizeBytes: diarizationModelDownloaded ? 90000000 : null,
+      );
+
+  @override
+  Stream<double> downloadDiarizationModel() async* {
+    for (var i = 1; i <= 10; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      yield i / 10;
+    }
+    diarizationModelDownloaded = true;
+  }
+
+  @override
+  Future<List<SpeakerTurn>> diarize(String wavPath, {int? numSpeakers}) async {
+    if (!diarizationModelDownloaded) {
+      throw const RbNativeException(
+        RbNativeErrorCode.diarizationModelMissing,
+        'Modelos de diarização não baixados.',
+      );
+    }
+    return diarizationTurns;
+  }
+
   Future<void> dispose() async {
     await _dictation.close();
     await _diagnostics.close();
     if (!_globalHotkeys.isClosed) await _globalHotkeys.close();
     if (!_overlayActions.isClosed) await _overlayActions.close();
+    if (!_lockTriggers.isClosed) await _lockTriggers.close();
+    if (!_meetingSignals.isClosed) await _meetingSignals.close();
     for (final c in _live.values) {
       if (!c.isClosed) await c.close();
     }

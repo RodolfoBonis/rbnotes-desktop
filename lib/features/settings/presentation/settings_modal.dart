@@ -15,6 +15,7 @@ import 'package:rbnotes/features/recording/data/mac_key_codes.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
+import 'package:rbnotes/features/settings/presentation/accent_picker.dart';
 import 'package:rbnotes/features/settings/presentation/vocabulary_editor.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/sync/data/sync_status.dart';
@@ -231,6 +232,10 @@ class _SettingsModalState extends State<SettingsModal> {
           _appearanceLabel(context.watch<ThemeModeCubit>().state),
           (v) => context.read<ThemeModeCubit>().set(_themeFor(v)),
         ),
+        const _SettingRow(
+          label: 'Cor de acento',
+          trailing: AccentSwatches(),
+        ),
         _toggle(
           'Abrir ao iniciar sessão',
           null,
@@ -411,13 +416,6 @@ class _SettingsModalState extends State<SettingsModal> {
   Widget _conta() => _Groups([
     _Group(rows: [_profileRow()]),
     _Group(
-      title: 'Plano',
-      rows: [
-        _button('RbNotes Pro', 'Renova em 12 de novembro de 2026', 'Gerenciar'),
-        _meter('Resumos com IA neste mês', '312 de 1.000', 0.31),
-      ],
-    ),
-    _Group(
       title: 'Sincronização',
       rows: [
         _toggle(
@@ -569,6 +567,22 @@ class _SettingsModalState extends State<SettingsModal> {
     ),
   ]);
 
+  Future<void> _openAccountConsole() async {
+    final uri = Uri.parse(
+      'https://auth.rodolfodebonis.com.br/realms/rbnotes/account',
+    );
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } on Object catch (e, st) {
+      await AppLogger.error(
+        e,
+        st,
+        reason: 'open_account_console',
+        category: 'settings',
+      );
+    }
+  }
+
   Future<void> _openLogsFolder() async {
     try {
       final dir = Directory(AppPaths.logsDirPath);
@@ -701,12 +715,6 @@ class _SettingsModalState extends State<SettingsModal> {
       value,
       style: context.bodyText(size: 12, color: context.rb.secondary(0.65)),
     ),
-  );
-
-  Widget _meter(String label, String sub, double pct) => _SettingRow(
-    label: label,
-    sub: sub,
-    meter: pct,
   );
 
   Widget _syncStatusRow(SyncService sync) => StreamBuilder<SyncStatus>(
@@ -864,7 +872,7 @@ class _SettingsModalState extends State<SettingsModal> {
       labelBold: true,
       labelSize: 15,
       sub: widget.userEmail,
-      trailing: _PillButton(label: 'Editar', onTap: () {}),
+      trailing: _PillButton(label: 'Editar perfil', onTap: _openAccountConsole),
     );
   }
 
@@ -1106,7 +1114,6 @@ class _SettingRow extends StatelessWidget {
     this.leading,
     this.trailing,
     this.onTap,
-    this.meter,
     this.labelDim = false,
     this.labelBold = false,
     this.labelSize = 13,
@@ -1118,7 +1125,6 @@ class _SettingRow extends StatelessWidget {
   final Widget? leading;
   final Widget? trailing;
   final VoidCallback? onTap;
-  final double? meter;
   final bool labelDim;
   final bool labelBold;
   final double labelSize;
@@ -1157,19 +1163,6 @@ class _SettingRow extends StatelessWidget {
                           size: 11.5,
                           height: 1.4,
                           color: subColor ?? rb.secondary(0.62),
-                        ),
-                      ),
-                    ),
-                  if (meter != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 7),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: LinearProgressIndicator(
-                          value: meter,
-                          minHeight: 5,
-                          backgroundColor: rb.controlFill,
-                          valueColor: AlwaysStoppedAnimation(rb.accent),
                         ),
                       ),
                     ),

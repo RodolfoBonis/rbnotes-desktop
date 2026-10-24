@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:rbnotes/app/accent_cubit.dart';
 import 'package:rbnotes/app/root_view.dart';
 import 'package:rbnotes/app/theme_mode_cubit.dart';
 import 'package:rbnotes/core/di/injector.dart';
@@ -19,6 +20,7 @@ class RbNotesApp extends StatelessWidget {
     return MultiBlocProvider(
       providers: [
         BlocProvider(create: (_) => ThemeModeCubit(di())),
+        BlocProvider(create: (_) => AccentCubit(di())),
         BlocProvider(
           create: (_) => SessionCubit(auth: di(), prefs: di()),
         ),
@@ -43,21 +45,23 @@ class RbNotesApp extends StatelessWidget {
         ),
       ],
       child: BlocBuilder<ThemeModeCubit, ThemeMode>(
-        builder: (context, mode) => MaterialApp(
-          title: 'RbNotes',
-          debugShowCheckedModeBanner: false,
-          theme: RbNotesTheme.light,
-          darkTheme: RbNotesTheme.dark,
-          themeMode: mode,
-          locale: const Locale('pt', 'BR'),
-          supportedLocales: const [Locale('pt', 'BR')],
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
-          home: const RootView(),
-          builder: (context, child) => SentryWidget(child: child!),
+        builder: (context, mode) => BlocBuilder<AccentCubit, Color>(
+          builder: (context, accent) => MaterialApp(
+            title: 'RbNotes',
+            debugShowCheckedModeBanner: false,
+            theme: RbNotesTheme.light(accent),
+            darkTheme: RbNotesTheme.dark(accent),
+            themeMode: mode,
+            locale: const Locale('pt', 'BR'),
+            supportedLocales: const [Locale('pt', 'BR')],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            home: const RootView(),
+            builder: (context, child) => SentryWidget(child: child!),
+          ),
         ),
       ),
     );

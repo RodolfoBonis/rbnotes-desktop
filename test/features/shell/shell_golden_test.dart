@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rbnotes/app/accent_cubit.dart';
 import 'package:rbnotes/app/shell/app_shell.dart';
 import 'package:rbnotes/app/shell/shell_overlay_cubit.dart';
 import 'package:rbnotes/app/theme_mode_cubit.dart';
@@ -110,6 +111,7 @@ void main() {
   Widget harness({required bool dark}) => MultiBlocProvider(
     providers: [
       BlocProvider(create: (_) => ThemeModeCubit(di())),
+      BlocProvider(create: (_) => AccentCubit(di())),
       BlocProvider(
         create: (_) => SessionCubit(auth: di(), prefs: di()),
       ),
@@ -151,8 +153,8 @@ void main() {
     ],
     child: MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: RbNotesTheme.light,
-      darkTheme: RbNotesTheme.dark,
+      theme: RbNotesTheme.light(),
+      darkTheme: RbNotesTheme.dark(),
       themeMode: dark ? ThemeMode.dark : ThemeMode.light,
       locale: const Locale('pt', 'BR'),
       supportedLocales: const [Locale('pt', 'BR')],

@@ -85,7 +85,7 @@ class WidgetHarness {
   }
 
   Widget wrap(Widget child) => MaterialApp(
-    theme: RbNotesTheme.light,
+    theme: RbNotesTheme.light(),
     home: Scaffold(body: child),
   );
 

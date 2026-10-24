@@ -637,7 +637,11 @@ class _Ready extends StatelessWidget {
     final rb = context.rb;
     return Column(
       children: [
-        const RbLottie(asset: 'assets/lottie/pulse.json', size: 56),
+        RbLottie(
+          asset: 'assets/lottie/pulse.json',
+          size: 56,
+          recolor: rb.accent,
+        ),
         const SizedBox(height: 8),
         GestureDetector(
           onTap: onRecordFirst,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rbnotes/core/theme/color_contrast.dart';
 
 /// Semantic design tokens for RbNotes, ported 1:1 from the Claude Design v3
 /// prototype (`docs/design/RbNotes v3.dc.html`, `applyAccent()`).
@@ -12,6 +13,8 @@ class RbTokens extends ThemeExtension<RbTokens> {
   const RbTokens({
     required this.brightnessIsDark,
     required this.accent,
+    required this.onAccent,
+    required this.accentText,
     required this.text,
     required this.textSecondary,
     required this.textFaint,
@@ -33,57 +36,76 @@ class RbTokens extends ThemeExtension<RbTokens> {
   });
 
   /// Light theme — CSS defaults.
-  factory RbTokens.light(Color accent) => RbTokens(
-    brightnessIsDark: false,
-    accent: accent,
-    text: const Color(0xFF1D1D1F),
-    textSecondary: const Color(0x993C3C43), // rgba(60,60,67,.6)
-    textFaint: const Color(0x663C3C43), // rgba(60,60,67,.4)
-    hairline: const Color(0x1F000000), // rgba(0,0,0,.12)
-    ink: const Color(0xFF1D1D1F),
-    bg: const Color(0xFFFFFFFF),
-    bg2: const Color(0xFFFBFAF8),
-    bg3: const Color(0xFFF5F3F0),
-    card: const Color(0xFFFFFFFF),
-    fill: const Color(0xFFF6F4F1),
-    fill2: const Color(0xFFF1EEEA),
-    side: const Color(0xD1EEEBE6), // rgba(238,235,230,.82)
-    sideCard: const Color(0x8CFFFFFF), // rgba(255,255,255,.55)
-    pop: const Color(0xF5FCFBF9), // rgba(252,251,249,.96)
-    seg: const Color(0xFFFFFFFF),
-    warm: const Color(0xFFF1ECE4),
-    wallpaper: const Color(0xFFCFC9BF),
-    controlFill: const Color(0x1A767680), // rgba(118,118,128,.1)
-  );
+  factory RbTokens.light(Color accent) {
+    const bg = Color(0xFFFFFFFF);
+    return RbTokens(
+      brightnessIsDark: false,
+      accent: accent,
+      onAccent: ColorContrast.onColorFor(accent),
+      accentText: ColorContrast.ensureReadable(accent, bg),
+      text: const Color(0xFF1D1D1F),
+      textSecondary: const Color(0x993C3C43), // rgba(60,60,67,.6)
+      textFaint: const Color(0x663C3C43), // rgba(60,60,67,.4)
+      hairline: const Color(0x1F000000), // rgba(0,0,0,.12)
+      ink: const Color(0xFF1D1D1F),
+      bg: bg,
+      bg2: const Color(0xFFFBFAF8),
+      bg3: const Color(0xFFF5F3F0),
+      card: const Color(0xFFFFFFFF),
+      fill: const Color(0xFFF6F4F1),
+      fill2: const Color(0xFFF1EEEA),
+      side: const Color(0xD1EEEBE6), // rgba(238,235,230,.82)
+      sideCard: const Color(0x8CFFFFFF), // rgba(255,255,255,.55)
+      pop: const Color(0xF5FCFBF9), // rgba(252,251,249,.96)
+      seg: const Color(0xFFFFFFFF),
+      warm: const Color(0xFFF1ECE4),
+      wallpaper: const Color(0xFFCFC9BF),
+      controlFill: const Color(0x1A767680), // rgba(118,118,128,.1)
+    );
+  }
 
   /// Dark theme — the `D` token map in `applyAccent()`.
-  factory RbTokens.dark(Color accent) => RbTokens(
-    brightnessIsDark: true,
-    accent: accent,
-    text: const Color(0xFFF2F2F4),
-    textSecondary: const Color(0x99EBEBF5), // rgba(235,235,245,.6)
-    textFaint: const Color(0x66EBEBF5),
-    hairline: const Color(0x1FFFFFFF), // rgba(255,255,255,.12)
-    ink: const Color(0xFF55555A),
-    bg: const Color(0xFF1E1E20),
-    bg2: const Color(0xFF242426),
-    bg3: const Color(0xFF232325),
-    card: const Color(0xFF2E2E31),
-    fill: const Color(0xFF2A2A2D),
-    fill2: const Color(0xFF333336),
-    side: const Color(0xCC2A2A2D), // rgba(42,42,45,.8)
-    sideCard: const Color(0x0FFFFFFF), // rgba(255,255,255,.06)
-    pop: const Color(0xF528282B), // rgba(40,40,43,.96)
-    seg: const Color(0xFF636366),
-    warm: const Color(0xFF2A2724),
-    wallpaper: const Color(0xFF24221F),
-    controlFill: const Color(0x1AFFFFFF),
-  );
+  factory RbTokens.dark(Color accent) {
+    const bg = Color(0xFF1E1E20);
+    return RbTokens(
+      brightnessIsDark: true,
+      accent: accent,
+      onAccent: ColorContrast.onColorFor(accent),
+      accentText: ColorContrast.ensureReadable(accent, bg),
+      text: const Color(0xFFF2F2F4),
+      textSecondary: const Color(0x99EBEBF5), // rgba(235,235,245,.6)
+      textFaint: const Color(0x66EBEBF5),
+      hairline: const Color(0x1FFFFFFF), // rgba(255,255,255,.12)
+      ink: const Color(0xFF55555A),
+      bg: bg,
+      bg2: const Color(0xFF242426),
+      bg3: const Color(0xFF232325),
+      card: const Color(0xFF2E2E31),
+      fill: const Color(0xFF2A2A2D),
+      fill2: const Color(0xFF333336),
+      side: const Color(0xCC2A2A2D), // rgba(42,42,45,.8)
+      sideCard: const Color(0x0FFFFFFF), // rgba(255,255,255,.06)
+      pop: const Color(0xF528282B), // rgba(40,40,43,.96)
+      seg: const Color(0xFF636366),
+      warm: const Color(0xFF2A2724),
+      wallpaper: const Color(0xFF24221F),
+      controlFill: const Color(0x1AFFFFFF),
+    );
+  }
 
   final bool brightnessIsDark;
 
-  /// `--acc` — brand accent (#E0512E by default).
+  /// `--acc` — brand accent (#E0512E by default). User-selectable (see
+  /// `AccentCubit`).
   final Color accent;
+
+  /// Readable foreground (black/white) for text/icons drawn *on* [accent]
+  /// fills (buttons, badges). Chosen for AA contrast against [accent].
+  final Color onAccent;
+
+  /// Accent color adjusted to stay AA-legible as text/icons *on* the page
+  /// background ([bg]). Equals [accent] when it already passes.
+  final Color accentText;
 
   /// `--tx` — primary text.
   final Color text;
@@ -173,6 +195,12 @@ class RbTokens extends ThemeExtension<RbTokens> {
   /// Destructive action text.
   static const destructive = Color(0xFFD70015);
 
+  /// Warning/attention text (queued, in-progress, amber states).
+  static const warning = Color(0xFFB7791F);
+
+  /// Soft drop-shadow / scrim black used across popovers and overlays.
+  static const scrim = Color(0x40000000);
+
   /// Folder swatch colors (seeded in drift v3), by folder id.
   static const folderColors = <String, Color>{
     'trabalho': Color(0xFF2F6BEB),
@@ -197,6 +225,8 @@ class RbTokens extends ThemeExtension<RbTokens> {
   RbTokens copyWith({
     bool? brightnessIsDark,
     Color? accent,
+    Color? onAccent,
+    Color? accentText,
     Color? text,
     Color? textSecondary,
     Color? textFaint,
@@ -218,6 +248,8 @@ class RbTokens extends ThemeExtension<RbTokens> {
   }) => RbTokens(
     brightnessIsDark: brightnessIsDark ?? this.brightnessIsDark,
     accent: accent ?? this.accent,
+    onAccent: onAccent ?? this.onAccent,
+    accentText: accentText ?? this.accentText,
     text: text ?? this.text,
     textSecondary: textSecondary ?? this.textSecondary,
     textFaint: textFaint ?? this.textFaint,
@@ -244,6 +276,8 @@ class RbTokens extends ThemeExtension<RbTokens> {
     return RbTokens(
       brightnessIsDark: t < 0.5 ? brightnessIsDark : other.brightnessIsDark,
       accent: Color.lerp(accent, other.accent, t)!,
+      onAccent: Color.lerp(onAccent, other.onAccent, t)!,
+      accentText: Color.lerp(accentText, other.accentText, t)!,
       text: Color.lerp(text, other.text, t)!,
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
       textFaint: Color.lerp(textFaint, other.textFaint, t)!,

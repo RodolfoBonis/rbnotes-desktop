@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+import 'package:rbnotes/core/theme/accent_presets.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
 import 'package:rbnotes/native/rb_native.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -51,6 +53,8 @@ class SettingsStore {
   static const _kTouchId = 'settings.touch_id';
   static const _kRetention = 'settings.retention';
   static const _kDeleteAudio = 'settings.delete_audio';
+  // Aparência
+  static const _kAccentArgb = 'settings.accent.argb';
 
   /// Space no macOS.
   static const defaultHotkey = Hotkey(
@@ -254,4 +258,16 @@ class SettingsStore {
   bool get deleteAudioAfter => _prefs.getBool(_kDeleteAudio) ?? false;
   Future<void> setDeleteAudioAfter({required bool value}) =>
       _prefs.setBool(_kDeleteAudio, value);
+
+  // ---- Aparência: cor de acento ----
+
+  /// Cor de acento escolhida (preset ou personalizada). Default: o laranja do
+  /// design (#E0512E).
+  Color get accentColor {
+    final argb = _prefs.getInt(_kAccentArgb);
+    return argb != null ? Color(argb) : AccentPresets.fallback.color;
+  }
+
+  Future<void> setAccentColor(Color color) =>
+      _prefs.setInt(_kAccentArgb, color.toARGB32());
 }

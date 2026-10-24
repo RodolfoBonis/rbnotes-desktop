@@ -21,8 +21,8 @@ Future<void> pumpScreen(
   await tester.pumpWidget(
     MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: RbNotesTheme.light,
-      darkTheme: RbNotesTheme.dark,
+      theme: RbNotesTheme.light(),
+      darkTheme: RbNotesTheme.dark(),
       themeMode: dark ? ThemeMode.dark : ThemeMode.light,
       locale: const Locale('pt', 'BR'),
       supportedLocales: const [Locale('pt', 'BR')],
