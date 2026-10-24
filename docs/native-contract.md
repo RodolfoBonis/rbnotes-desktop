@@ -114,7 +114,31 @@ abstract interface class RbNative {
   /// Ações do usuário no overlay (botões ou clique no corpo). Stream único e
   /// permanente (broadcast), como diagnostics().
   Stream<OverlayAction> overlayActions();
+
+  // ---------- Fase 3 ----------
+  /// Eventos de trava do app (tela bloqueada / sono / proteção de tela).
+  /// Stream único e permanente (broadcast).
+  Stream<LockTrigger> lockTriggers();
+  /// Item de login (SMAppService.mainApp): estado atual e registrar/desregistrar.
+  Future<bool> launchAtLogin();
+  Future<void> setLaunchAtLogin(bool enabled);
+  /// VAD por energia; devolve runs de silêncio > [minSilence] em `<wavPath>`.
+  Future<List<SilenceRange>> detectSilences(String wavPath,
+      {Duration minSilence = const Duration(seconds: 2)});
+  /// Detecção de reunião (mic em uso por outro app + app em foco). Stream único
+  /// e permanente; emite `{app, micInUse, startedAt}` no início e no fim.
+  Stream<MeetingSignal> meetingSignals();
+  Future<void> setMeetingDetection(bool enabled);
+  /// Diarização local (sherpa-onnx): estado dos modelos, download (stream de
+  /// progresso 0..1) e execução sobre um `.wav` 16 kHz mono.
+  Future<DiarizationModelState> diarizationModelState();
+  Stream<double> downloadDiarizationModel();
+  Future<List<SpeakerTurn>> diarize(String wavPath, {int? numSpeakers});
 }
+
+// Fase 3: `startRecording` ganhou `bool noiseReduction = false` e `String?
+// language`; `transcribe` aceita `language` incl. `'auto'` (default segue
+// `'pt'`); `showActivityOverlay` ganhou `int? accentArgb` (0xAARRGGBB).
 
 enum RbPermission { microphone, screenRecording, accessibility }
 enum PermissionStatus { granted, denied, notDetermined }
@@ -126,6 +150,7 @@ enum TranscriptionPriority { normal, high } // default: normal
 enum OverlayMode { recording, dictation }
 enum OverlayPhase { live, processing, done, error }
 enum OverlayAction { pause, resume, stop, discard, openApp }
+enum LockTrigger { screenLocked, systemSleep, screensaver } // Fase 3
 
 class Hotkey { final int keyCode; final Set<HotkeyModifier> modifiers; }
 enum HotkeyModifier { command, option, control, shift, function }
@@ -146,6 +171,11 @@ class TranscriptSegment {
   final List<Word>? words; // null quando o nativo não computou timestamps por palavra
 }
 class NativeDiagnostic { final String code; final String message; final String? recordingId; }
+// Fase 3:
+class SilenceRange { final Duration start; final Duration end; }
+class MeetingSignal { final String app; final bool micInUse; final DateTime startedAt; }
+class DiarizationModelState { final bool downloaded; final int? sizeBytes; }
+class SpeakerTurn { final Duration start; final Duration end; final int speaker; }
 sealed class DictationEvent {}  // DictationStarted, DictationStopped(String wavPath), DictationCancelled
 
 class RbNativeException implements Exception { final String code; final String message; }
@@ -164,16 +194,17 @@ class RbNativeException implements Exception { final String code; final String m
 SHA-256 e tamanho de cada modelo são fixados no nativo (via `curl -sIL` → `x-linked-etag`/`x-linked-size`) e verificados no download; `modelState.downloaded` só é `true` quando o tamanho em disco bate exatamente.
 
 ## Códigos de erro
-`permission_denied`, `already_recording`, `not_recording`, `system_audio_unavailable` (SCStream falhou; a gravação segue só com o mic e o resultado vem com `systemWavPath == null`), `model_missing`, `model_download_failed` (inclui falha ao deletar), `transcription_failed` (inclui falha ao ler áudio em `waveformPeaks`), `transcription_cancelled`, `hotkey_conflict`, `paste_failed`, `invalid_argument` (enum desconhecido / argumento ausente no wire / arquivo de áudio inexistente), `invalid_event` (o Dart não conseguiu decodificar um `DictationEvent`).
+`permission_denied`, `already_recording`, `not_recording`, `system_audio_unavailable` (SCStream falhou; a gravação segue só com o mic e o resultado vem com `systemWavPath == null`), `model_missing`, `model_download_failed` (inclui falha ao deletar), `transcription_failed` (inclui falha ao ler áudio em `waveformPeaks`), `transcription_cancelled`, `hotkey_conflict`, `paste_failed`, `invalid_argument` (enum desconhecido / argumento ausente no wire / arquivo de áudio inexistente), `invalid_event` (o Dart não conseguiu decodificar um `DictationEvent`), `diarization_model_missing`, `diarization_failed`, `login_item_failed` (Fase 3).
 
 ## Códigos de diagnóstico (`diagnostics()`)
 Não são erros fatais; não interrompem a gravação/ditado por si só. O app decide como reagir (ex.: avisar o usuário, logar no monitoramento):
 
-`audio_config_changed` (também emitido quando o dispositivo de entrada escolhido não pôde ser selecionado e caiu no default), `audio_engine_restart_failed`, `system_audio_stopped`, `write_failed`, `tap_disabled`, `dictation_watchdog`, `dictation_key_stuck`.
+`audio_config_changed` (também emitido quando o dispositivo de entrada escolhido não pôde ser selecionado e caiu no default), `audio_engine_restart_failed`, `system_audio_stopped`, `write_failed`, `tap_disabled`, `dictation_watchdog`, `dictation_key_stuck`, `noise_reduction_unavailable` (Fase 3: o voice processing não pôde ser ligado; a gravação segue sem ele).
 
 ## Regras
 - Canais via `MethodChannel('rbnotes_native')` + `EventChannel`s nomeados: `rbnotes_native/levels`, `rbnotes_native/dictation`, `rbnotes_native/diagnostics`, `rbnotes_native/model_download`, `rbnotes_native/transcription_progress`, `rbnotes_native/live_transcript`, `rbnotes_native/overlay_actions`,
-  `rbnotes_native/global_hotkeys`.
+  `rbnotes_native/global_hotkeys`, `rbnotes_native/lock_triggers`,
+  `rbnotes_native/meeting_signals`, `rbnotes_native/diarization_download`.
 - `transcription_progress` é um **stream único e permanente** que emite `{wavPath, progress}`; o Dart filtra por `wavPath` dentro de `transcribe`.
 - `live_transcript` é um **stream único e permanente** que emite `{recordingId, text, isFinal}`; o Dart filtra por `recordingId` dentro de `liveTranscript`.
 - `diagnostics` é um **stream único e permanente** que emite `NativeDiagnostic`.

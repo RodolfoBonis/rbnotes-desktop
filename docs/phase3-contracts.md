@@ -64,3 +64,33 @@ Future<List<SpeakerTurn>> diarize(String wavPath, {int? numSpeakers}); // {start
 ```
 
 Os códigos de erro novos são `diarization_model_missing`, `diarization_failed` e `login_item_failed`.
+
+### Nativo implementado (2026-10-24) — wire final
+
+Tudo acima foi implementado no plugin. Detalhes de wire para o fake do app:
+
+- **EventChannels novos (únicos e permanentes):** `rbnotes_native/lock_triggers`
+  (`String`: `screenLocked`/`systemSleep`/`screensaver`),
+  `rbnotes_native/meeting_signals` (`{app, micInUse, startedAtMs}`),
+  `rbnotes_native/diarization_download` (`double` 0..1; `onListen` inicia o
+  download, `onCancel` cancela).
+- **Métodos:** `launchAtLogin` → `bool`; `setLaunchAtLogin {enabled}`;
+  `detectSilences {wavPath, minSilenceMs}` → `[{startMs, endMs}]`;
+  `setMeetingDetection {enabled}`; `diarizationModelState` → `{downloaded,
+  sizeBytes?}`; `diarize {wavPath, numSpeakers}` → `[{startMs, endMs, speaker}]`.
+- **`startRecording`** passa a enviar **sempre** `noiseReduction` (bool) e
+  `language` (`String?`) além dos campos já existentes.
+- **`transcribe`** aceita `language` incluindo `'auto'`. **Atenção:** o default
+  do `transcribe` continua `'pt'` (não `'auto'`) por compatibilidade — passe o
+  idioma explicitamente (`'auto'`/`'pt'`/`'en'`/`'es'`). O `language` do
+  `startRecording` controla a transcrição **ao vivo**.
+- **`showActivityOverlay`** passa a enviar `accentArgb` (`int?`, 0xAARRGGBB;
+  null = acento padrão `#E0512E`).
+- **Diagnóstico novo** em `diagnostics()`: `noise_reduction_unavailable` (o voice
+  processing não pôde ligar; a gravação segue sem ruído reduzido).
+- **Modelos de diarização** (download automático, SHA-256 + tamanho fixos):
+  pyannote-segmentation-3-0 (5.992.913 B) + 3dspeaker CAM++ zh-cn 16k
+  (28.281.138 B), em `~/Library/Application Support/RbNotes/models/diarization/`.
+- **sherpa-onnx**: integrado via `scripts/build_sherpa.sh` (release oficial
+  v2.0.0 pinado por SHA-256, sem binários no git). O `macos/Podfile` da raiz
+  ganhou a linha de hook correspondente.

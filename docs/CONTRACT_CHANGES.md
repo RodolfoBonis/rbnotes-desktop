@@ -3,6 +3,96 @@
 Registro de alterações em `docs/native-contract.md` (o quê e por quê). O outro
 engenheiro lê este arquivo.
 
+## 2026-10-24 — Fase 3 nativa (lock, login item, ruído, idioma, silêncios, reunião, diarização, acento)
+
+Implementação da parte **nativa** da Fase 3 no plugin `rbnotes_native`. Tudo
+**aditivo**; nada existente foi renomeado. O contrato que o app consome está em
+`docs/phase3-contracts.md` (seção Plugin) e foi seguido à risca, com as notas
+abaixo.
+
+- **9 métodos/streams novos na `RbNative`** (wire entre parênteses):
+  - `lockTriggers()` → `Stream<LockTrigger>` no EventChannel **único e
+    permanente** `rbnotes_native/lock_triggers` (wire: `String` =
+    `screenLocked`/`systemSleep`/`screensaver`). Nativo: `DistributedNotification
+    Center` (`com.apple.screenIsLocked`, `com.apple.screensaver.didstart`) +
+    `NSWorkspace` (`screensDidSleepNotification`, `willSleepNotification`), com
+    debounce de 1 s por tipo.
+  - `launchAtLogin()` → `Future<bool>` e `setLaunchAtLogin(bool)` (wire
+    `setLaunchAtLogin {enabled}`). `SMAppService.mainApp` register/unregister/
+    status. Quando o macOS exige aprovação em Ajustes, `setLaunchAtLogin(true)`
+    lança `login_item_failed` com uma mensagem clara (o estado só fica `true`
+    após a aprovação).
+  - `detectSilences(wavPath, {minSilence})` → `Future<List<SilenceRange>>` (wire
+    `detectSilences {wavPath, minSilenceMs}`; resposta `[{startMs, endMs}]`).
+    VAD por energia (RMS em janelas de 30 ms, limiar adaptativo pelo percentil
+    de ruído + faixa dinâmica). Lógica pura em `RbNativeCore` (`SilenceDetector`/
+    `WavPCM`), testada com WAV sintético.
+  - `meetingSignals()` → `Stream<MeetingSignal>` no EventChannel **único e
+    permanente** `rbnotes_native/meeting_signals` (wire `{app, micInUse,
+    startedAtMs}`) e `setMeetingDetection(bool)` (wire `{enabled}`). Observa
+    `kAudioDevicePropertyDeviceIsRunningSomewhere` do input padrão (re-vincula
+    na troca de dispositivo), ignora o uso pelo próprio RbNotes, correlaciona
+    com o app em foco (Zoom/Teams/Webex/FaceTime/Slack e navegadores via título
+    da aba por Accessibility) e debounce de ~3 s. Emite no início (`micInUse:
+    true`) e no fim (`false`).
+  - `diarizationModelState()` → `Future<DiarizationModelState>` (`{downloaded,
+    sizeBytes?}`), `downloadDiarizationModel()` → `Stream<double>` no EventChannel
+    **único e permanente** `rbnotes_native/diarization_download` (onListen inicia,
+    onCancel cancela), e `diarize(wavPath, {numSpeakers})` →
+    `Future<List<SpeakerTurn>>` (wire `diarize {wavPath, numSpeakers}`; resposta
+    `[{startMs, endMs, speaker}]`). sherpa-onnx offline (pyannote segmentation +
+    3dspeaker CAM++), rodando fora da main thread.
+
+- **Assinaturas existentes estendidas (compatíveis):**
+  - `startRecording` ganhou `bool noiseReduction = false` e `String? language`
+    (wire passa a incluir sempre `noiseReduction` e `language`). `noiseReduction`
+    liga `AVAudioInputNode.setVoiceProcessingEnabled(true)` antes do engine;
+    `language` troca o idioma da transcrição **ao vivo** (default `pt`).
+  - `transcribe` aceita `language = 'auto'` (→ `whisper_full_params.language =
+    "auto"` + `detect_language = true`). **O default do `transcribe` segue `'pt'`**
+    (compatibilidade; o `phase3-contracts.md` ilustrava `= 'auto'`, mas mantivemos
+    `'pt'` para não quebrar chamadas/teste existentes — o app passa o idioma
+    explicitamente a partir das Configurações de Transcrição).
+  - `showActivityOverlay` ganhou `int? accentArgb` (wire passa a incluir
+    `accentArgb`, 0xAARRGGBB; null = acento padrão `#E0512E`). `OverlayView` usa
+    a cor recebida no botão Concluir, barra de progresso e checks.
+
+- **Enums/modelos novos:** `LockTrigger`, `SilenceRange`, `MeetingSignal`,
+  `DiarizationModelState`, `SpeakerTurn`.
+
+- **Códigos de erro novos:** `diarization_model_missing`, `diarization_failed`,
+  `login_item_failed`.
+
+- **Código de diagnóstico novo (`diagnostics()`):** `noise_reduction_unavailable`
+  — emitido quando o voice processing não pôde ser ligado; a gravação segue sem
+  ele (não quebra SCStream nem a transcrição ao vivo).
+
+- **3 EventChannels novos:** `rbnotes_native/lock_triggers`,
+  `rbnotes_native/meeting_signals`, `rbnotes_native/diarization_download`.
+
+Integração do sherpa-onnx (não afeta assinaturas):
+
+- `scripts/build_sherpa.sh` baixa o release oficial **fixado**
+  (`sherpa-onnx v2.0.0`, `osx-universal2-shared`, SHA-256 e tamanho pinados) e
+  embrulha os dylibs (já `@rpath`) em `sherpa_onnx.xcframework` +
+  `onnxruntime.xcframework` (o C-API aponta para `@rpath/onnxruntime.framework`).
+  **Nenhum binário é commitado** (`.sherpa-build/` e `macos/Frameworks/` no
+  `.gitignore`), igual ao whisper.
+- O podspec vende os dois xcframeworks, adiciona `ServiceManagement` e
+  `ApplicationServices`, e roda `build_sherpa.sh` como build phase (fallback).
+- O Podfile do **example** roda `build_sherpa.sh` no `pod install`.
+- **Modelos de diarização** (como os do whisper, SHA-256 + tamanho fixos),
+  baixados para `~/Library/Application Support/RbNotes/models/diarization/`:
+  - segmentação `pyannote-segmentation-3-0` (5.992.913 bytes);
+  - embedding `3dspeaker CAM++ zh-cn 16k` (28.281.138 bytes) — o mais leve com
+    boa qualidade entre as opções 3dspeaker/nemo.
+
+> **Podfile da raiz (app):** adicionei **uma linha** de hook rodando
+> `scripts/build_sherpa.sh` no `macos/Podfile` (análogo ao hook do whisper já
+> existente). O app precisa de `pod install` na raiz para o build pegar os novos
+> frameworks. Avisado ao engenheiro do app.
+
+
 ## 2026-10-23 — Atalhos globais genéricos (`registerGlobalHotkey`)
 
 Estas **mudam a API pública** (aditivas; nada existente foi renomeado). Motivação:
