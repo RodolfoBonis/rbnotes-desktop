@@ -9,9 +9,23 @@ import 'package:rbnotes/features/ai/data/sse_client.dart';
 import 'package:rbnotes/features/ai/domain/note_ai.dart';
 import 'package:rbnotes/features/collections/domain/collection_rule.dart';
 
+/// Conteúdo de um evento SSE já **desembrulhado** do envelope do servidor
+/// (`{"data": "<conteúdo>", "code"?: "<código>"}`).
+class _Envelope {
+  const _Envelope(this.data, this.code);
+  final String data;
+  final String? code;
+}
+
 /// `AiClient` real: dispara o job (`202 { id }`) e acompanha o resultado por
-/// SSE (`GET /ai/streams/{id}`). A saída estruturada chega nos eventos `json`
-/// (o objeto cresce incrementalmente; `text` é o streaming do chat/ask).
+/// SSE (`GET /ai/streams/{id}`).
+///
+/// Cada evento SSE vem embrulhado num envelope `{"data":"…","code"?:"…"}`: o
+/// conteúdo real está sempre em `data` (uma string). Os eventos `json` trazem o
+/// JSON estruturado em **pedaços** (acumulados num buffer, só para a UI de
+/// streaming); o **resultado final canônico** vem no evento `done` (parse
+/// estrito). O bug corrigido aqui tratava o envelope como se fosse o resultado,
+/// gerando um `NoteAi` vazio.
 class ApiAiClient implements AiClient {
   ApiAiClient(
     this._api, {
@@ -157,18 +171,27 @@ class ApiAiClient implements AiClient {
     }
   }
 
-  /// Consome o stream até `done`, devolvendo o último objeto `json`.
+  /// Consome o stream até `done`, devolvendo o **resultado final canônico**.
+  ///
+  /// Prioridade: o `data` do evento `done` (parse estrito). Se o `done` vier
+  /// vazio (servidor antigo), cai para o buffer acumulado dos eventos `json`
+  /// (os pedaços concatenados reconstroem o JSON completo).
   Future<Map<String, dynamic>> _collect(String id) async {
     _activity?.set(AiPhase.streaming);
-    Map<String, dynamic>? last;
+    final buffer = StringBuffer();
+    Map<String, dynamic>? result;
     try {
       await for (final ev in _sse.connect('/ai/streams/$id')) {
+        final env = _unwrap(ev.data);
         if (ev.isError) {
           _activity?.set(AiPhase.error);
-          throw AiException(_errorMessage(ev.data));
+          throw AiException(_errorMessage(env));
         }
-        if (ev.event == 'json') last = _parse(ev.data) ?? last;
-        if (ev.isDone) break;
+        if (ev.event == 'json') buffer.write(env.data);
+        if (ev.isDone) {
+          result = _parseStrict(env.data) ?? _parseStrict(buffer.toString());
+          break;
+        }
       }
     } on AiException {
       rethrow;
@@ -176,12 +199,12 @@ class ApiAiClient implements AiClient {
       _activity?.set(AiPhase.error);
       rethrow;
     }
-    if (last == null) {
+    if (result == null) {
       _activity?.set(AiPhase.error);
       throw const AiException('A IA não retornou um resultado.');
     }
     _activity?.set(AiPhase.idle);
-    return last;
+    return result;
   }
 
   Stream<AiDelta> _stream({
@@ -192,23 +215,26 @@ class ApiAiClient implements AiClient {
   }) async* {
     final id = await _start(path, body);
     _activity?.set(AiPhase.streaming);
-    Map<String, dynamic>? last;
+    final buffer = StringBuffer();
+    Map<String, dynamic>? result;
     await for (final ev in _sse.connect('/ai/streams/$id')) {
+      final env = _unwrap(ev.data);
       if (ev.isError) {
         _activity?.set(AiPhase.error);
-        throw AiException(_errorMessage(ev.data));
+        throw AiException(_errorMessage(env));
       }
       if (ev.event == 'json') {
-        final obj = _parse(ev.data);
-        if (obj != null) {
-          last = obj;
-          yield toDelta(obj, done: false);
-        }
+        buffer.write(env.data);
+        final partial = _parseTolerant(buffer.toString());
+        if (partial != null) yield toDelta(partial, done: false);
       }
-      if (ev.isDone) break;
+      if (ev.isDone) {
+        result = _parseStrict(env.data) ?? _parseStrict(buffer.toString());
+        break;
+      }
     }
     _activity?.set(AiPhase.idle);
-    yield toDelta(last ?? const {}, done: true);
+    yield toDelta(result ?? const {}, done: true);
   }
 
   Map<String, dynamic> _segment(AiSegment s) => {
@@ -257,8 +283,27 @@ class ApiAiClient implements AiClient {
     throw const AiException('Resposta inesperada ao enfileirar a IA.');
   }
 
-  Map<String, dynamic>? _parse(String data) {
-    if (data.isEmpty) return null;
+  /// Desembrulha o envelope `{"data":"…","code"?:"…"}`. Tolera um payload já
+  /// "cru" (servidor antigo sem envelope): nesse caso devolve a string inteira.
+  _Envelope _unwrap(String raw) {
+    if (raw.isEmpty) return const _Envelope('', null);
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return _Envelope(
+          (decoded['data'] as String?) ?? '',
+          decoded['code'] as String?,
+        );
+      }
+    } on FormatException {
+      // não é JSON: trata como conteúdo cru.
+    }
+    return _Envelope(raw, null);
+  }
+
+  /// Parse estrito de um objeto JSON completo (`null` se vazio/ inválido).
+  Map<String, dynamic>? _parseStrict(String data) {
+    if (data.trim().isEmpty) return null;
     try {
       final decoded = jsonDecode(data);
       return decoded is Map<String, dynamic> ? decoded : null;
@@ -267,10 +312,71 @@ class ApiAiClient implements AiClient {
     }
   }
 
-  String _errorMessage(String data) {
-    final obj = _parse(data);
-    return (obj?['message'] as String?) ??
-        (obj?['error'] as String?) ??
-        'Falha na IA.';
+  /// Parse tolerante do JSON **parcial** acumulado (streaming de chat/ask):
+  /// tenta o parse estrito e, se o objeto ainda está incompleto, extrai o campo
+  /// `text` parcial para exibir enquanto a resposta chega.
+  Map<String, dynamic>? _parseTolerant(String raw) {
+    final strict = _parseStrict(raw);
+    if (strict != null) return strict;
+    final text = _partialText(raw);
+    return text == null ? null : {'text': text};
+  }
+
+  /// Extrai o valor (possivelmente incompleto) do campo `"text"` de um JSON
+  /// parcial, tratando escapes JSON e um escape cortado no fim do buffer.
+  String? _partialText(String raw) {
+    final match = RegExp(r'"text"\s*:\s*"').firstMatch(raw);
+    if (match == null) return null;
+    final out = StringBuffer();
+    var i = match.end;
+    while (i < raw.length) {
+      final c = raw[i];
+      if (c == r'\') {
+        if (i + 1 >= raw.length) break; // escape cortado no fim do buffer
+        final n = raw[i + 1];
+        switch (n) {
+          case 'n':
+            out.write('\n');
+          case 't':
+            out.write('\t');
+          case 'r':
+            out.write('\r');
+          case 'b':
+            out.write('\b');
+          case 'f':
+            out.write('\f');
+          case '"':
+            out.write('"');
+          case '/':
+            out.write('/');
+          case r'\':
+            out.write(r'\');
+          case 'u':
+            if (i + 5 < raw.length) {
+              final code = int.tryParse(raw.substring(i + 2, i + 6), radix: 16);
+              if (code != null) out.writeCharCode(code);
+              i += 4;
+            }
+          default:
+            out.write(n);
+        }
+        i += 2;
+        continue;
+      }
+      if (c == '"') break; // fim da string do campo text
+      out.write(c);
+      i++;
+    }
+    return out.toString();
+  }
+
+  String _errorMessage(_Envelope env) {
+    final obj = _parseStrict(env.data);
+    if (obj != null) {
+      return (obj['message'] as String?) ??
+          (obj['error'] as String?) ??
+          'Falha na IA.';
+    }
+    return env.data.isNotEmpty ? env.data : 'Falha na IA.';
   }
 }

@@ -54,55 +54,144 @@ void main() {
       ..headers.contentType = ContentType('text', 'event-stream');
   }
 
-  test('enrich: junta eventos json e devolve o NoteAi final', () async {
+  // Monta um evento SSE no formato REAL do servidor: o campo `data:` é sempre o
+  // envelope `{"data":"<conteúdo>","code"?:"<código>"}`. [inner] é o conteúdo
+  // real (um pedaço de JSON nos `json`, o JSON completo no `done`).
+  String sse(String event, String inner, {String? code, String? id}) {
+    final env = <String, dynamic>{
+      'data': inner,
+      'code': ?code,
+    };
+    final prefix = id == null ? '' : 'id: $id\n';
+    return '${prefix}event: $event\ndata: ${jsonEncode(env)}\n\n';
+  }
+
+  test(
+    'enrich: o resultado final vem do done (envelope desembrulhado)',
+    () async {
+      server = await LocalServer.start((req) async {
+        if (req.uri.path.endsWith('/enrich')) return json202(req, 'job1');
+        sseHeaders(req);
+        req.response
+          ..write(sse('json', '{"title":"Kic'))
+          ..write(sse('json', 'koff","tldr":"resumo"}'))
+          ..write(
+            sse('done', '{"title":"Kickoff","tldr":"resumo","points":["p"]}'),
+          );
+        await req.response.close();
+      });
+
+      final ai = ApiAiClient(apiFor());
+      final note = await ai.enrich(
+        const EnrichRequest(noteId: 'n1', segments: [], speakers: ['Você']),
+      );
+      expect(note.title, 'Kickoff');
+      expect(note.tldr, 'resumo');
+      expect(note.points, ['p']);
+    },
+  );
+
+  test(
+    'enrich: done vazio → fallback para o buffer dos json parciais',
+    () async {
+      server = await LocalServer.start((req) async {
+        if (req.uri.path.endsWith('/enrich')) return json202(req, 'job2');
+        sseHeaders(req);
+        req.response
+          ..write(sse('json', '{"title":"Kickoff",'))
+          ..write(sse('json', '"tldr":"resumo"}'))
+          ..write(sse('done', '')); // servidor antigo: done sem resultado
+        await req.response.close();
+      });
+
+      final ai = ApiAiClient(apiFor());
+      final note = await ai.enrich(
+        const EnrichRequest(noteId: 'n1', segments: [], speakers: ['Você']),
+      );
+      expect(note.title, 'Kickoff');
+      expect(note.tldr, 'resumo');
+    },
+  );
+
+  test(
+    'enrich: envelope nunca é tratado como resultado (bug corrigido)',
+    () async {
+      // Reproduz o SSE real que gerava note_ai {}: cada evento é um envelope.
+      // Se o cliente tratasse o envelope como objeto, o título viria vazio.
+      server = await LocalServer.start((req) async {
+        if (req.uri.path.endsWith('/enrich')) return json202(req, 'job3');
+        sseHeaders(req);
+        req.response
+          ..write(sse('json', '{"title":"Reuniao","tldr":"ok"}'))
+          ..write(sse('done', '{"title":"Reuniao","tldr":"ok"}'));
+        await req.response.close();
+      });
+
+      final ai = ApiAiClient(apiFor());
+      final note = await ai.enrich(
+        const EnrichRequest(noteId: 'n1', segments: [], speakers: ['Você']),
+      );
+      expect(note.title, 'Reuniao');
+      expect(note.tldr, 'ok');
+    },
+  );
+
+  test(
+    'ask: faz streaming do texto parcial e entrega as fontes no fim',
+    () async {
+      server = await LocalServer.start((req) async {
+        if (req.uri.path.endsWith('/ask')) return json202(req, 'ask1');
+        sseHeaders(req);
+        req.response
+          ..write(sse('json', '{"text":"Olh'))
+          ..write(
+            sse('json', 'ando","sources":[{"noteId":"n1","title":"Nota"}]}'),
+          )
+          ..write(
+            sse(
+              'done',
+              '{"text":"Olhando","sources":[{"noteId":"n1","title":"Nota"}]}',
+            ),
+          );
+        await req.response.close();
+      });
+
+      final ai = ApiAiClient(apiFor());
+      final deltas = await ai
+          .ask(question: 'e aí?', candidates: const [])
+          .toList();
+      final partial = deltas.where((d) => !d.isDone).toList();
+      expect(partial, isNotEmpty); // streaming parcial via parse tolerante
+      expect(partial.first.text, 'Olh');
+      expect(deltas.last.isDone, isTrue);
+      expect(deltas.last.text, 'Olhando');
+      expect(deltas.last.sources.single.noteId, 'n1');
+    },
+  );
+
+  test('erro: o envelope de error vira AiException com a mensagem', () async {
     server = await LocalServer.start((req) async {
-      if (req.uri.path.endsWith('/enrich')) return json202(req, 'job1');
+      if (req.uri.path.endsWith('/enrich')) return json202(req, 'joberr');
       sseHeaders(req);
-      req.response
-        ..write('event: json\ndata: {"title":"K"}\n\n')
-        ..write(
-          'event: json\ndata: '
-          '${jsonEncode({'title': 'Kickoff', 'tldr': 'resumo'})}\n\n',
-        )
-        ..write('event: done\ndata: {}\n\n');
+      req.response.write(
+        sse('error', 'A IA nao conseguiu responder.', code: 'stream_timeout'),
+      );
       await req.response.close();
     });
 
     final ai = ApiAiClient(apiFor());
-    final note = await ai.enrich(
-      const EnrichRequest(noteId: 'n1', segments: [], speakers: ['Você']),
+    await expectLater(
+      ai.enrich(
+        const EnrichRequest(noteId: 'n1', segments: [], speakers: ['Você']),
+      ),
+      throwsA(
+        isA<AiException>().having(
+          (e) => e.message,
+          'message',
+          'A IA nao conseguiu responder.',
+        ),
+      ),
     );
-    expect(note.title, 'Kickoff');
-    expect(note.tldr, 'resumo');
-  });
-
-  test('ask: faz streaming do texto e entrega as fontes no fim', () async {
-    server = await LocalServer.start((req) async {
-      if (req.uri.path.endsWith('/ask')) return json202(req, 'ask1');
-      sseHeaders(req);
-      req.response
-        ..write('event: json\ndata: {"text":"Olh"}\n\n')
-        ..write(
-          'event: json\ndata: '
-          '${jsonEncode({
-            'text': 'Olhando',
-            'sources': [
-              {'noteId': 'n1', 'title': 'Nota'},
-            ],
-          })}\n\n',
-        )
-        ..write('event: done\ndata: {}\n\n');
-      await req.response.close();
-    });
-
-    final ai = ApiAiClient(apiFor());
-    final deltas = await ai
-        .ask(question: 'e aí?', candidates: const [])
-        .toList();
-    expect(deltas.where((d) => !d.isDone), isNotEmpty); // streaming parcial
-    expect(deltas.last.isDone, isTrue);
-    expect(deltas.last.text, 'Olhando');
-    expect(deltas.last.sources.single.noteId, 'n1');
   });
 
   test('429 ai_daily_limit → AiDailyLimitException', () async {
@@ -131,14 +220,14 @@ void main() {
       sseHeaders(req);
       if (streamConnects == 1) {
         // Primeira conexão: um evento com id e cai sem `done`.
-        req.response.write('id: 1\nevent: json\ndata: {"text":"parte1"}\n\n');
+        req.response.write(sse('json', '{"text":"parte1"}', id: '1'));
         await req.response.close();
         return;
       }
       lastEventIdSeen = req.headers.value('last-event-id');
       req.response
-        ..write('event: json\ndata: {"text":"parte1-parte2"}\n\n')
-        ..write('event: done\ndata: {}\n\n');
+        ..write(sse('json', '{"text":"parte1-parte2"}'))
+        ..write(sse('done', '{"text":"parte1-parte2"}'));
       await req.response.close();
     });
 
