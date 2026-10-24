@@ -72,6 +72,7 @@ void main() {
     ('Transcrição', 'settings_transcription'),
     ('Inteligência', 'settings_intelligence'),
     ('Conta', 'settings_account'),
+    ('Uso', 'settings_usage'),
     ('Atalhos', 'settings_shortcuts'),
     ('Privacidade', 'settings_privacy'),
   ]) {

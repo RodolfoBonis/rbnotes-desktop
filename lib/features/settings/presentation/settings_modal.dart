@@ -11,11 +11,14 @@ import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/rb_select.dart';
 import 'package:rbnotes/core/ui/traffic_lights.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
+import 'package:rbnotes/features/ai/data/ai_usage_client.dart';
+import 'package:rbnotes/features/ai/presentation/ai_usage_cubit.dart';
 import 'package:rbnotes/features/recording/data/mac_key_codes.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/settings/presentation/accent_picker.dart';
+import 'package:rbnotes/features/settings/presentation/ai_usage_pane.dart';
 import 'package:rbnotes/features/settings/presentation/vocabulary_editor.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/sync/data/sync_status.dart';
@@ -53,6 +56,7 @@ enum SettingsTab {
   transcricao,
   ia,
   conta,
+  uso,
   atalhos,
   privacidade,
 }
@@ -64,6 +68,7 @@ class SettingsModal extends StatefulWidget {
     required this.native,
     required this.vocabulary,
     required this.recordNoteHotkey,
+    required this.aiUsageClient,
     required this.userName,
     required this.userEmail,
     required this.userInitials,
@@ -81,6 +86,9 @@ class SettingsModal extends StatefulWidget {
   /// Registra o atalho global "Gravar nota" e expõe o estado do registro para
   /// a aba Atalhos.
   final RecordNoteHotkeyService recordNoteHotkey;
+
+  /// Cliente de consumo de IA para a aba "Uso" (GET /v1/ai/usage).
+  final AiUsageClient aiUsageClient;
   final String userName;
   final String userEmail;
   final String userInitials;
@@ -216,6 +224,7 @@ class _SettingsModalState extends State<SettingsModal> {
       SettingsTab.transcricao => _transcricao(),
       SettingsTab.ia => _ia(),
       SettingsTab.conta => _conta(),
+      SettingsTab.uso => _uso(),
       SettingsTab.atalhos => _atalhos(),
       SettingsTab.privacidade => _privacidade(),
     };
@@ -442,6 +451,15 @@ class _SettingsModalState extends State<SettingsModal> {
       ],
     ),
   ]);
+
+  Widget _uso() => BlocProvider(
+    create: (_) {
+      final cubit = AiUsageCubit(client: widget.aiUsageClient);
+      unawaited(cubit.start());
+      return cubit;
+    },
+    child: const AiUsagePane(),
+  );
 
   Widget _atalhos() => _Groups([
     _Group(
@@ -941,6 +959,7 @@ class _TabStrip extends StatelessWidget {
     (SettingsTab.transcricao, 'Transcrição', Icons.graphic_eq),
     (SettingsTab.ia, 'Inteligência', Icons.auto_awesome_outlined),
     (SettingsTab.conta, 'Conta', Icons.person_outline),
+    (SettingsTab.uso, 'Uso', Icons.bar_chart_outlined),
     (SettingsTab.atalhos, 'Atalhos', Icons.keyboard_outlined),
     (SettingsTab.privacidade, 'Privacidade', Icons.lock_outline),
   ];

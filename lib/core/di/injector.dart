@@ -12,9 +12,11 @@ import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/ai_activity.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
+import 'package:rbnotes/features/ai/data/ai_usage_client.dart';
 import 'package:rbnotes/features/ai/data/api_ai_client.dart';
 import 'package:rbnotes/features/ai/data/enrichment_service.dart';
 import 'package:rbnotes/features/ai/data/fake_ai_client.dart';
+import 'package:rbnotes/features/ai/data/fake_ai_usage_client.dart';
 import 'package:rbnotes/features/auth/data/auth_service.dart';
 import 'package:rbnotes/features/auth/data/keycloak_auth_service.dart';
 import 'package:rbnotes/features/diary/data/diary_repository.dart';
@@ -85,6 +87,7 @@ Future<void> configureDependencies(AppConfig config) async {
 
   // ---- IA / sync / auth: fakes locais ou clientes reais. ----
   final AiClient ai;
+  final AiUsageClient aiUsage;
   final SyncClient sync;
   final AuthService auth;
   ApiClient? apiClient;
@@ -124,6 +127,7 @@ Future<void> configureDependencies(AppConfig config) async {
       activity: aiActivity,
       modelName: () => settings.aiModel,
     );
+    aiUsage = ApiAiUsageClient(api);
     final syncClient = ApiSyncClient(api);
     sync = syncClient;
     syncService = SyncService(
@@ -148,6 +152,7 @@ Future<void> configureDependencies(AppConfig config) async {
     await keycloak.restore();
   } else {
     ai = FakeAiClient();
+    aiUsage = const FakeAiUsageClient();
     sync = const FakeSyncClient();
     auth = FakeAuthService();
   }
@@ -187,6 +192,7 @@ Future<void> configureDependencies(AppConfig config) async {
     ..registerSingleton<DiagnosticsMonitor>(diagnostics)
     ..registerSingleton<AiActivity>(aiActivity)
     ..registerSingleton<AiClient>(ai)
+    ..registerSingleton<AiUsageClient>(aiUsage)
     ..registerSingleton<SyncClient>(sync)
     ..registerSingleton<AuthService>(auth)
     ..registerSingleton<NotificationService>(notifications)

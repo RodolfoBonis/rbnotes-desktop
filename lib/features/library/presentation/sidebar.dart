@@ -12,6 +12,7 @@ class Sidebar extends StatelessWidget {
   const Sidebar({
     required this.userName,
     required this.userInitials,
+    required this.userEmail,
     required this.modelLabel,
     required this.onOpenNewCollection,
     required this.onOpenSettings,
@@ -22,6 +23,7 @@ class Sidebar extends StatelessWidget {
 
   final String userName;
   final String userInitials;
+  final String userEmail;
   final String modelLabel;
   final VoidCallback onOpenNewCollection;
   final VoidCallback onOpenSettings;
@@ -130,6 +132,7 @@ class Sidebar extends StatelessWidget {
               _StatusCard(modelLabel: modelLabel, aiStatus: aiStatus),
               _ProfileRow(
                 name: userName,
+                email: userEmail,
                 initials: userInitials,
                 onOpenSettings: onOpenSettings,
                 onToggleAppearance: onToggleAppearance,
@@ -502,12 +505,14 @@ class _StatusCard extends StatelessWidget {
 class _ProfileRow extends StatelessWidget {
   const _ProfileRow({
     required this.name,
+    required this.email,
     required this.initials,
     required this.onOpenSettings,
     required this.onToggleAppearance,
   });
 
   final String name;
+  final String email;
   final String initials;
   final VoidCallback onOpenSettings;
   final VoidCallback onToggleAppearance;
@@ -543,10 +548,15 @@ class _ProfileRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: context.bodyText(size: 12.5, weight: FontWeight.w600),
                 ),
-                Text(
-                  'RbNotes Pro',
-                  style: context.bodyText(size: 11, color: rb.secondary(0.6)),
-                ),
+                if (email.isNotEmpty)
+                  Text(
+                    email,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.bodyText(
+                      size: 11,
+                      color: rb.secondary(0.6),
+                    ),
+                  ),
               ],
             ),
           ),

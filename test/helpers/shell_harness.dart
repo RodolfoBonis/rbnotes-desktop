@@ -14,7 +14,9 @@ import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/core/theme/rbnotes_theme.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
+import 'package:rbnotes/features/ai/data/ai_usage_client.dart';
 import 'package:rbnotes/features/ai/data/fake_ai_client.dart';
+import 'package:rbnotes/features/ai/data/fake_ai_usage_client.dart';
 import 'package:rbnotes/features/ai/presentation/ask_cubit.dart';
 import 'package:rbnotes/features/auth/data/auth_service.dart';
 import 'package:rbnotes/features/auth/presentation/session_cubit.dart';
@@ -83,6 +85,7 @@ class ShellHarness {
       ..registerSingleton<DiaryRepository>(diary)
       ..registerSingleton<VocabularyRepository>(VocabularyRepository(db))
       ..registerSingleton<AiClient>(ai)
+      ..registerSingleton<AiUsageClient>(const FakeAiUsageClient())
       ..registerSingleton<TranscriptionQueue>(queue)
       ..registerSingleton<AuthService>(auth)
       ..registerSingleton<DiagnosticsMonitor>(DiagnosticsMonitor(native))

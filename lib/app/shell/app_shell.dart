@@ -225,6 +225,7 @@ class _SidebarColumn extends StatelessWidget {
     return Sidebar(
       userName: user?.name ?? 'Você',
       userInitials: user?.initials ?? 'V',
+      userEmail: user?.email ?? '',
       modelLabel: modelLabel,
       aiStatus: di.isRegistered<AiActivity>() ? di<AiActivity>().stream : null,
       onOpenNewCollection: context.read<ShellOverlayCubit>().openNewCollection,
@@ -443,6 +444,7 @@ class _SettingsLayer extends StatelessWidget {
       native: di(),
       vocabulary: di(),
       recordNoteHotkey: di(),
+      aiUsageClient: di(),
       userName: user?.name ?? 'Você',
       userEmail: user?.email ?? '',
       userInitials: user?.initials ?? 'V',
