@@ -126,7 +126,7 @@ SPEC CHECKSUMS:
   just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed
   local_auth_darwin: c3ee6cce0a8d56be34c8ccb66ba31f7f180aaebb
   package_info_plus: f0052d280d17aa382b932f399edf32507174e870
-  rbnotes_native: e18bad1437953cd30faf2ef2807241eb00cd8163
+  rbnotes_native: 08eb04a036e668f533b4d930dc0de8028997a129
   screen_retriever_macos: c5508cc3c66ff0d4db650480cf0ab691e220d933
   Sentry: 5321d74bdd28d6f6f8beaa1ca06f1fdc746bff49
   sentry_flutter: c89c731736fabbbac53a4714df8ba0d21ba4100d
