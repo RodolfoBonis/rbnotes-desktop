@@ -136,6 +136,7 @@ class _SettingsModalState extends State<SettingsModal> {
   final _subs = <WhisperModel, StreamSubscription<double>>{};
   StreamSubscription<RecordNoteHotkeyStatus>? _recordHotkeySub;
   bool? _notifPermission;
+  List<AudioInputDevice> _micDevices = const [];
 
   SettingsStore get _s => widget.store;
 
@@ -149,6 +150,16 @@ class _SettingsModalState extends State<SettingsModal> {
       if (mounted) setState(() {});
     });
     unawaited(_loadNotifPermission());
+    unawaited(_loadMicDevices());
+  }
+
+  Future<void> _loadMicDevices() async {
+    try {
+      final devices = await widget.native.inputDevices();
+      if (mounted) setState(() => _micDevices = devices);
+    } on Object {
+      // sem plugin em teste; mantém o fallback do nome salvo.
+    }
   }
 
   Future<void> _loadNotifPermission() async {
@@ -360,12 +371,7 @@ class _SettingsModalState extends State<SettingsModal> {
   Widget _gravacao() => _Groups([
     _Group(
       rows: [
-        _select(
-          'Microfone',
-          const ['Microfone do MacBook Pro', 'AirPods Pro', 'Shure MV7'],
-          _s.micName,
-          (v) => _s.setMic(null, v),
-        ),
+        _micRow(),
         _keys('Atalho global', const ['⌥', 'Espaço']),
         _toggle(
           'Gravar áudio do sistema',
@@ -785,6 +791,17 @@ class _SettingsModalState extends State<SettingsModal> {
       },
     ),
   );
+
+  Widget _micRow() {
+    final names = _micDevices.isEmpty
+        ? [_s.micName]
+        : _micDevices.map((d) => d.name).toList();
+    final value = names.contains(_s.micName) ? _s.micName : names.first;
+    return _select('Microfone', names, value, (name) {
+      final device = _micDevices.where((d) => d.name == name).firstOrNull;
+      unawaited(_s.setMic(device?.id, name));
+    });
+  }
 
   Widget _segRow(
     String label,

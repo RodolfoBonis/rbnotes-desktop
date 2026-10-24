@@ -264,6 +264,8 @@ class RecordingCubit extends Cubit<RecordingState> {
         captureSystemAudio: state.captureSystemAudio,
         liveTranscription: true,
         inputDeviceId: _settings.micDeviceId,
+        noiseReduction: _settings.noiseReduction,
+        language: _settings.languageCode,
       );
       _startedAt = now;
       _accumulated = Duration.zero;
