@@ -7,6 +7,7 @@ import 'package:rbnotes/app/shell/detail_toolbar.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/features/diary/domain/diary_calendar.dart';
 import 'package:rbnotes/features/diary/presentation/diary_cubit.dart';
+import 'package:rbnotes/features/diary/presentation/diary_gate_barrier.dart';
 import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
 
 /// Painel do Diário: pergunta do dia, gravar resposta, calendário com sequência
@@ -35,29 +36,34 @@ class DiaryPane extends StatelessWidget {
             onStartRecording: onStartRecording,
           ),
           Expanded(
-            child: BlocBuilder<DiaryCubit, DiaryState>(
-              builder: (context, state) {
-                // O diário é coberto pela trava do app; o resumo do mês só é
-                // gerado (diaryMonth) depois que o app está desbloqueado.
-                final appLocked = context.watch<AppLockCubit>().state.locked;
-                if (!appLocked && !state.monthLoaded) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    unawaited(context.read<DiaryCubit>().loadMonth());
-                  });
-                }
-                return SingleChildScrollView(
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 640),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(40, 34, 40, 80),
-                        child: _DiaryContent(state: state, onRecord: onRecord),
+            child: DiaryGateBarrier(
+              child: BlocBuilder<DiaryCubit, DiaryState>(
+                builder: (context, state) {
+                  // O diário é coberto pela trava do app; o resumo do mês só é
+                  // gerado (diaryMonth) depois que o app está desbloqueado.
+                  final appLocked = context.watch<AppLockCubit>().state.locked;
+                  if (!appLocked && !state.monthLoaded) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      unawaited(context.read<DiaryCubit>().loadMonth());
+                    });
+                  }
+                  return SingleChildScrollView(
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 640),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(40, 34, 40, 80),
+                          child: _DiaryContent(
+                            state: state,
+                            onRecord: onRecord,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
         ],

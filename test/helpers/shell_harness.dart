@@ -22,6 +22,7 @@ import 'package:rbnotes/features/auth/data/auth_service.dart';
 import 'package:rbnotes/features/auth/presentation/session_cubit.dart';
 import 'package:rbnotes/features/diary/data/diary_repository.dart';
 import 'package:rbnotes/features/diary/presentation/diary_cubit.dart';
+import 'package:rbnotes/features/diary/presentation/diary_gate.dart';
 import 'package:rbnotes/features/library/data/demo_seeder.dart';
 import 'package:rbnotes/features/library/data/library_repository.dart';
 import 'package:rbnotes/features/library/presentation/library_cubit.dart';
@@ -134,6 +135,7 @@ class ShellHarness {
           BlocProvider(
             create: (_) => SessionCubit(auth: di(), prefs: di()),
           ),
+          BlocProvider(create: (_) => DiaryGate(auth: FakeBiometricAuth())),
           if (recording != null)
             BlocProvider<RecordingCubit>.value(value: recording)
           else
