@@ -17,6 +17,7 @@ void main() {
     }
     final native = MethodChannelRbNative();
     final state = await native.modelState(WhisperModel.largeV3TurboQ5);
+    // Smoke manual: o resultado sai no console do `flutter test -d macos`.
     // ignore: avoid_print
     print('modelState: downloaded=${state.downloaded} size=${state.sizeBytes}');
     try {
@@ -25,10 +26,12 @@ void main() {
         model: WhisperModel.largeV3TurboQ5,
         initialPrompt: '',
       );
+      // Smoke manual: o resultado sai no console do `flutter test -d macos`.
       // ignore: avoid_print
       print('SEGMENTS ${segs.length}: ${segs.map((s) => s.text).join(' | ')}');
       expect(segs, isNotEmpty);
     } on RbNativeException catch (e) {
+      // Smoke manual: o resultado sai no console do `flutter test -d macos`.
       // ignore: avoid_print
       print('NATIVE ERROR code=${e.code} message=${e.message}');
       rethrow;

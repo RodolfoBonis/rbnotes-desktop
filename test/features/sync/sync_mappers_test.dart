@@ -287,7 +287,7 @@ void main() {
         id: 'n-1',
         updatedAt: at,
         deleted: false,
-        data: {
+        data: const {
           'title': 'Enviar pull request do Gemini ao time',
           'tldr': 'Lembrete para enviar amanhã o pull request.',
           'points': ['Enviar o PR amanhã.'],
@@ -304,7 +304,7 @@ void main() {
         id: 'n-1',
         updatedAt: at,
         deleted: false,
-        data: {'noteId': 'n-1', 'aiJson': '{"title":"T","tldr":"R"}'},
+        data: const {'noteId': 'n-1', 'aiJson': '{"title":"T","tldr":"R"}'},
       );
       expect(
         SyncMappers.noteAiCompanion(c).json.value,
@@ -318,7 +318,7 @@ void main() {
         id: 'm-1',
         updatedAt: at,
         deleted: false,
-        data: {
+        data: const {
           'threadId': 'n-1',
           'role': 'assistant',
           'text': 'Você ficou de enviar o PR.',
