@@ -22,3 +22,6 @@ dist/
 pubspec_overrides.yaml
 
 *.zip
+
+# Assinatura local (certificado do dono)
+macos/Runner/Configs/Signing.local.xcconfig

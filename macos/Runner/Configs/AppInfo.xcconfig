@@ -12,3 +12,8 @@ PRODUCT_BUNDLE_IDENTIFIER = br.com.rodolfodebonis.rbnotes
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 br.com.rodolfodebonis. All rights reserved.
+
+// Assinatura local (opcional, fora do git): define CODE_SIGN_IDENTITY e
+// DEVELOPMENT_TEAM para builds assinados na máquina do dono. Sem o arquivo
+// (CI), o build continua ad-hoc ("-").
+#include? "Signing.local.xcconfig"
