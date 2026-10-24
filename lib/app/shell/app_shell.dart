@@ -42,6 +42,7 @@ import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/settings/presentation/settings_modal.dart';
 import 'package:rbnotes/features/sync/data/sync_crypto.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
+import 'package:rbnotes/features/sync/data/sync_status.dart';
 import 'package:rbnotes/notifications/notification_coordinator.dart';
 import 'package:rbnotes/notifications/notifier.dart';
 import 'package:uuid/uuid.dart';
@@ -59,6 +60,8 @@ class _AppShellState extends State<AppShell> {
   final _focusNode = FocusNode();
   StreamSubscription<String>? _noticesSub;
   StreamSubscription<CreatedNote>? _createdSub;
+  StreamSubscription<SyncStatus>? _syncStatusSub;
+  DateTime? _lastRescheduleSyncAt;
 
   @override
   void initState() {
@@ -114,6 +117,18 @@ class _AppShellState extends State<AppShell> {
           context.read<ShellOverlayCubit>().openWeekly();
         }
       });
+      // Reagenda após cada sync concluído (tarefas podem ter mudado).
+      if (di.isRegistered<SyncService>()) {
+        _syncStatusSub = di<SyncService>().status.listen((status) {
+          final at = status.lastSyncAt;
+          if (status.phase == SyncPhase.idle &&
+              at != null &&
+              at != _lastRescheduleSyncAt) {
+            _lastRescheduleSyncAt = at;
+            unawaited(coord.rescheduleAll());
+          }
+        });
+      }
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _runRecovery());
@@ -137,6 +152,7 @@ class _AppShellState extends State<AppShell> {
   void dispose() {
     unawaited(_noticesSub?.cancel());
     unawaited(_createdSub?.cancel());
+    unawaited(_syncStatusSub?.cancel());
     if (di.isRegistered<RecordNoteHotkeyService>()) {
       di<RecordNoteHotkeyService>().onTriggered = null;
     }
