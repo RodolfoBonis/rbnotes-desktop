@@ -192,12 +192,14 @@ class _NoteBody extends StatelessWidget {
         const SizedBox(height: 24),
         WaveformPlayer(
           peaks: state.peaks,
-          positionMs: state.positionMs,
-          durationMs: state.durationMs,
+          // Descontam os silêncios longos quando a nota tem silêncios salvos.
+          positionMs: state.displayPositionMs,
+          durationMs: state.displayDurationMs,
           playing: state.playing,
           speed: state.speed,
           onToggle: cubit.togglePlay,
-          onSeekFraction: (f) => cubit.seekTo((f * state.durationMs).round()),
+          onSeekFraction: (f) =>
+              cubit.seekToDisplay((f * state.displayDurationMs).round()),
           onCycleSpeed: cubit.cycleSpeed,
         ),
         const SizedBox(height: 26),

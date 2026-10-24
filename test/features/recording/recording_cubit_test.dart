@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
+import 'package:rbnotes/features/notes/data/silence_store.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
@@ -127,6 +128,43 @@ void main() {
     expect(saved!.micWavPath, isNotNull);
     expect(saved.status, NoteStatus.ready);
     expect(cubit.state.status, RecordingStatus.idle);
+    await cubit.close();
+  });
+
+  test('remover silêncios: detecta e salva o sidecar ao concluir', () async {
+    await settings.setRemoveSilences(value: true);
+    native.silences = const [
+      SilenceRange(
+        start: Duration(seconds: 2),
+        end: Duration(seconds: 4),
+      ),
+    ];
+    final cubit = build();
+    await cubit.start();
+    final id = cubit.state.noteId!;
+    final created = cubit.createdNotes.first;
+    await cubit.stop();
+    await created;
+    final saved = await SilenceStore(paths).load(id);
+    expect(saved, [(2000, 4000)]);
+    await cubit.close();
+  });
+
+  test('sem "remover silêncios", não salva o sidecar', () async {
+    await settings.setRemoveSilences(value: false);
+    native.silences = const [
+      SilenceRange(
+        start: Duration(seconds: 2),
+        end: Duration(seconds: 4),
+      ),
+    ];
+    final cubit = build();
+    await cubit.start();
+    final id = cubit.state.noteId!;
+    final created = cubit.createdNotes.first;
+    await cubit.stop();
+    await created;
+    expect(await SilenceStore(paths).load(id), isEmpty);
     await cubit.close();
   });
 

@@ -9,6 +9,7 @@ import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/ai_activity.dart';
 import 'package:rbnotes/features/ai/data/enrichment_service.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
+import 'package:rbnotes/features/notes/data/silence_store.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:rbnotes/native/rb_native.dart';
@@ -365,6 +366,9 @@ class RecordingCubit extends Cubit<RecordingState> {
         micWavPath: result.micWavPath,
         systemWavPath: result.systemWavPath,
       );
+      if (_settings.removeSilences) {
+        unawaited(_saveSilences(id, result.micWavPath));
+      }
       emit(
         state.copyWith(
           status: RecordingStatus.processing,
@@ -402,6 +406,22 @@ class RecordingCubit extends Cubit<RecordingState> {
       await _repository.deleteNote(id);
     }
     _reset();
+  }
+
+  /// "Remover silêncios longos": detecta os trechos silenciosos no mic.wav e
+  /// salva num sidecar para o player pular — o áudio não é reescrito.
+  Future<void> _saveSilences(String id, String micWavPath) async {
+    try {
+      final ranges = await _native.detectSilences(micWavPath);
+      await SilenceStore(_paths).save(id, ranges);
+    } on Object catch (e, st) {
+      await AppLogger.error(
+        e,
+        st,
+        reason: 'detect_silences',
+        category: 'recording',
+      );
+    }
   }
 
   // ---------- processamento ----------

@@ -14,7 +14,9 @@ import 'package:rbnotes/features/ai/data/enrichment_service.dart';
 import 'package:rbnotes/features/ai/domain/note_ai.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
+import 'package:rbnotes/features/notes/data/silence_store.dart';
 import 'package:rbnotes/features/notes/domain/note_summary_status.dart';
+import 'package:rbnotes/features/notes/domain/silence_skipper.dart';
 import 'package:rbnotes/features/notes/presentation/audio_player_controller.dart';
 import 'package:rbnotes/features/security/data/biometric_auth.dart';
 import 'package:rbnotes/features/sync/data/audio_sync.dart';
@@ -44,6 +46,7 @@ class NoteViewState extends Equatable {
     this.audioDownloadProgress,
     this.aiPhase = AiPhase.idle,
     this.unlockedForLocked = false,
+    this.silences = const [],
   });
 
   final NoteRow? note;
@@ -75,7 +78,19 @@ class NoteViewState extends Equatable {
   /// o app travar ou 5 min).
   final bool unlockedForLocked;
 
+  /// Intervalos de silêncio (ms) a pular na reprodução ("Remover silêncios
+  /// longos"). Vazio = toca tudo.
+  final List<(int start, int end)> silences;
+
   int get durationMs => note?.durationMs ?? 0;
+
+  /// Duração exibida, descontando os silêncios longos.
+  int get displayDurationMs => SilenceSkipper(silences).adjustedDuration(
+    durationMs,
+  );
+
+  /// Posição exibida, descontando os silêncios já percorridos.
+  int get displayPositionMs => SilenceSkipper(silences).toDisplay(positionMs);
 
   /// A nota está bloqueada e ainda não foi desbloqueada nesta sessão.
   bool get needsUnlock => (note?.locked ?? false) && !unlockedForLocked;
@@ -101,6 +116,7 @@ class NoteViewState extends Equatable {
     bool clearAudioDownload = false,
     AiPhase? aiPhase,
     bool? unlockedForLocked,
+    List<(int, int)>? silences,
   }) => NoteViewState(
     note: note ?? this.note,
     ai: clearAi ? null : (ai ?? this.ai),
@@ -123,6 +139,7 @@ class NoteViewState extends Equatable {
         : (audioDownloadProgress ?? this.audioDownloadProgress),
     aiPhase: aiPhase ?? this.aiPhase,
     unlockedForLocked: unlockedForLocked ?? this.unlockedForLocked,
+    silences: silences ?? this.silences,
   );
 
   @override
@@ -144,6 +161,7 @@ class NoteViewState extends Equatable {
     audioDownloadProgress,
     aiPhase,
     unlockedForLocked,
+    silences,
   ];
 
   /// Estado honesto do Resumo (bug 6), derivado dos fatos da nota + IA.
@@ -187,9 +205,16 @@ class NoteViewCubit extends Cubit<NoteViewState> {
        _auth = auth,
        _uuid = uuid ?? const Uuid(),
        super(const NoteViewState()) {
-    _posSub = _player.positionStream.listen(
-      (p) => emit(state.copyWith(positionMs: p.inMilliseconds)),
-    );
+    _posSub = _player.positionStream.listen((p) {
+      final ms = p.inMilliseconds;
+      // Pula os silêncios longos com seek automático (sem reescrever o áudio).
+      final target = _skipper.skipTarget(ms);
+      if (target != null) {
+        unawaited(_player.seek(Duration(milliseconds: target)));
+        return;
+      }
+      emit(state.copyWith(positionMs: ms));
+    });
     _playSub = _player.playingStream.listen(
       (playing) => emit(state.copyWith(playing: playing)),
     );
@@ -215,6 +240,7 @@ class NoteViewCubit extends Cubit<NoteViewState> {
   final Uuid _uuid;
 
   String? _noteId;
+  SilenceSkipper _skipper = SilenceSkipper(const []);
   StreamSubscription<NoteRow?>? _noteSub;
   StreamSubscription<List<SegmentRow>>? _segSub;
   StreamSubscription<NoteAi?>? _aiSub;
@@ -234,9 +260,11 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     if (_noteId == noteId) return;
     _noteId = noteId;
     await _cancelSubs();
+    _skipper = SilenceSkipper(const []);
     emit(
       const NoteViewState(),
     );
+    unawaited(_loadSilences(noteId));
 
     _noteSub = _notes.watchNote(noteId).listen((n) {
       emit(state.copyWith(note: n));
@@ -256,6 +284,16 @@ class NoteViewCubit extends Cubit<NoteViewState> {
 
     final note = await _notes.getNote(noteId);
     unawaited(_resolveAudio(noteId, note));
+  }
+
+  /// Carrega os silêncios salvos (sidecar) para o player pular os trechos.
+  Future<void> _loadSilences(String noteId) async {
+    final paths = _paths;
+    if (paths == null) return;
+    final ranges = await SilenceStore(paths).load(noteId);
+    if (_noteId != noteId || isClosed) return;
+    _skipper = SilenceSkipper(ranges);
+    emit(state.copyWith(silences: ranges));
   }
 
   /// Decide a fonte do áudio: arquivo local → cache de download → baixa sob
@@ -372,6 +410,11 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     await _player.seek(Duration(milliseconds: ms));
     if (play) await _player.play();
   }
+
+  /// Seek a partir de uma posição *exibida* (barra de progresso com silêncios
+  /// descontados): converte para o tempo real do arquivo.
+  Future<void> seekToDisplay(int displayMs, {bool play = false}) =>
+      seekTo(_skipper.fromDisplay(displayMs), play: play);
 
   /// Vai para a transcrição e toca a partir de [ms] (citações / "ouvir em").
   Future<void> jumpToTime(int ms) async {
