@@ -4,10 +4,14 @@ import 'dart:io';
 
 import 'package:equatable/equatable.dart';
 import 'package:rbnotes/core/observability/app_logger.dart';
+import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/data/database/database.dart';
+import 'package:rbnotes/features/notes/data/diarization_store.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
+import 'package:rbnotes/features/notes/domain/note_models.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
+import 'package:rbnotes/features/transcription/domain/diarization_mapping.dart';
 import 'package:rbnotes/features/transcription/domain/transcription_logic.dart';
 import 'package:rbnotes/native/rb_native.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -62,11 +66,13 @@ class TranscriptionQueue {
     required NoteRepository repository,
     required SettingsStore settings,
     required VocabularyRepository vocabulary,
+    AppPaths? paths,
     bool Function(String path)? fileExists,
   }) : _native = native,
        _repository = repository,
        _settings = settings,
        _vocabulary = vocabulary,
+       _paths = paths,
        _fileExists = fileExists ?? _defaultFileExists;
 
   static bool _defaultFileExists(String path) => File(path).existsSync();
@@ -75,6 +81,10 @@ class TranscriptionQueue {
   final NoteRepository _repository;
   final SettingsStore _settings;
   final VocabularyRepository _vocabulary;
+
+  /// Para salvar o sidecar de diarização ("Identificar falantes"). Null = sem
+  /// diarização (ex.: alguns testes).
+  final AppPaths? _paths;
 
   /// Checagem de existência de arquivo (injetável para teste).
   final bool Function(String path) _fileExists;
@@ -272,6 +282,15 @@ class TranscriptionQueue {
       final merged = mergeSpeakerSegments(mic: mic, system: system);
       await _repository.replaceSegments(noteId, merged);
 
+      // "Identificar falantes": com o áudio do sistema presente, separa os
+      // segmentos de "Outros" em "Pessoa 1/2…" por diarização local.
+      if (_settings.identifySpeakers &&
+          hasSystem &&
+          !partial &&
+          _paths != null) {
+        await _diarize(noteId, systemPath, merged);
+      }
+
       if (note.title.trim().isEmpty) {
         final title = titleFromSegments(merged);
         // Título provisório (primeiras palavras): marcado como automático
@@ -315,6 +334,52 @@ class TranscriptionQueue {
       await _failQuietly(noteId);
     } finally {
       _current = null;
+    }
+  }
+
+  /// Diarização local sobre o `system.wav`: atribui "Pessoa N" aos segmentos de
+  /// "Outros" por maior sobreposição e salva o sidecar. Em falha, mantém
+  /// "Outros" e registra um diagnóstico (não derruba o pipeline).
+  Future<void> _diarize(
+    String noteId,
+    String systemPath,
+    List<DraftSegment> merged,
+  ) async {
+    try {
+      final turns = await _native.diarize(systemPath);
+      final labels = assignDiarizationLabels(
+        segments: [
+          for (var i = 0; i < merged.length; i++)
+            (
+              index: i,
+              startMs: merged[i].startMs,
+              endMs: merged[i].endMs,
+              isOthers: merged[i].speaker == SegmentSpeaker.others,
+            ),
+        ],
+        turns: [
+          for (final t in turns)
+            (
+              startMs: t.start.inMilliseconds,
+              endMs: t.end.inMilliseconds,
+              speaker: t.speaker,
+            ),
+        ],
+      );
+      await DiarizationStore(_paths!).save(noteId, labels);
+    } on Object catch (e, st) {
+      // Diagnóstico não-fatal: mantém "Outros".
+      AppLogger.warning(
+        'diarization failed; keeping Outros',
+        category: 'transcription',
+        error: e,
+      );
+      await AppLogger.error(
+        e,
+        st,
+        reason: 'diarize',
+        category: 'transcription',
+      );
     }
   }
 

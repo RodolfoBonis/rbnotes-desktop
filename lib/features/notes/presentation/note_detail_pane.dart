@@ -673,12 +673,15 @@ class _TranscriptTab extends StatelessWidget {
   Map<int, String> _speakerNames(NoteViewState state) {
     final map = <int, String>{};
     final segs = state.ai?.speakerNames.segments ?? const [];
+    final diar = state.speakerLabels;
     for (var i = 0; i < state.segments.length; i++) {
       if (state.segments[i].speaker == SegmentSpeaker.me) {
         map[i] = 'Você';
       } else {
+        // Preferência: nome inferido pelo Claude > rótulo da diarização
+        // ("Pessoa N") > genérico "Outros".
         final named = segs.where((s) => s.index == i);
-        map[i] = named.isNotEmpty ? named.first.speaker : 'Outros';
+        map[i] = named.isNotEmpty ? named.first.speaker : (diar[i] ?? 'Outros');
       }
     }
     return map;

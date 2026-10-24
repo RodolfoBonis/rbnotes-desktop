@@ -12,6 +12,7 @@ import 'package:rbnotes/features/ai/data/ai_activity.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
 import 'package:rbnotes/features/ai/data/enrichment_service.dart';
 import 'package:rbnotes/features/ai/domain/note_ai.dart';
+import 'package:rbnotes/features/notes/data/diarization_store.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/data/silence_store.dart';
@@ -47,6 +48,7 @@ class NoteViewState extends Equatable {
     this.aiPhase = AiPhase.idle,
     this.unlockedForLocked = false,
     this.silences = const [],
+    this.speakerLabels = const {},
   });
 
   final NoteRow? note;
@@ -81,6 +83,10 @@ class NoteViewState extends Equatable {
   /// Intervalos de silêncio (ms) a pular na reprodução ("Remover silêncios
   /// longos"). Vazio = toca tudo.
   final List<(int start, int end)> silences;
+
+  /// Rótulos de falante por diarização (índiceDoSegmento → "Pessoa N"). O
+  /// Claude pode sobrescrever via `ai.speakerNames`; vazio = cai para "Outros".
+  final Map<int, String> speakerLabels;
 
   int get durationMs => note?.durationMs ?? 0;
 
@@ -117,6 +123,7 @@ class NoteViewState extends Equatable {
     AiPhase? aiPhase,
     bool? unlockedForLocked,
     List<(int, int)>? silences,
+    Map<int, String>? speakerLabels,
   }) => NoteViewState(
     note: note ?? this.note,
     ai: clearAi ? null : (ai ?? this.ai),
@@ -140,6 +147,7 @@ class NoteViewState extends Equatable {
     aiPhase: aiPhase ?? this.aiPhase,
     unlockedForLocked: unlockedForLocked ?? this.unlockedForLocked,
     silences: silences ?? this.silences,
+    speakerLabels: speakerLabels ?? this.speakerLabels,
   );
 
   @override
@@ -162,6 +170,7 @@ class NoteViewState extends Equatable {
     aiPhase,
     unlockedForLocked,
     silences,
+    speakerLabels,
   ];
 
   /// Estado honesto do Resumo (bug 6), derivado dos fatos da nota + IA.
@@ -265,6 +274,7 @@ class NoteViewCubit extends Cubit<NoteViewState> {
       const NoteViewState(),
     );
     unawaited(_loadSilences(noteId));
+    unawaited(_loadDiarization(noteId));
 
     _noteSub = _notes.watchNote(noteId).listen((n) {
       emit(state.copyWith(note: n));
@@ -294,6 +304,15 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     if (_noteId != noteId || isClosed) return;
     _skipper = SilenceSkipper(ranges);
     emit(state.copyWith(silences: ranges));
+  }
+
+  /// Carrega os rótulos de falante da diarização (sidecar) para o display.
+  Future<void> _loadDiarization(String noteId) async {
+    final paths = _paths;
+    if (paths == null) return;
+    final labels = await DiarizationStore(paths).load(noteId);
+    if (_noteId != noteId || isClosed || labels.isEmpty) return;
+    emit(state.copyWith(speakerLabels: labels));
   }
 
   /// Decide a fonte do áudio: arquivo local → cache de download → baixa sob

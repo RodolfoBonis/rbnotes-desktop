@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/fake_ai_client.dart';
+import 'package:rbnotes/features/notes/data/diarization_store.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/data/silence_store.dart';
@@ -126,6 +127,18 @@ void main() {
     await settle();
     expect(cubit.state.displayPositionMs, 3000);
 
+    await cubit.close();
+  });
+
+  test('carrega os rótulos de diarização no estado', () async {
+    await seed('n1');
+    await DiarizationStore(
+      paths,
+    ).save('n1', const {1: 'Pessoa 1', 2: 'Pessoa 2'});
+    final cubit = build();
+    await cubit.load('n1');
+    await settle();
+    expect(cubit.state.speakerLabels, {1: 'Pessoa 1', 2: 'Pessoa 2'});
     await cubit.close();
   });
 }

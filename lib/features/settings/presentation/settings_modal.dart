@@ -177,6 +177,9 @@ class _SettingsModalState extends State<SettingsModal> {
   StreamSubscription<DictationHotkeyStatus>? _dictationSub;
   bool? _notifPermission;
   List<AudioInputDevice> _micDevices = const [];
+  DiarizationModelState? _diarState;
+  double? _diarDownloading;
+  StreamSubscription<double>? _diarSub;
 
   SettingsStore get _s => widget.store;
 
@@ -194,6 +197,31 @@ class _SettingsModalState extends State<SettingsModal> {
     });
     unawaited(_loadNotifPermission());
     unawaited(_loadMicDevices());
+    unawaited(_loadDiarState());
+  }
+
+  Future<void> _loadDiarState() async {
+    try {
+      final state = await widget.native.diarizationModelState();
+      if (mounted) setState(() => _diarState = state);
+    } on Object {
+      // sem plugin em teste; a linha cai para "indisponível".
+    }
+  }
+
+  void _downloadDiarModel() {
+    setState(() => _diarDownloading = 0);
+    _diarSub = widget.native.downloadDiarizationModel().listen(
+      (p) => setState(() => _diarDownloading = p),
+      onDone: () {
+        if (!mounted) return;
+        setState(() => _diarDownloading = null);
+        unawaited(_loadDiarState());
+      },
+      onError: (Object _) {
+        if (mounted) setState(() => _diarDownloading = null);
+      },
+    );
   }
 
   Future<void> _loadMicDevices() async {
@@ -245,6 +273,7 @@ class _SettingsModalState extends State<SettingsModal> {
     }
     unawaited(_recordHotkeySub?.cancel());
     unawaited(_dictationSub?.cancel());
+    unawaited(_diarSub?.cancel());
     super.dispose();
   }
 
@@ -483,10 +512,11 @@ class _SettingsModalState extends State<SettingsModal> {
         ),
         _toggle(
           'Identificar falantes',
-          null,
+          'Separa "Pessoa 1, Pessoa 2…" nas reuniões com áudio do sistema',
           _s.identifySpeakers,
           (v) => _s.setIdentifySpeakers(value: v),
         ),
+        if (_s.identifySpeakers) _diarModelRow(),
         _button(
           'Vocabulário personalizado',
           'Nomes e termos que o Whisper deve reconhecer · '
@@ -658,6 +688,58 @@ class _SettingsModalState extends State<SettingsModal> {
       ],
     ),
   ]);
+
+  Widget _diarModelRow() {
+    final downloading = _diarDownloading;
+    final downloaded = _diarState?.downloaded ?? false;
+    final sizeBytes = _diarState?.sizeBytes;
+    final sizeLabel = sizeBytes != null
+        ? '${(sizeBytes / (1024 * 1024)).round()} MB'
+        : '~33 MB';
+    final sub = downloaded
+        ? 'Baixado · $sizeLabel · roda no seu Mac'
+        : 'Necessário para separar os falantes · $sizeLabel';
+    return _SettingRow(
+      label: 'Modelo de identificação',
+      sub: sub,
+      trailing: _diarTrailing(downloaded: downloaded, progress: downloading),
+    );
+  }
+
+  Widget _diarTrailing({required bool downloaded, required double? progress}) {
+    final rb = context.rb;
+    if (progress != null) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 80,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
+                backgroundColor: rb.controlFill,
+                valueColor: AlwaysStoppedAnimation(rb.accent),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${(progress * 100).round()}%',
+            style: context.bodyText(size: 11, color: rb.secondary(0.65)),
+          ),
+        ],
+      );
+    }
+    if (downloaded) {
+      return Text(
+        'Baixado',
+        style: context.bodyText(size: 12, color: rb.secondary(0.55)),
+      );
+    }
+    return _PillButton(label: 'Baixar', onTap: _downloadDiarModel);
+  }
 
   Widget _dictationRow() {
     final status = widget.dictation!.hotkeyStatus;

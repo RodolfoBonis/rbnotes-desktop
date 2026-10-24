@@ -80,6 +80,7 @@ Future<void> configureDependencies(AppConfig config) async {
     repository: repository,
     settings: settings,
     vocabulary: vocabulary,
+    paths: paths,
   );
   final dictation = DictationService(
     native: native,
