@@ -242,6 +242,70 @@ void main() {
     });
   });
 
+  group('global hotkeys', () {
+    test('registerGlobalHotkey serializes id + hotkey', () async {
+      handle();
+
+      await native.registerGlobalHotkey(
+        id: 'record_note',
+        hotkey: const Hotkey(
+          keyCode: 49,
+          modifiers: {HotkeyModifier.option, HotkeyModifier.shift},
+        ),
+      );
+
+      expect(calls.single.method, 'registerGlobalHotkey');
+      final args = calls.single.arguments as Map;
+      expect(args['id'], 'record_note');
+      final hotkey = args['hotkey'] as Map;
+      expect(hotkey['keyCode'], 49);
+      expect((hotkey['modifiers'] as List).toSet(), {'option', 'shift'});
+    });
+
+    test('unregisterGlobalHotkey serializes id', () async {
+      handle();
+      await native.unregisterGlobalHotkey('record_note');
+      expect(calls.single.method, 'unregisterGlobalHotkey');
+      expect(calls.single.arguments, {'id': 'record_note'});
+    });
+
+    test('registerGlobalHotkey maps hotkey_conflict', () async {
+      messenger.setMockMethodCallHandler(methodChannel, (call) async {
+        throw PlatformException(code: RbNativeErrorCode.hotkeyConflict);
+      });
+
+      await expectLater(
+        native.registerGlobalHotkey(
+          id: 'record_note',
+          hotkey: const Hotkey(keyCode: 49, modifiers: {HotkeyModifier.option}),
+        ),
+        throwsA(
+          isA<RbNativeException>().having(
+            (e) => e.code,
+            'code',
+            RbNativeErrorCode.hotkeyConflict,
+          ),
+        ),
+      );
+    });
+
+    test('globalHotkeyPressed emits the pressed id', () async {
+      messenger.setMockStreamHandler(
+        const EventChannel(RbNativeChannels.globalHotkeys),
+        _ListStreamHandler(const ['record_note', 'other', 'record_note']),
+      );
+
+      final ids = await native.globalHotkeyPressed().take(3).toList();
+
+      expect(ids, const ['record_note', 'other', 'record_note']);
+
+      messenger.setMockStreamHandler(
+        const EventChannel(RbNativeChannels.globalHotkeys),
+        null,
+      );
+    });
+  });
+
   group('activity overlay', () {
     test('showActivityOverlay serializes mode and startedAt', () async {
       handle();

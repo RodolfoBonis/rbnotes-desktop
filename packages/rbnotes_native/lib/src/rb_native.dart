@@ -155,6 +155,33 @@ abstract interface class RbNative {
   /// native side no longer plays these automatically; the app triggers them.
   Future<void> playDictationSound(DictationSound s);
 
+  // ---------- Global hotkeys ----------
+
+  /// Registers a global (system-wide) hotkey identified by [id], firing a
+  /// toggle-style press on [globalHotkeyPressed] whenever [hotkey] is pressed
+  /// in any app. Uses a Carbon `RegisterEventHotKey`, so — unlike dictation's
+  /// hold-to-talk — it needs no Accessibility permission and does not consume
+  /// other key events.
+  ///
+  /// Registering the same [id] again re-binds it to the new [hotkey].
+  ///
+  /// Throws `RbNativeException('hotkey_conflict')` if [hotkey] collides with
+  /// the dictation hotkey or with a global hotkey already registered under a
+  /// different [id], or if the system rejects the registration.
+  Future<void> registerGlobalHotkey({
+    required String id,
+    required Hotkey hotkey,
+  });
+
+  /// Unregisters the global hotkey previously registered under [id]. No-op if
+  /// [id] is not registered.
+  Future<void> unregisterGlobalHotkey(String id);
+
+  /// Emits the id of a registered global hotkey each time it is pressed. A
+  /// single permanent broadcast stream, like [diagnostics]; the app filters by
+  /// the id it cares about.
+  Stream<String> globalHotkeyPressed();
+
   // ---------- Activity overlay (notch HUD) ----------
 
   /// Shows the Dynamic-Island-style activity overlay that emerges from the

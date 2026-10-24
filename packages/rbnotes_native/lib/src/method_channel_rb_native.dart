@@ -18,6 +18,7 @@ abstract final class RbNativeChannels {
       'rbnotes_native/transcription_progress';
   static const String liveTranscript = 'rbnotes_native/live_transcript';
   static const String overlayActions = 'rbnotes_native/overlay_actions';
+  static const String globalHotkeys = 'rbnotes_native/global_hotkeys';
 }
 
 /// `MethodChannel` backed implementation of [RbNative].
@@ -34,6 +35,7 @@ class MethodChannelRbNative implements RbNative {
     EventChannel? transcriptionProgressChannel,
     EventChannel? liveTranscriptChannel,
     EventChannel? overlayActionsChannel,
+    EventChannel? globalHotkeysChannel,
   }) : _method = methodChannel ?? const MethodChannel(RbNativeChannels.method),
        _levels = levelsChannel ?? const EventChannel(RbNativeChannels.levels),
        _dictation =
@@ -52,7 +54,10 @@ class MethodChannelRbNative implements RbNative {
            const EventChannel(RbNativeChannels.liveTranscript),
        _overlayActions =
            overlayActionsChannel ??
-           const EventChannel(RbNativeChannels.overlayActions);
+           const EventChannel(RbNativeChannels.overlayActions),
+       _globalHotkeys =
+           globalHotkeysChannel ??
+           const EventChannel(RbNativeChannels.globalHotkeys);
 
   final MethodChannel _method;
   final EventChannel _levels;
@@ -62,6 +67,7 @@ class MethodChannelRbNative implements RbNative {
   final EventChannel _transcriptionProgress;
   final EventChannel _liveTranscript;
   final EventChannel _overlayActions;
+  final EventChannel _globalHotkeys;
 
   /// Single permanent fan-out of the native transcription-progress stream.
   /// Each native event is a `{wavPath, progress}` map; [transcribe] subscribes
@@ -314,6 +320,26 @@ class MethodChannelRbNative implements RbNative {
   @override
   Future<void> playDictationSound(DictationSound s) =>
       _invoke<void>('playDictationSound', {'sound': s.wireName});
+
+  // ---------- Global hotkeys ----------
+
+  @override
+  Future<void> registerGlobalHotkey({
+    required String id,
+    required Hotkey hotkey,
+  }) => _invoke<void>('registerGlobalHotkey', {
+    'id': id,
+    'hotkey': hotkey.toMap(),
+  });
+
+  @override
+  Future<void> unregisterGlobalHotkey(String id) =>
+      _invoke<void>('unregisterGlobalHotkey', {'id': id});
+
+  @override
+  Stream<String> globalHotkeyPressed() =>
+      _mapStreamErrors(_globalHotkeys.receiveBroadcastStream())
+          .map((event) => event! as String);
 
   // ---------- Activity overlay ----------
 

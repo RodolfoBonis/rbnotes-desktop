@@ -12,6 +12,7 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
   private let recordingManager = RecordingManager()
   private let transcriber = Transcriber()
   private let dictation = DictationManager()
+  private let globalHotkeys = GlobalHotkeyManager()
 
   // Active event sinks — MAIN-THREAD ONLY.
   private var levelsSink: FlutterEventSink?
@@ -24,6 +25,8 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
   private var liveTranscriptSink: FlutterEventSink?
   // Single, permanent overlay-actions stream: emits a wire action name string.
   private var overlayActionsSink: FlutterEventSink?
+  // Single, permanent global-hotkey stream: emits the pressed hotkey's id.
+  private var globalHotkeysSink: FlutterEventSink?
   // Notch activity overlay controller (macOS 13+); created lazily on first use.
   private var _overlay: AnyObject?
 
@@ -38,9 +41,25 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     instance.setupEventChannels(messenger: messenger)
   }
 
+  /// Tears down global hotkeys and the dictation hotkey. The plugin normally
+  /// lives for the whole app lifetime, but we unregister on dealloc so a hot
+  /// reload / re-registration never leaks Carbon hot keys or event handlers.
+  deinit {
+    let hotkeys = globalHotkeys
+    let dictationManager = dictation
+    let cleanup = {
+      hotkeys.unregisterAll()
+      dictationManager.unregister()
+    }
+    if Thread.isMainThread { cleanup() } else { DispatchQueue.main.async(execute: cleanup) }
+  }
+
   private func wireDiagnostics() {
     recordingManager.onDiagnostic = { [weak self] diag in self?.emitDiagnostic(diag) }
     dictation.onDiagnostic = { [weak self] diag in self?.emitDiagnostic(diag) }
+    globalHotkeys.onPressed = { [weak self] id in self?.emitGlobalHotkey(id) }
+    // Reject a global hotkey that would collide with the dictation shortcut.
+    globalHotkeys.dictationCombo = { [weak self] in self?.dictation.activeHotkey }
   }
 
   private func setupEventChannels(messenger: FlutterBinaryMessenger) {
@@ -141,6 +160,19 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
             self?.overlayActionsSink = nil
             return nil
           }))
+
+    // Global hotkeys: single permanent stream, emits the pressed hotkey's id.
+    FlutterEventChannel(name: "rbnotes_native/global_hotkeys", binaryMessenger: messenger)
+      .setStreamHandler(
+        ClosureStreamHandler(
+          onListen: { [weak self] _, sink in
+            self?.globalHotkeysSink = sink
+            return nil
+          },
+          onCancel: { [weak self] _ in
+            self?.globalHotkeysSink = nil
+            return nil
+          }))
   }
 
   // MARK: - Method dispatch
@@ -184,6 +216,10 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     case "unregisterDictationHotkey":
       dictation.unregister()
       reply(result, nil)
+    case "registerGlobalHotkey":
+      handleRegisterGlobalHotkey(args, result)
+    case "unregisterGlobalHotkey":
+      handleUnregisterGlobalHotkey(args, result)
     case "pasteText":
       runSync(result) { try self.dictation.pasteText(self.requireString(args, "text")) }
     case "playDictationSound":
@@ -333,6 +369,34 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     }
   }
 
+  private func handleRegisterGlobalHotkey(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    guard let id = args["id"] as? String, let hotkey = args["hotkey"] as? [String: Any],
+      let keyCode = hotkey["keyCode"] as? Int
+    else {
+      return reply(result, RbNativeError.invalidArgument("registerGlobalHotkey requires id, hotkey.keyCode").flutterError)
+    }
+    let modifiers = (hotkey["modifiers"] as? [String]) ?? []
+    // Carbon APIs must be touched on the main thread.
+    DispatchQueue.main.async { [weak self] in
+      do {
+        try self?.globalHotkeys.register(id: id, keyCode: keyCode, modifiers: modifiers)
+        self?.reply(result, nil)
+      } catch {
+        self?.reply(result, FlutterError.from(error))
+      }
+    }
+  }
+
+  private func handleUnregisterGlobalHotkey(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    guard let id = args["id"] as? String else {
+      return reply(result, RbNativeError.invalidArgument("unregisterGlobalHotkey requires id").flutterError)
+    }
+    DispatchQueue.main.async { [weak self] in
+      self?.globalHotkeys.unregister(id)
+      self?.reply(result, nil)
+    }
+  }
+
   private func handlePlayDictationSound(_ args: [String: Any], _ result: @escaping FlutterResult) {
     guard let raw = args["sound"] as? String, let sound = DictationSoundKind(rawValue: raw) else {
       return reply(result, RbNativeError.invalidArgument("unknown dictation sound").flutterError)
@@ -408,6 +472,13 @@ public class RbnotesNativePlugin: NSObject, FlutterPlugin {
     onMain { [weak self] in
       guard let self, let sink = self.overlayActionsSink else { return }
       sink(name)
+    }
+  }
+
+  private func emitGlobalHotkey(_ id: String) {
+    onMain { [weak self] in
+      guard let self, let sink = self.globalHotkeysSink else { return }
+      sink(id)
     }
   }
 

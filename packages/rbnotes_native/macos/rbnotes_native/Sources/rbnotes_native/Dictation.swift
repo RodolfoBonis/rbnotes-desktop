@@ -68,6 +68,9 @@ final class DictationManager {
   private var mode: DictationModeKind = .toggle
   private var targetKeyCode: UInt16 = 0
   private var requiredFlags: CGEventFlags = []
+  /// Original modifier wire-names of the registered hotkey, kept so other
+  /// subsystems (global hotkeys) can detect a conflict with the dictation combo.
+  private var modifierNames: [String] = []
 
   private var hotKeyRef: EventHotKeyRef?
   private var eventHandlerRef: EventHandlerRef?
@@ -84,6 +87,13 @@ final class DictationManager {
   /// Set by the plugin to forward diagnostics (tap disabled, watchdog, …).
   var onDiagnostic: ((NativeDiagnostic) -> Void)?
 
+  /// The currently registered dictation combo, or nil when not registered.
+  /// Used by `GlobalHotkeyManager` to reject a conflicting global hotkey.
+  var activeHotkey: HotkeyCombo? {
+    guard hotKeyRef != nil || eventTap != nil else { return nil }
+    return HotkeyCombo(keyCode: Int(targetKeyCode), modifiers: Set(modifierNames))
+  }
+
   // MARK: - Registration
 
   func register(keyCode: Int, modifiers: [String], mode: DictationModeKind) throws {
@@ -91,6 +101,7 @@ final class DictationManager {
     self.mode = mode
     self.targetKeyCode = UInt16(keyCode)
     self.requiredFlags = Self.cgFlags(modifiers)
+    self.modifierNames = modifiers
 
     switch mode {
     case .toggle:
@@ -141,8 +152,19 @@ final class DictationManager {
     let selfPtr = Unmanaged.passUnretained(self).toOpaque()
     let handlerStatus = InstallEventHandler(
       GetApplicationEventTarget(),
-      { _, _, userData -> OSStatus in
-        guard let userData else { return noErr }
+      { _, event, userData -> OSStatus in
+        // Only react to *our* hotkey: other installed handlers (e.g. the
+        // global-hotkey manager) register on the same target, so route by id
+        // and let anyone else's press fall through (eventNotHandledErr).
+        guard let userData, let event else { return OSStatus(eventNotHandledErr) }
+        var hotKeyID = EventHotKeyID()
+        let status = GetEventParameter(
+          event, EventParamName(kEventParamDirectObject),
+          EventParamType(typeEventHotKeyID), nil,
+          MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
+        guard status == noErr, hotKeyID.signature == OSType(0x5242_4E54),
+          hotKeyID.id == 1
+        else { return OSStatus(eventNotHandledErr) }
         let manager = Unmanaged<DictationManager>.fromOpaque(userData).takeUnretainedValue()
         manager.handleToggle()
         return noErr
