@@ -70,6 +70,21 @@ void main() {
     }
   }
 
+  /// Espera uma condição (em vez de um tempo fixo): no runner do CI o I/O
+  /// é bem mais lento que localmente.
+  Future<void> waitUntil(
+    bool Function() condition, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (!condition()) {
+      if (DateTime.now().isAfter(deadline)) {
+        fail('condição não satisfeita em $timeout');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+  }
+
   group('AudioUploadCoordinator', () {
     test('ao terminar a transcrição, enfileira o .m4a (sync ligado)', () async {
       await seedWithAudio('n1');
@@ -80,7 +95,7 @@ void main() {
       );
 
       await coord.onTranscribed('n1');
-      await drain();
+      await waitUntil(() => audio.uploaded.contains('n1'));
 
       expect(audio.uploaded, contains('n1'));
     });
@@ -134,7 +149,11 @@ void main() {
         final path = await seedWithAudio('n1');
 
         await queue.enqueue('n1', path);
-        await drain();
+        // O arquivo só é apagado depois do upload: espera as duas coisas.
+        await waitUntil(
+          () => audio.uploaded.contains('n1') && !File(path).existsSync(),
+        );
+        await waitUntil(() => queue.pending.isEmpty);
 
         expect(audio.uploaded, contains('n1'));
         expect(File(path).existsSync(), isFalse);
@@ -147,7 +166,7 @@ void main() {
       final path = await seedWithAudio('n1');
 
       await queue.enqueue('n1', path);
-      await drain();
+      await waitUntil(() => audio.uploaded.contains('n1'));
 
       expect(audio.uploaded, contains('n1'));
       expect(File(path).existsSync(), isTrue);
@@ -156,7 +175,7 @@ void main() {
     test('retoma a fila persistida num novo processo (boot)', () async {
       final path = await seedWithAudio('n1');
       await queue.enqueue('n1', path);
-      await drain();
+      await waitUntil(() => audio.uploaded.contains('n1'));
       expect(audio.uploaded, contains('n1'));
 
       // Simula reboot: nova fila com o mesmo prefs/estado persistido.
@@ -170,7 +189,7 @@ void main() {
       );
       addTearDown(rebooted.dispose);
       await rebooted.enqueue('n2', path2);
-      await drain();
+      await waitUntil(() => audio2.uploaded.contains('n2'));
 
       expect(audio2.uploaded, contains('n2'));
     });
@@ -190,16 +209,21 @@ void main() {
       audio.failUploads = true;
       final path = await seedWithAudio('n1');
       await queue.enqueue('n1', path);
-      await drain();
+      await waitUntil(
+        () =>
+            queue.current.isNotEmpty &&
+            queue.current.first.status == AudioUploadStatus.failed,
+      );
       final items = queue.current;
-      expect(items, isNotEmpty);
       expect(items.first.noteId, 'n1');
       expect(items.first.status, AudioUploadStatus.failed);
 
       // "Tentar de novo" após o servidor voltar: sobe e limpa a fila.
       audio.failUploads = false;
       await queue.retry();
-      await drain();
+      await waitUntil(
+        () => audio.uploaded.contains('n1') && queue.pending.isEmpty,
+      );
       expect(audio.uploaded, contains('n1'));
       expect(queue.pending, isEmpty);
     });
