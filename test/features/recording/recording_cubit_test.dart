@@ -69,6 +69,36 @@ void main() {
     ],
   );
 
+  test('toggleRecordNote inicia a gravação quando ocioso', () async {
+    final cubit = build();
+    await cubit.toggleRecordNote();
+    expect(cubit.state.status, RecordingStatus.recording);
+    await cubit.close();
+  });
+
+  test('toggleRecordNote respeita captureSystemAudio das configurações',
+      () async {
+    await settings.setCaptureSystemAudio(value: true);
+    final cubit = build();
+    await cubit.toggleRecordNote();
+    expect(cubit.state.captureSystemAudio, isTrue);
+    expect(native.registeredGlobalHotkeys, isEmpty); // não registra aqui
+    await cubit.close();
+  });
+
+  test('toggleRecordNote conclui (stop → processamento) quando gravando',
+      () async {
+    final cubit = build();
+    await cubit.toggleRecordNote();
+    expect(cubit.state.status, RecordingStatus.recording);
+    final created = cubit.createdNotes.first;
+    await cubit.toggleRecordNote();
+    expect(cubit.state.status, RecordingStatus.processing);
+    await created; // pipeline conclui e volta a ocioso
+    expect(cubit.state.status, RecordingStatus.idle);
+    await cubit.close();
+  });
+
   test('start cria a nota em status recording', () async {
     final cubit = build();
     await cubit.start();

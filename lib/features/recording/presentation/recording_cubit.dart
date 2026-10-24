@@ -292,6 +292,20 @@ class RecordingCubit extends Cubit<RecordingState> {
   /// Inicia uma gravação de diário.
   Future<void> startDiary() => start(kind: NoteKind.diary);
 
+  /// Alterna a gravação pelo atalho global "Gravar nota": inicia quando ocioso
+  /// (o [start] decide overlay x HUD pelo foco da janela) e conclui quando já
+  /// está gravando. Durante o processamento, não faz nada. Respeita "capturar
+  /// áudio do sistema" das configurações no momento do disparo.
+  Future<void> toggleRecordNote() async {
+    if (state.isRecording) {
+      await stop();
+      return;
+    }
+    if (state.isActive) return; // processando: ignora.
+    emit(state.copyWith(captureSystemAudio: _settings.captureSystemAudio));
+    await start();
+  }
+
   Future<void> pause() async {
     if (state.status != RecordingStatus.recording) return;
     final id = state.noteId!;

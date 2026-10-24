@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:rbnotes/app/theme_mode_cubit.dart';
 import 'package:rbnotes/core/observability/app_logger.dart';
@@ -10,6 +11,8 @@ import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/rb_select.dart';
 import 'package:rbnotes/core/ui/traffic_lights.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
+import 'package:rbnotes/features/recording/data/mac_key_codes.dart';
+import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/settings/presentation/vocabulary_editor.dart';
@@ -59,6 +62,7 @@ class SettingsModal extends StatefulWidget {
     required this.store,
     required this.native,
     required this.vocabulary,
+    required this.recordNoteHotkey,
     required this.userName,
     required this.userEmail,
     required this.userInitials,
@@ -72,6 +76,10 @@ class SettingsModal extends StatefulWidget {
   final SettingsStore store;
   final RbNative native;
   final VocabularyRepository vocabulary;
+
+  /// Registra o atalho global "Gravar nota" e expõe o estado do registro para
+  /// a aba Atalhos.
+  final RecordNoteHotkeyService recordNoteHotkey;
   final String userName;
   final String userEmail;
   final String userInitials;
@@ -96,6 +104,7 @@ class _SettingsModalState extends State<SettingsModal> {
   final _downloaded = <WhisperModel>{};
   final _downloading = <WhisperModel, double>{};
   final _subs = <WhisperModel, StreamSubscription<double>>{};
+  StreamSubscription<RecordNoteHotkeyStatus>? _recordHotkeySub;
 
   SettingsStore get _s => widget.store;
 
@@ -104,6 +113,10 @@ class _SettingsModalState extends State<SettingsModal> {
     super.initState();
     unawaited(_refreshModels());
     unawaited(_refreshVocabCount());
+    // Reflete a (re)registração do atalho "Gravar nota" ao vivo na aba Atalhos.
+    _recordHotkeySub = widget.recordNoteHotkey.statusChanges.listen((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   Future<void> _refreshVocabCount() async {
@@ -139,6 +152,7 @@ class _SettingsModalState extends State<SettingsModal> {
     for (final s in _subs.values) {
       unawaited(s.cancel());
     }
+    unawaited(_recordHotkeySub?.cancel());
     super.dispose();
   }
 
@@ -433,9 +447,18 @@ class _SettingsModalState extends State<SettingsModal> {
 
   Widget _atalhos() => _Groups([
     _Group(
+      title: 'Atalho global',
+      foot:
+          'Funciona em qualquer app. Toque para iniciar e toque de novo para '
+          'concluir a nota (o resumo é gerado automaticamente).',
+      rows: [
+        _recordNoteRow(),
+      ],
+    ),
+    _Group(
+      title: 'No app',
       rows: [
         _keys('Nova gravação', const ['⌘', 'R']),
-        _keys('Gravar de qualquer app', const ['⌥', 'Espaço']),
         _keys('Perguntar às notas', const ['⌘', 'K']),
         _keys('Tocar ou pausar', const ['Espaço']),
         _keys('Buscar', const ['⌘', 'F']),
@@ -443,6 +466,52 @@ class _SettingsModalState extends State<SettingsModal> {
       ],
     ),
   ]);
+
+  Widget _recordNoteRow() {
+    final status = widget.recordNoteHotkey.status;
+    final enabled = _s.recordHotkeyEnabled;
+    final sub = switch (status) {
+      _ when !enabled => 'Desativado',
+      RecordNoteHotkeyStatus(hasError: true) =>
+        'Não foi possível registrar: ${status.error}',
+      _ => 'Gravar nota de qualquer app',
+    };
+    return _SettingRow(
+      label: 'Gravar nota',
+      sub: sub,
+      subColor: status.hasError && enabled ? RbTokens.destructive : null,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (enabled) ...[
+            _Keys(keys: MacKeyCodes.symbols(_s.recordHotkey)),
+            const SizedBox(width: 10),
+            _PillButton(label: 'Alterar', onTap: _changeRecordHotkey),
+            const SizedBox(width: 8),
+          ],
+          _Toggle(
+            value: enabled,
+            onChanged: (v) async {
+              await _s.setRecordHotkeyEnabled(value: v);
+              await widget.recordNoteHotkey.applySettings();
+              if (mounted) setState(() {});
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _changeRecordHotkey() async {
+    final captured = await showDialog<Hotkey>(
+      context: context,
+      builder: (_) => _HotkeyCaptureDialog(current: _s.recordHotkey),
+    );
+    if (captured == null) return;
+    await _s.setRecordHotkey(captured);
+    await widget.recordNoteHotkey.applySettings();
+    if (mounted) setState(() {});
+  }
 
   Widget _privacidade() => _Groups([
     _Group(
@@ -1033,6 +1102,7 @@ class _SettingRow extends StatelessWidget {
   const _SettingRow({
     required this.label,
     this.sub,
+    this.subColor,
     this.leading,
     this.trailing,
     this.onTap,
@@ -1044,6 +1114,7 @@ class _SettingRow extends StatelessWidget {
 
   final String label;
   final String? sub;
+  final Color? subColor;
   final Widget? leading;
   final Widget? trailing;
   final VoidCallback? onTap;
@@ -1085,7 +1156,7 @@ class _SettingRow extends StatelessWidget {
                         style: context.bodyText(
                           size: 11.5,
                           height: 1.4,
-                          color: rb.secondary(0.62),
+                          color: subColor ?? rb.secondary(0.62),
                         ),
                       ),
                     ),
@@ -1312,6 +1383,96 @@ class _Radio extends StatelessWidget {
               ),
             )
           : null,
+    );
+  }
+}
+
+/// Captura um novo atalho global: pressione a combinação desejada (ao menos um
+/// modificador + uma tecla). Retorna o [Hotkey] no `pop`, ou null se cancelado.
+class _HotkeyCaptureDialog extends StatefulWidget {
+  const _HotkeyCaptureDialog({required this.current});
+  final Hotkey current;
+
+  @override
+  State<_HotkeyCaptureDialog> createState() => _HotkeyCaptureDialogState();
+}
+
+class _HotkeyCaptureDialogState extends State<_HotkeyCaptureDialog> {
+  final _focusNode = FocusNode();
+  String? _hint;
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.handled;
+    final key = event.logicalKey;
+    if (MacKeyCodes.isModifier(key)) return KeyEventResult.handled;
+
+    final keyCode = MacKeyCodes.fromLogicalKey(key);
+    if (keyCode == null) {
+      setState(() => _hint = 'Tecla não suportada. Tente outra.');
+      return KeyEventResult.handled;
+    }
+    final hw = HardwareKeyboard.instance;
+    final modifiers = <HotkeyModifier>{
+      if (hw.isMetaPressed) HotkeyModifier.command,
+      if (hw.isAltPressed) HotkeyModifier.option,
+      if (hw.isControlPressed) HotkeyModifier.control,
+      if (hw.isShiftPressed) HotkeyModifier.shift,
+    };
+    if (modifiers.isEmpty) {
+      setState(
+        () => _hint = 'Use ao menos um modificador (⌘ ⌥ ⌃ ⇧).',
+      );
+      return KeyEventResult.handled;
+    }
+    Navigator.of(context).pop(Hotkey(keyCode: keyCode, modifiers: modifiers));
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rb = context.rb;
+    return Focus(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: _onKey,
+      child: AlertDialog(
+        backgroundColor: rb.card,
+        title: const Text('Definir atalho'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Pressione a nova combinação',
+              style: context.bodyText(size: 12.5, color: rb.secondary(0.7)),
+            ),
+            const SizedBox(height: 14),
+            _Keys(keys: MacKeyCodes.symbols(widget.current)),
+            if (_hint != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _hint!,
+                textAlign: TextAlign.center,
+                style: context.bodyText(
+                  size: 11.5,
+                  color: RbTokens.destructive,
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
     );
   }
 }

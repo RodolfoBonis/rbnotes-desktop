@@ -77,6 +77,16 @@ class FakeRbNative implements RbNative {
   Hotkey? registeredHotkey;
   DictationMode? registeredMode;
 
+  // ---- Atalhos globais (record_note etc.) — hooks de teste. ----
+  final _globalHotkeys = StreamController<String>.broadcast();
+
+  /// Atalhos globais registrados por id (último [Hotkey] por id).
+  final Map<String, Hotkey> registeredGlobalHotkeys = {};
+
+  /// Quando definido, `registerGlobalHotkey` lança este erro (ex.: simular
+  /// `hotkey_conflict` ou falta de permissão nos testes da aba Atalhos).
+  RbNativeException? globalHotkeyRegisterError;
+
   // ---- Activity overlay (notch HUD) — hooks de teste. ----
   final _overlayActions = StreamController<OverlayAction>.broadcast();
 
@@ -313,6 +323,26 @@ class FakeRbNative implements RbNative {
   }
 
   @override
+  Future<void> registerGlobalHotkey({
+    required String id,
+    required Hotkey hotkey,
+  }) async {
+    final error = globalHotkeyRegisterError;
+    if (error != null) throw error;
+    registeredGlobalHotkeys[id] = hotkey;
+  }
+
+  @override
+  Future<void> unregisterGlobalHotkey(String id) async =>
+      registeredGlobalHotkeys.remove(id);
+
+  @override
+  Stream<String> globalHotkeyPressed() => _globalHotkeys.stream;
+
+  /// Emite o pressionar de um atalho global (uso em dev/testes).
+  void emitGlobalHotkey(String id) => _globalHotkeys.add(id);
+
+  @override
   Stream<DictationEvent> dictationEvents() => _dictation.stream;
 
   /// Emite um evento de ditado (uso em dev/testes).
@@ -383,6 +413,7 @@ class FakeRbNative implements RbNative {
   Future<void> dispose() async {
     await _dictation.close();
     await _diagnostics.close();
+    if (!_globalHotkeys.isClosed) await _globalHotkeys.close();
     if (!_overlayActions.isClosed) await _overlayActions.close();
     for (final c in _live.values) {
       if (!c.isClosed) await c.close();

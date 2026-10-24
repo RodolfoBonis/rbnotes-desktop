@@ -31,6 +31,7 @@ import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/presentation/note_actions.dart';
 import 'package:rbnotes/features/notes/presentation/note_detail_pane.dart';
 import 'package:rbnotes/features/notes/presentation/note_view_cubit.dart';
+import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/recording/presentation/recording_hud.dart';
 import 'package:rbnotes/features/recording/presentation/recovery_cubit.dart';
@@ -80,6 +81,12 @@ class _AppShellState extends State<AppShell> {
         ..selectNote(n.id);
     });
 
+    // Atalho global "Gravar nota": liga o disparo ao RecordingCubit (o serviço
+    // já registrou o atalho no boot). A janela em foco → HUD interno; sem foco
+    // → overlay do notch (decidido dentro de RecordingCubit.start).
+    di<RecordNoteHotkeyService>().onTriggered =
+        context.read<RecordingCubit>().toggleRecordNote;
+
     WidgetsBinding.instance.addPostFrameCallback((_) => _runRecovery());
   }
 
@@ -101,6 +108,9 @@ class _AppShellState extends State<AppShell> {
   void dispose() {
     unawaited(_noticesSub?.cancel());
     unawaited(_createdSub?.cancel());
+    if (di.isRegistered<RecordNoteHotkeyService>()) {
+      di<RecordNoteHotkeyService>().onTriggered = null;
+    }
     _tray.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -431,6 +441,7 @@ class _SettingsLayer extends StatelessWidget {
       store: di<SettingsStore>(),
       native: di(),
       vocabulary: di(),
+      recordNoteHotkey: di(),
       userName: user?.name ?? 'Você',
       userEmail: user?.email ?? '',
       userInitials: user?.initials ?? 'V',

@@ -28,6 +28,7 @@ import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/presentation/audio_player_controller.dart';
 import 'package:rbnotes/features/notes/presentation/note_view_cubit.dart';
+import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
@@ -85,6 +86,9 @@ void main() {
       ..registerSingleton<TranscriptionQueue>(queue)
       ..registerSingleton<AuthService>(auth)
       ..registerSingleton<DiagnosticsMonitor>(DiagnosticsMonitor(native))
+      ..registerSingleton<RecordNoteHotkeyService>(
+        RecordNoteHotkeyService(native: native, settings: settings),
+      )
       ..registerFactory<AudioPlayerController>(FakeAudioPlayer.new);
     await DemoSeeder(
       notes: notes,

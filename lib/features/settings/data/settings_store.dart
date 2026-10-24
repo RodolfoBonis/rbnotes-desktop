@@ -20,6 +20,9 @@ class SettingsStore {
   static const _kHotkeyModifiers = 'settings.hotkey.modifiers';
   static const _kDictationMode = 'settings.dictation.mode';
   static const _kDictationEnabled = 'settings.dictation.enabled';
+  static const _kRecordHotkeyKeyCode = 'settings.record_hotkey.key_code';
+  static const _kRecordHotkeyModifiers = 'settings.record_hotkey.modifiers';
+  static const _kRecordHotkeyEnabled = 'settings.record_hotkey.enabled';
   // Geral
   static const _kLaunchAtLogin = 'settings.launch_at_login';
   static const _kShowInMenuBar = 'settings.menu_bar';
@@ -101,6 +104,43 @@ class SettingsStore {
     await _prefs.setInt(_kHotkeyKeyCode, hotkey.keyCode);
     await _prefs.setStringList(
       _kHotkeyModifiers,
+      hotkey.modifiers.map((m) => m.name).toList(),
+    );
+  }
+
+  // ---- Atalho global "Gravar nota" (toggle) ----
+
+  /// ⌥⇧Espaço no macOS (keyCode 49). Difere do ditado (⌥Espaço) para os dois
+  /// atalhos globais coexistirem sem conflito.
+  static const defaultRecordHotkey = Hotkey(
+    keyCode: 49,
+    modifiers: {HotkeyModifier.option, HotkeyModifier.shift},
+  );
+
+  bool get recordHotkeyEnabled =>
+      _prefs.getBool(_kRecordHotkeyEnabled) ?? true;
+
+  Future<void> setRecordHotkeyEnabled({required bool value}) =>
+      _prefs.setBool(_kRecordHotkeyEnabled, value);
+
+  Hotkey get recordHotkey {
+    final keyCode = _prefs.getInt(_kRecordHotkeyKeyCode);
+    if (keyCode == null) return defaultRecordHotkey;
+    final mods = (_prefs.getStringList(_kRecordHotkeyModifiers) ?? const [])
+        .map(
+          (n) => HotkeyModifier.values.firstWhere(
+            (m) => m.name == n,
+            orElse: () => HotkeyModifier.option,
+          ),
+        )
+        .toSet();
+    return Hotkey(keyCode: keyCode, modifiers: mods);
+  }
+
+  Future<void> setRecordHotkey(Hotkey hotkey) async {
+    await _prefs.setInt(_kRecordHotkeyKeyCode, hotkey.keyCode);
+    await _prefs.setStringList(
+      _kRecordHotkeyModifiers,
       hotkey.modifiers.map((m) => m.name).toList(),
     );
   }

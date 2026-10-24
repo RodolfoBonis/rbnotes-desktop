@@ -16,6 +16,7 @@ import 'package:rbnotes/core/observability/file_log_sink.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/features/ai/data/enrichment_service.dart';
 import 'package:rbnotes/features/dictation/data/dictation_service.dart';
+import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/settings/data/retention_service.dart';
 import 'package:rbnotes/features/sync/data/audio_upload_queue.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
@@ -73,6 +74,9 @@ Future<void> bootstrap(
   Bloc.observer = const AppBlocObserver();
   // Ditado global: registra o atalho e escuta os eventos do plugin.
   unawaited(di<DictationService>().start());
+  // Atalho global "Gravar nota": registra o atalho e escuta os pressionamentos
+  // (o shell liga o disparo ao RecordingCubit).
+  unawaited(di<RecordNoteHotkeyService>().start());
   // Retoma transcrições presas em `transcribing` de uma sessão anterior.
   unawaited(di<TranscriptionQueue>().requeueInterrupted());
   // Recupera (uma vez) as notas que falharam pelo bug de migração: `failed`
