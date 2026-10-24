@@ -54,6 +54,16 @@ class NoteAiRepository {
         );
   }
 
+  /// Remove **localmente** o `note_ai` de uma nota, sem gerar tombstone para o
+  /// sync (a linha some do push porque deixa de existir). Usado para reparar um
+  /// `note_ai` vazio (`{}`) gravado pelo bug do envelope: o resumo correto será
+  /// re-enriquecido e sobrescreve a versão vazia no servidor por LWW.
+  Future<void> deleteLocal(String noteId) {
+    return (_db.delete(
+      _db.noteAiTable,
+    )..where((t) => t.noteId.equals(noteId))).go();
+  }
+
   // ---------- actions ----------
 
   Stream<List<ActionRow>> watchActions(String noteId) {

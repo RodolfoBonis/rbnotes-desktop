@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
+import 'package:rbnotes/features/ai/domain/note_ai.dart';
 import 'package:rbnotes/features/ai/domain/privacy_masker.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
@@ -101,6 +102,21 @@ class EnrichmentService {
         ),
       );
 
+      // Nunca persistir um resumo vazio/ inválido nem marcar `ready`: sem título
+      // e tldr não há resumo (era o sintoma do bug do envelope SSE). Marca
+      // `failed` com motivo — o usuário pode tentar de novo e o sync traz o
+      // resumo bom do servidor no próximo pull.
+      if (!_hasContent(ai)) {
+        await AppLogger.error(
+          StateError('enrich devolveu resumo vazio'),
+          StackTrace.current,
+          reason: 'enrich_empty',
+          category: 'ai',
+        );
+        await _notes.setAiStatus(noteId, AiStatus.failed);
+        return;
+      }
+
       await _noteAi.saveNoteAi(noteId, ai);
       await _noteAi.replaceActions(noteId, ai.actions, genId: _uuid.v4);
 
@@ -125,11 +141,19 @@ class EnrichmentService {
     }
   }
 
+  /// `true` se o resumo tem conteúdo mínimo (título e tldr). Um resumo sem eles
+  /// nunca é legítimo — foi o que o bug do envelope gravava como `{}`.
+  static bool _hasContent(NoteAi ai) =>
+      ai.title.trim().isNotEmpty && ai.tldr.trim().isNotEmpty;
+
   /// No boot, re-enriquece as notas presas em `aiStatus = pending` de uma
-  /// sessão anterior (o app pode ter fechado no meio). Garante que nunca haja
-  /// um "Resumo em preparação…" sem um job real por trás (bug 6).
+  /// sessão anterior (o app pode ter fechado no meio) e **repara** as notas que
+  /// o bug do envelope deixou com `note_ai` vazio marcado como `ready`. Garante
+  /// que nunca haja um "Resumo em preparação…" sem um job real por trás (bug 6)
+  /// nem um "ready" sem resumo de verdade.
   Future<void> requeuePending() async {
     try {
+      await _repairEmptyReady();
       final pending = await _notes.notesWithAiStatus(AiStatus.pending);
       for (final note in pending) {
         unawaited(enrichNote(note.id, force: true));
@@ -141,6 +165,24 @@ class EnrichmentService {
         reason: 'requeue_pending_enrich',
         category: 'ai',
       );
+    }
+  }
+
+  /// Conserta as notas `ready` mas com `note_ai` vazio/ ausente (bug do
+  /// envelope SSE): apaga o `note_ai` vazio local (para o `{}` não ir no push)
+  /// e volta a nota para `pending`, que o loop acima re-enriquece.
+  Future<void> _repairEmptyReady() async {
+    final ready = await _notes.notesWithAiStatus(AiStatus.ready);
+    for (final note in ready) {
+      NoteAi? ai;
+      try {
+        ai = await _noteAi.getNoteAi(note.id);
+      } on Object catch (_) {
+        ai = null; // json corrompido conta como vazio.
+      }
+      if (ai != null && _hasContent(ai)) continue;
+      await _noteAi.deleteLocal(note.id);
+      await _notes.setAiStatus(note.id, AiStatus.pending);
     }
   }
 
