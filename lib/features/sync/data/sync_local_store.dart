@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart';
 import 'package:rbnotes/data/database/database.dart';
+import 'package:rbnotes/features/security/data/note_cipher.dart';
 import 'package:rbnotes/features/sync/data/sync_client.dart';
+import 'package:rbnotes/features/sync/data/sync_crypto.dart';
 import 'package:rbnotes/features/sync/data/sync_mappers.dart';
 
 /// Lê mudanças locais (para o push) e aplica mudanças remotas (pull/conflitos)
@@ -16,9 +18,13 @@ import 'package:rbnotes/features/sync/data/sync_mappers.dart';
 /// uma edição da nota em outro dispositivo não arrasta segmentos stale por cima
 /// de uma versão mais nova (convergência LWW correta).
 class SyncLocalStore {
-  SyncLocalStore(this._db);
+  SyncLocalStore(this._db, {SyncCrypto? crypto}) : _crypto = crypto;
 
   final AppDatabase _db;
+
+  /// Cifra o `data` das notas bloqueadas no push e decifra no pull. Null =
+  /// local-first sem cifra (ou backend sem a trava por nota ligada).
+  final SyncCrypto? _crypto;
 
   /// Coleta até [limit] mudanças locais com `updatedAt > since`, em ordem
   /// crescente de `updatedAt` (determinística).
@@ -30,6 +36,10 @@ class SyncLocalStore {
     final changes = <SyncChange>[];
 
     final notes = await _db.select(_db.notes).get();
+    final lockedIds = {
+      for (final n in notes)
+        if (n.locked) n.id,
+    };
     for (final n in notes) {
       if (fresh(n.updatedAt)) changes.add(SyncMappers.noteToChange(n));
       // segment_set tem timestamp próprio; na ausência de registro (notas
@@ -70,7 +80,12 @@ class SyncLocalStore {
     }
 
     changes.sort((a, b) => a.updatedAt.compareTo(b.updatedAt));
-    return changes.length > limit ? changes.sublist(0, limit) : changes;
+    final trimmed = changes.length > limit
+        ? changes.sublist(0, limit)
+        : changes;
+    final crypto = _crypto;
+    if (crypto == null) return trimmed;
+    return crypto.encryptOutgoing(trimmed, lockedIds);
   }
 
   /// Maior `updatedAt` entre as mudanças (nova marca d'água após o push).
@@ -93,9 +108,23 @@ class SyncLocalStore {
   }
 
   /// Aplica uma mudança com LWW: ignora se a versão local é mais nova.
-  Future<void> applyChange(SyncChange c) async {
+  Future<void> applyChange(SyncChange rawChange) async {
+    final crypto = _crypto;
+    final c = crypto == null
+        ? rawChange
+        : await crypto.decryptIncoming(rawChange);
     final local = await _localUpdatedAt(c.entity, c.id);
     if (local != null && local.isAfter(c.updatedAt)) return;
+    // Sem a chave, um envelope cifrado não pôde ser decifrado: a nota vira um
+    // marcador "bloqueada em outro Mac" e os filhos cifrados são ignorados.
+    if (NoteCipher.isEncrypted(c.data)) {
+      if (c.entity == SyncEntities.note) {
+        await _db
+            .into(_db.notes)
+            .insertOnConflictUpdate(_lockedElsewhereCompanion(c));
+      }
+      return;
+    }
     switch (c.entity) {
       case SyncEntities.note:
         await _db
@@ -242,6 +271,19 @@ class SyncLocalStore {
           ),
         );
   }
+
+  /// Nota cujo conteúdo chegou cifrado e não pôde ser decifrado (sem a chave):
+  /// um marcador bloqueado, com o conteúdo vazio, até a chave ser importada.
+  NotesCompanion _lockedElsewhereCompanion(SyncChange c) => NotesCompanion(
+    id: Value(c.id),
+    title: const Value(''),
+    createdAt: Value(c.updatedAt),
+    updatedAt: Value(c.updatedAt),
+    status: const Value(NoteStatus.ready),
+    source: const Value(NoteSource.recording),
+    locked: const Value(true),
+    deleted: Value(c.deleted),
+  );
 
   static int _priority(String entity) => switch (entity) {
     SyncEntities.note || SyncEntities.folder => 0,

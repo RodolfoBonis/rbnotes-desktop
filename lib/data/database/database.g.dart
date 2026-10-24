@@ -212,6 +212,19 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _lockedMeta = const VerificationMeta('locked');
+  @override
+  late final GeneratedColumn<bool> locked = GeneratedColumn<bool>(
+    'locked',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("locked" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -232,6 +245,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
     aiStatus,
     speakersJson,
     deleted,
+    locked,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -344,6 +358,12 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
         deleted.isAcceptableOrUnknown(data['deleted']!, _deletedMeta),
       );
     }
+    if (data.containsKey('locked')) {
+      context.handle(
+        _lockedMeta,
+        locked.isAcceptableOrUnknown(data['locked']!, _lockedMeta),
+      );
+    }
     return context;
   }
 
@@ -433,6 +453,10 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
         DriftSqlType.bool,
         data['${effectivePrefix}deleted'],
       )!,
+      locked: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}locked'],
+      )!,
     );
   }
 
@@ -477,6 +501,10 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   /// inferir. A grade completa (índice→nome, inferido) fica em `note_ai`.
   final String? speakersJson;
   final bool deleted;
+
+  /// Nota bloqueada por Touch ID: conteúdo escondido na lista, fora do FTS/⌘K/
+  /// coleções/resumos/tarefas, e cifrada no sync.
+  final bool locked;
   const NoteRow({
     required this.id,
     required this.title,
@@ -496,6 +524,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     required this.aiStatus,
     this.speakersJson,
     required this.deleted,
+    required this.locked,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -542,6 +571,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       map['speakers_json'] = Variable<String>(speakersJson);
     }
     map['deleted'] = Variable<bool>(deleted);
+    map['locked'] = Variable<bool>(locked);
     return map;
   }
 
@@ -575,6 +605,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           ? const Value.absent()
           : Value(speakersJson),
       deleted: Value(deleted),
+      locked: Value(locked),
     );
   }
 
@@ -610,6 +641,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       ),
       speakersJson: serializer.fromJson<String?>(json['speakersJson']),
       deleted: serializer.fromJson<bool>(json['deleted']),
+      locked: serializer.fromJson<bool>(json['locked']),
     );
   }
   @override
@@ -642,6 +674,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       ),
       'speakersJson': serializer.toJson<String?>(speakersJson),
       'deleted': serializer.toJson<bool>(deleted),
+      'locked': serializer.toJson<bool>(locked),
     };
   }
 
@@ -664,6 +697,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     AiStatus? aiStatus,
     Value<String?> speakersJson = const Value.absent(),
     bool? deleted,
+    bool? locked,
   }) => NoteRow(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -685,6 +719,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     aiStatus: aiStatus ?? this.aiStatus,
     speakersJson: speakersJson.present ? speakersJson.value : this.speakersJson,
     deleted: deleted ?? this.deleted,
+    locked: locked ?? this.locked,
   );
   NoteRow copyWithCompanion(NotesCompanion data) {
     return NoteRow(
@@ -716,6 +751,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           ? data.speakersJson.value
           : this.speakersJson,
       deleted: data.deleted.present ? data.deleted.value : this.deleted,
+      locked: data.locked.present ? data.locked.value : this.locked,
     );
   }
 
@@ -739,7 +775,8 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           ..write('autoTitle: $autoTitle, ')
           ..write('aiStatus: $aiStatus, ')
           ..write('speakersJson: $speakersJson, ')
-          ..write('deleted: $deleted')
+          ..write('deleted: $deleted, ')
+          ..write('locked: $locked')
           ..write(')'))
         .toString();
   }
@@ -764,6 +801,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     aiStatus,
     speakersJson,
     deleted,
+    locked,
   );
   @override
   bool operator ==(Object other) =>
@@ -786,7 +824,8 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           other.autoTitle == this.autoTitle &&
           other.aiStatus == this.aiStatus &&
           other.speakersJson == this.speakersJson &&
-          other.deleted == this.deleted);
+          other.deleted == this.deleted &&
+          other.locked == this.locked);
 }
 
 class NotesCompanion extends UpdateCompanion<NoteRow> {
@@ -808,6 +847,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
   final Value<AiStatus> aiStatus;
   final Value<String?> speakersJson;
   final Value<bool> deleted;
+  final Value<bool> locked;
   final Value<int> rowid;
   const NotesCompanion({
     this.id = const Value.absent(),
@@ -828,6 +868,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     this.aiStatus = const Value.absent(),
     this.speakersJson = const Value.absent(),
     this.deleted = const Value.absent(),
+    this.locked = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   NotesCompanion.insert({
@@ -849,6 +890,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     this.aiStatus = const Value.absent(),
     this.speakersJson = const Value.absent(),
     this.deleted = const Value.absent(),
+    this.locked = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        createdAt = Value(createdAt),
@@ -874,6 +916,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     Expression<String>? aiStatus,
     Expression<String>? speakersJson,
     Expression<bool>? deleted,
+    Expression<bool>? locked,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -895,6 +938,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       if (aiStatus != null) 'ai_status': aiStatus,
       if (speakersJson != null) 'speakers_json': speakersJson,
       if (deleted != null) 'deleted': deleted,
+      if (locked != null) 'locked': locked,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -918,6 +962,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     Value<AiStatus>? aiStatus,
     Value<String?>? speakersJson,
     Value<bool>? deleted,
+    Value<bool>? locked,
     Value<int>? rowid,
   }) {
     return NotesCompanion(
@@ -939,6 +984,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       aiStatus: aiStatus ?? this.aiStatus,
       speakersJson: speakersJson ?? this.speakersJson,
       deleted: deleted ?? this.deleted,
+      locked: locked ?? this.locked,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1008,6 +1054,9 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     if (deleted.present) {
       map['deleted'] = Variable<bool>(deleted.value);
     }
+    if (locked.present) {
+      map['locked'] = Variable<bool>(locked.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1035,6 +1084,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
           ..write('aiStatus: $aiStatus, ')
           ..write('speakersJson: $speakersJson, ')
           ..write('deleted: $deleted, ')
+          ..write('locked: $locked, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5930,6 +5980,7 @@ typedef $$NotesTableCreateCompanionBuilder =
       Value<AiStatus> aiStatus,
       Value<String?> speakersJson,
       Value<bool> deleted,
+      Value<bool> locked,
       Value<int> rowid,
     });
 typedef $$NotesTableUpdateCompanionBuilder =
@@ -5952,6 +6003,7 @@ typedef $$NotesTableUpdateCompanionBuilder =
       Value<AiStatus> aiStatus,
       Value<String?> speakersJson,
       Value<bool> deleted,
+      Value<bool> locked,
       Value<int> rowid,
     });
 
@@ -6153,6 +6205,11 @@ class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
 
   ColumnFilters<bool> get deleted => $composableBuilder(
     column: $table.deleted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get locked => $composableBuilder(
+    column: $table.locked,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6380,6 +6437,11 @@ class $$NotesTableOrderingComposer
     column: $table.deleted,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get locked => $composableBuilder(
+    column: $table.locked,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$NotesTableAnnotationComposer
@@ -6454,6 +6516,9 @@ class $$NotesTableAnnotationComposer
 
   GeneratedColumn<bool> get deleted =>
       $composableBuilder(column: $table.deleted, builder: (column) => column);
+
+  GeneratedColumn<bool> get locked =>
+      $composableBuilder(column: $table.locked, builder: (column) => column);
 
   Expression<T> transcriptSegmentsRefs<T extends Object>(
     Expression<T> Function($$TranscriptSegmentsTableAnnotationComposer a) f,
@@ -6634,6 +6699,7 @@ class $$NotesTableTableManager
                 Value<AiStatus> aiStatus = const Value.absent(),
                 Value<String?> speakersJson = const Value.absent(),
                 Value<bool> deleted = const Value.absent(),
+                Value<bool> locked = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => NotesCompanion(
                 id: id,
@@ -6654,6 +6720,7 @@ class $$NotesTableTableManager
                 aiStatus: aiStatus,
                 speakersJson: speakersJson,
                 deleted: deleted,
+                locked: locked,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -6676,6 +6743,7 @@ class $$NotesTableTableManager
                 Value<AiStatus> aiStatus = const Value.absent(),
                 Value<String?> speakersJson = const Value.absent(),
                 Value<bool> deleted = const Value.absent(),
+                Value<bool> locked = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => NotesCompanion.insert(
                 id: id,
@@ -6696,6 +6764,7 @@ class $$NotesTableTableManager
                 aiStatus: aiStatus,
                 speakersJson: speakersJson,
                 deleted: deleted,
+                locked: locked,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

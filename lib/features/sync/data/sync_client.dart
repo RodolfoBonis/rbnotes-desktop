@@ -27,6 +27,14 @@ class SyncChange extends Equatable {
   final bool deleted;
   final Map<String, dynamic> data;
 
+  SyncChange copyWith({Map<String, dynamic>? data}) => SyncChange(
+    entity: entity,
+    id: id,
+    updatedAt: updatedAt,
+    deleted: deleted,
+    data: data ?? this.data,
+  );
+
   Map<String, dynamic> toJson() => {
     'entity': entity,
     'id': id,

@@ -28,6 +28,7 @@ import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/presentation/audio_player_controller.dart';
 import 'package:rbnotes/features/notes/presentation/just_audio_player.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
+import 'package:rbnotes/features/security/data/note_key_store.dart';
 import 'package:rbnotes/features/settings/data/retention_service.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
@@ -36,6 +37,7 @@ import 'package:rbnotes/features/sync/data/audio_sync.dart';
 import 'package:rbnotes/features/sync/data/audio_upload_coordinator.dart';
 import 'package:rbnotes/features/sync/data/audio_upload_queue.dart';
 import 'package:rbnotes/features/sync/data/sync_client.dart';
+import 'package:rbnotes/features/sync/data/sync_crypto.dart';
 import 'package:rbnotes/features/sync/data/sync_local_store.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/sync/data/sync_trigger.dart';
@@ -58,6 +60,9 @@ Future<void> configureDependencies(AppConfig config) async {
 
   // ---- Plugin nativo real (macOS). Testes injetam FakeRbNative. ----
   final RbNative native = MethodChannelRbNative();
+
+  final noteKeyStore = SecureNoteKeyStore();
+  final syncCrypto = SyncCrypto(noteKeyStore);
 
   final settings = SettingsStore(prefs);
   final repository = NoteRepository(database);
@@ -132,7 +137,7 @@ Future<void> configureDependencies(AppConfig config) async {
     sync = syncClient;
     syncService = SyncService(
       client: syncClient,
-      store: SyncLocalStore(database),
+      store: SyncLocalStore(database, crypto: syncCrypto),
       settings: settings,
       prefs: prefs,
     );
@@ -194,6 +199,8 @@ Future<void> configureDependencies(AppConfig config) async {
     ..registerSingleton<AiClient>(ai)
     ..registerSingleton<AiUsageClient>(aiUsage)
     ..registerSingleton<SyncClient>(sync)
+    ..registerSingleton<NoteKeyStore>(noteKeyStore)
+    ..registerSingleton<SyncCrypto>(syncCrypto)
     ..registerSingleton<AuthService>(auth)
     ..registerSingleton<NotificationService>(notifications)
     ..registerSingleton<EnrichmentService>(enrichment)

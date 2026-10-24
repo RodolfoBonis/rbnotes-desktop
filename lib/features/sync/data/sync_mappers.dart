@@ -34,6 +34,7 @@ abstract final class SyncMappers {
       'autoTitle': n.autoTitle,
       'aiStatus': n.aiStatus.name,
       'speakersJson': n.speakersJson,
+      'locked': n.locked,
     },
   );
 
@@ -56,6 +57,7 @@ abstract final class SyncMappers {
       autoTitle: Value((d['autoTitle'] as bool?) ?? false),
       aiStatus: Value(_enum(AiStatus.values, d['aiStatus'], AiStatus.none)),
       speakersJson: Value(d['speakersJson'] as String?),
+      locked: Value((d['locked'] as bool?) ?? false),
       deleted: Value(c.deleted),
     );
   }

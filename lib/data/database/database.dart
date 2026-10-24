@@ -57,6 +57,11 @@ class Notes extends Table {
   TextColumn get speakersJson => text().nullable()();
   BoolColumn get deleted => boolean().withDefault(const Constant(false))();
 
+  // ---- v5 ----
+  /// Nota bloqueada por Touch ID: conteúdo escondido na lista, fora do FTS/⌘K/
+  /// coleções/resumos/tarefas, e cifrada no sync.
+  BoolColumn get locked => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
@@ -303,10 +308,12 @@ WHERE rowid = (SELECT rowid FROM notes WHERE id = ?1)''';
 
 const _rebuildIndexSql = '''
 INSERT INTO notes_fts(rowid, title, body)
-SELECT n.rowid, n.title, COALESCE((
-  SELECT group_concat(s.content, ' ')
-  FROM transcript_segments s WHERE s.note_id = n.id
-), '')
+SELECT n.rowid,
+       CASE WHEN n.locked = 1 THEN '' ELSE n.title END,
+       CASE WHEN n.locked = 1 THEN '' ELSE COALESCE((
+         SELECT group_concat(s.content, ' ')
+         FROM transcript_segments s WHERE s.note_id = n.id
+       ), '') END
 FROM notes n''';
 
 const _searchSql = '''
@@ -315,7 +322,7 @@ SELECT n.*,
        snippet(notes_fts, 1, '[', ']', '…', 12) AS snippet_body,
        snippet(notes_fts, 0, '[', ']', '…', 12) AS snippet_title
 FROM notes_fts JOIN notes n ON n.rowid = notes_fts.rowid
-WHERE notes_fts MATCH ?
+WHERE notes_fts MATCH ? AND n.locked = 0 AND n.deleted = 0
 ORDER BY n.pinned DESC, rank''';
 
 /// Pastas semente (ids batem com `RbTokens.folderColors` e o design).
@@ -359,7 +366,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -478,6 +485,26 @@ class AppDatabase extends _$AppDatabase {
       await customStatement('DELETE FROM notes_fts');
       await customStatement(_rebuildIndexSql);
     });
+  }
+
+  /// Remove o título e o corpo da nota do índice FTS (ao bloquear).
+  Future<void> removeFromSearchIndex(String noteId) async {
+    await customStatement(
+      "UPDATE notes_fts SET title = '', body = '' "
+      'WHERE rowid = (SELECT rowid FROM notes WHERE id = ?1)',
+      [noteId],
+    );
+  }
+
+  /// Reindexa o título e o corpo da nota (ao desbloquear).
+  Future<void> reindexSearch(String noteId) async {
+    await customStatement(
+      'UPDATE notes_fts SET title = '
+      '(SELECT title FROM notes WHERE id = ?1) '
+      'WHERE rowid = (SELECT rowid FROM notes WHERE id = ?1)',
+      [noteId],
+    );
+    await recomposeSearchBody(noteId);
   }
 
   static String? buildMatchQuery(String raw) {

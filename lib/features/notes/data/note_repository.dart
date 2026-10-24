@@ -140,6 +140,23 @@ class NoteRepository {
     );
   }
 
+  /// Bloqueia/desbloqueia a nota por Touch ID. Ao bloquear, remove título e
+  /// corpo do índice FTS; ao desbloquear, reindexa. O `updatedAt` é bumpado
+  /// para o sync levar a mudança (e cifrar/decifrar no push/pull).
+  Future<void> setLocked(String id, {required bool locked}) async {
+    await (_db.update(_db.notes)..where((n) => n.id.equals(id))).write(
+      NotesCompanion(
+        locked: Value(locked),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+    if (locked) {
+      await _db.removeFromSearchIndex(id);
+    } else {
+      await _db.reindexSearch(id);
+    }
+  }
+
   Future<void> setFolder(String id, String? folderId) {
     return (_db.update(_db.notes)..where((n) => n.id.equals(id))).write(
       NotesCompanion(
