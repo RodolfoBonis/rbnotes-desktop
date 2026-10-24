@@ -123,6 +123,60 @@ class DiaryTheme extends Equatable {
   List<Object?> get props => [name, count];
 }
 
+/// Resumo semanal (Claude), excluindo notas bloqueadas.
+class WeeklySummary extends Equatable {
+  const WeeklySummary({
+    required this.title,
+    required this.summary,
+    required this.highlights,
+    required this.openTasks,
+    required this.themes,
+  });
+
+  factory WeeklySummary.fromJson(Map<String, dynamic> j) => WeeklySummary(
+    title: j['title'] as String? ?? 'Resumo da semana',
+    summary: j['summary'] as String? ?? '',
+    highlights: [
+      for (final h in (j['highlights'] as List? ?? const [])) h.toString(),
+    ],
+    openTasks: [
+      for (final t in (j['openTasks'] as List? ?? const []))
+        WeeklyOpenTask.fromJson((t as Map).cast<String, dynamic>()),
+    ],
+    themes: [
+      for (final t in (j['themes'] as List? ?? const []))
+        DiaryTheme(
+          name: (t as Map)['name']?.toString() ?? '',
+          count: ((t['count']) as num?)?.toInt() ?? 0,
+        ),
+    ],
+  );
+
+  final String title;
+  final String summary;
+  final List<String> highlights;
+  final List<WeeklyOpenTask> openTasks;
+  final List<DiaryTheme> themes;
+
+  @override
+  List<Object?> get props => [title, summary, highlights, openTasks, themes];
+}
+
+class WeeklyOpenTask extends Equatable {
+  const WeeklyOpenTask({required this.text, this.noteId});
+
+  factory WeeklyOpenTask.fromJson(Map<String, dynamic> j) => WeeklyOpenTask(
+    text: j['text'] as String? ?? '',
+    noteId: j['noteId'] as String?,
+  );
+
+  final String text;
+  final String? noteId;
+
+  @override
+  List<Object?> get props => [text, noteId];
+}
+
 /// Cliente de IA (enriquecimento, chat, perguntar às notas, regras de coleção,
 /// diário). Local-first via `FakeAiClient`; a implementação real fala com a
 /// `rbnotes-api` (SSE) e é injetada depois.
@@ -157,6 +211,12 @@ abstract interface class AiClient {
 
   /// Pergunta do dia para o diário.
   Future<String> dailyPrompt(DateTime date);
+
+  /// Resumo semanal: notas e tarefas da semana (exceto bloqueadas).
+  Future<WeeklySummary> weeklySummary({
+    required DateTime weekStart,
+    required String tz,
+  });
 }
 
 /// Nota candidata para "Perguntar às notas".

@@ -48,6 +48,7 @@ import 'package:rbnotes/notifications/notification_coordinator.dart';
 import 'package:rbnotes/notifications/notification_scheduler.dart';
 import 'package:rbnotes/notifications/notifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:window_manager/window_manager.dart';
 
 final GetIt di = GetIt.instance;
 
@@ -181,6 +182,17 @@ Future<void> configureDependencies(AppConfig config) async {
     ai: ai,
     notes: repository,
     noteAi: noteAi,
+    onNoteReady: ({required noteId, required title, required failed}) {
+      unawaited(() async {
+        final focused = await windowManager.isFocused();
+        await notificationScheduler.notifyNoteReady(
+          noteId: noteId,
+          title: title,
+          windowFocused: focused,
+          failed: failed,
+        );
+      }());
+    },
     vocabulary: vocabulary,
     settings: settings,
   )..attachTo(queue);

@@ -39,6 +39,7 @@ import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:rbnotes/native/fake_rb_native.dart';
 import 'package:rbnotes/native/rb_native.dart';
+import 'package:rbnotes/notifications/notifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../helpers/fake_audio_player.dart';
@@ -91,6 +92,7 @@ void main() {
       ..registerSingleton<AiClient>(ai)
       ..registerSingleton<AiUsageClient>(const FakeAiUsageClient())
       ..registerSingleton<NoteKeyStore>(InMemoryNoteKeyStore())
+      ..registerSingleton<Notifier>(FakeNotifier())
       ..registerSingleton<TranscriptionQueue>(queue)
       ..registerSingleton<AuthService>(auth)
       ..registerSingleton<DiagnosticsMonitor>(DiagnosticsMonitor(native))

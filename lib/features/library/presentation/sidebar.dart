@@ -17,6 +17,7 @@ class Sidebar extends StatelessWidget {
     required this.onOpenNewCollection,
     required this.onOpenSettings,
     required this.onToggleAppearance,
+    required this.onOpenWeekly,
     this.aiStatus,
     super.key,
   });
@@ -28,6 +29,7 @@ class Sidebar extends StatelessWidget {
   final VoidCallback onOpenNewCollection;
   final VoidCallback onOpenSettings;
   final VoidCallback onToggleAppearance;
+  final VoidCallback onOpenWeekly;
 
   /// Fase da IA (real): muda o card "Claude" para refletir fila/erro/limite.
   /// Null = local-first (sempre "pronto").
@@ -106,6 +108,12 @@ class Sidebar extends StatelessWidget {
                       selected: state.section == LibrarySection.diary,
                       onTap: () => cubit.selectSection(LibrarySection.diary),
                     ),
+                    _LibRow(
+                      icon: SidebarIcon.collection,
+                      label: 'Resumo da semana',
+                      selected: false,
+                      onTap: onOpenWeekly,
+                    ),
                     const _SectionLabel('Pastas'),
                     for (final f in state.folders.where((f) => !f.hidden))
                       _FolderRow(
@@ -149,14 +157,14 @@ class _LibRow extends StatelessWidget {
   const _LibRow({
     required this.icon,
     required this.label,
-    required this.count,
     required this.selected,
     required this.onTap,
+    this.count,
   });
 
   final SidebarIcon icon;
   final String label;
-  final int count;
+  final int? count;
   final bool selected;
   final VoidCallback onTap;
 
@@ -181,10 +189,11 @@ class _LibRow extends StatelessWidget {
               style: context.bodyText(size: 13, weight: FontWeight.w500),
             ),
           ),
-          Text(
-            '$count',
-            style: context.bodyText(size: 12, color: rb.secondary(0.55)),
-          ),
+          if (count != null)
+            Text(
+              '$count',
+              style: context.bodyText(size: 12, color: rb.secondary(0.55)),
+            ),
         ],
       ),
     );

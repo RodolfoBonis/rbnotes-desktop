@@ -148,6 +148,23 @@ class ApiAiClient implements AiClient {
     return (obj['prompt'] as String?) ?? '';
   }
 
+  @override
+  Future<WeeklySummary> weeklySummary({
+    required DateTime weekStart,
+    required String tz,
+  }) async {
+    final day =
+        '${weekStart.year.toString().padLeft(4, '0')}-'
+        '${weekStart.month.toString().padLeft(2, '0')}-'
+        '${weekStart.day.toString().padLeft(2, '0')}';
+    final id = await _start('/ai/weekly-summary', {
+      'weekStart': day,
+      'tz': tz,
+    });
+    final obj = await _collect(id);
+    return WeeklySummary.fromJson(obj);
+  }
+
   // ---------------- internals ----------------
 
   Future<String> _start(String path, Map<String, dynamic> body) async {

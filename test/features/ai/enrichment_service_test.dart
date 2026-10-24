@@ -52,6 +52,12 @@ class _StubAiClient implements AiClient {
 
   @override
   Future<String> dailyPrompt(DateTime date) async => throw UnimplementedError();
+
+  @override
+  Future<WeeklySummary> weeklySummary({
+    required DateTime weekStart,
+    required String tz,
+  }) async => throw UnimplementedError();
 }
 
 const _empty = NoteAi(

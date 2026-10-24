@@ -16,6 +16,8 @@ import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/motion.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/ai_activity.dart';
+import 'package:rbnotes/features/ai/presentation/weekly_summary_cubit.dart';
+import 'package:rbnotes/features/ai/presentation/weekly_summary_screen.dart';
 import 'package:rbnotes/features/auth/data/auth_service.dart';
 import 'package:rbnotes/features/collections/domain/collection_rule.dart';
 import 'package:rbnotes/features/collections/domain/forgotten_tasks.dart';
@@ -40,6 +42,7 @@ import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/settings/presentation/settings_modal.dart';
 import 'package:rbnotes/features/sync/data/sync_crypto.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
+import 'package:rbnotes/notifications/notification_coordinator.dart';
 import 'package:rbnotes/notifications/notifier.dart';
 import 'package:uuid/uuid.dart';
 
@@ -88,6 +91,30 @@ class _AppShellState extends State<AppShell> {
     di<RecordNoteHotkeyService>().onTriggered = context
         .read<RecordingCubit>()
         .toggleRecordNote;
+
+    // Roteamento dos toques de notificação + resumo semanal na 1ª abertura.
+    if (di.isRegistered<NotificationCoordinator>()) {
+      final coord = di<NotificationCoordinator>()
+        ..onOpenNote = (id) {
+          if (!mounted) return;
+          context.read<LibraryCubit>()
+            ..selectSection(LibrarySection.all)
+            ..selectNote(id);
+        }
+        ..onOpenDiary = () {
+          if (!mounted) return;
+          context.read<LibraryCubit>().selectSection(LibrarySection.diary);
+        }
+        ..onOpenWeekly = (_) {
+          if (!mounted) return;
+          context.read<ShellOverlayCubit>().openWeekly();
+        };
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && coord.weeklyDue) {
+          context.read<ShellOverlayCubit>().openWeekly();
+        }
+      });
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _runRecovery());
   }
@@ -231,6 +258,7 @@ class _SidebarColumn extends StatelessWidget {
       aiStatus: di.isRegistered<AiActivity>() ? di<AiActivity>().stream : null,
       onOpenNewCollection: context.read<ShellOverlayCubit>().openNewCollection,
       onOpenSettings: context.read<ShellOverlayCubit>().openSettings,
+      onOpenWeekly: context.read<ShellOverlayCubit>().openWeekly,
       onToggleAppearance: () => unawaited(
         context.read<ThemeModeCubit>().toggle(Theme.of(context).brightness),
       ),
@@ -359,6 +387,7 @@ class _OverlayLayer extends StatelessWidget {
             if (state.fixOpen)
               FadeScaleIn(child: _FixModal(word: state.fixWord!)),
             if (state.settingsOpen) const FadeScaleIn(child: _SettingsLayer()),
+            if (state.weeklyOpen) const FadeScaleIn(child: _WeeklyLayer()),
             if (state.toast != null) ShellToast(message: state.toast!),
           ],
         );
@@ -454,6 +483,9 @@ class _SettingsLayer extends StatelessWidget {
       onRecoveryKeyChanged: () {
         if (di.isRegistered<SyncCrypto>()) di<SyncCrypto>().invalidate();
       },
+      notifier: di(),
+      onNotificationsChanged: () =>
+          unawaited(di<NotificationCoordinator>().rescheduleAll()),
       userName: user?.name ?? 'Você',
       userEmail: user?.email ?? '',
       userInitials: user?.initials ?? 'V',
@@ -468,6 +500,23 @@ class _SettingsLayer extends StatelessWidget {
         overlay.closeSettings();
         await di<AuthService>().signOut();
       },
+    );
+  }
+}
+
+class _WeeklyLayer extends StatelessWidget {
+  const _WeeklyLayer();
+
+  @override
+  Widget build(BuildContext context) {
+    final overlay = context.read<ShellOverlayCubit>();
+    return BlocProvider(
+      create: (_) {
+        final cubit = WeeklySummaryCubit(ai: di(), settings: di());
+        unawaited(cubit.generate());
+        return cubit;
+      },
+      child: WeeklySummaryScreen(onClose: overlay.closeWeekly),
     );
   }
 }

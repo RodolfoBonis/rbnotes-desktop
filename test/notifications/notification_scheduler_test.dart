@@ -102,7 +102,7 @@ void main() {
             id: 'past',
             noteId: 'n',
             text: 'x',
-            due: DateTime(2026, 10, 1),
+            due: DateTime(2026, 10),
             done: false,
           ),
         ],

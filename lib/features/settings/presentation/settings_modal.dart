@@ -26,6 +26,7 @@ import 'package:rbnotes/features/settings/presentation/vocabulary_editor.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/sync/data/sync_status.dart';
 import 'package:rbnotes/native/rb_native.dart';
+import 'package:rbnotes/notifications/notifier.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Rótulos, tamanhos e descrições dos 5 modelos Whisper (design v3).
@@ -80,6 +81,8 @@ class SettingsModal extends StatefulWidget {
     required this.onEraseAllData,
     this.noteKeyStore,
     this.onRecoveryKeyChanged,
+    this.notifier,
+    this.onNotificationsChanged,
     this.sync,
     super.key,
   });
@@ -101,6 +104,12 @@ class SettingsModal extends StatefulWidget {
 
   /// Chamado após importar/gerar a chave (invalida o cache do SyncCrypto).
   final VoidCallback? onRecoveryKeyChanged;
+
+  /// Notifier para o status/pedido de permissão de notificações.
+  final Notifier? notifier;
+
+  /// Chamado após mudar um toggle de notificação (reagenda).
+  final VoidCallback? onNotificationsChanged;
   final String userName;
   final String userEmail;
   final String userInitials;
@@ -126,6 +135,7 @@ class _SettingsModalState extends State<SettingsModal> {
   final _downloading = <WhisperModel, double>{};
   final _subs = <WhisperModel, StreamSubscription<double>>{};
   StreamSubscription<RecordNoteHotkeyStatus>? _recordHotkeySub;
+  bool? _notifPermission;
 
   SettingsStore get _s => widget.store;
 
@@ -138,6 +148,12 @@ class _SettingsModalState extends State<SettingsModal> {
     _recordHotkeySub = widget.recordNoteHotkey.statusChanges.listen((_) {
       if (mounted) setState(() {});
     });
+    unawaited(_loadNotifPermission());
+  }
+
+  Future<void> _loadNotifPermission() async {
+    final status = await widget.notifier?.isPermissionGranted();
+    if (mounted) setState(() => _notifPermission = status);
   }
 
   Future<void> _refreshVocabCount() async {
@@ -279,22 +295,64 @@ class _SettingsModalState extends State<SettingsModal> {
     ),
     _Group(
       title: 'Notificações',
+      foot: _notifPermission == false
+          ? 'As notificações estão desativadas no macOS. Toque em "Pedir '
+                'permissão" ou libere em Ajustes do Sistema.'
+          : null,
       rows: [
-        _toggle(
+        if (widget.notifier != null) _permissionRow(),
+        _notifToggle(
+          'Nota pronta',
+          'Avisa quando a transcrição e o resumo terminam',
+          _s.noteReadyNotif,
+          (v) => _s.setNoteReadyNotif(value: v),
+        ),
+        _notifToggle(
+          'Tarefas com prazo',
+          'Lembra no dia do prazo, às 9h',
+          _s.remindTasks,
+          (v) => _s.setRemindTasks(value: v),
+        ),
+        _notifToggle(
+          'Pergunta do diário',
+          'Todo dia às 21h, a pergunta do dia seguinte',
+          _s.diaryPromptNotif,
+          (v) => _s.setDiaryPromptNotif(value: v),
+        ),
+        _notifToggle(
           'Resumo semanal',
           'Toda segunda, um panorama das suas notas e tarefas',
           _s.weeklySummary,
           (v) => _s.setWeeklySummary(value: v),
         ),
-        _toggle(
-          'Lembrar tarefas com prazo',
-          null,
-          _s.remindTasks,
-          (v) => _s.setRemindTasks(value: v),
-        ),
       ],
     ),
   ]);
+
+  Widget _notifToggle(
+    String label,
+    String? sub,
+    bool value,
+    ValueChanged<bool> onChanged,
+  ) => _toggle(label, sub, value, (v) {
+    onChanged(v);
+    widget.onNotificationsChanged?.call();
+  });
+
+  Widget _permissionRow() => _SettingRow(
+    label: 'Permissão de notificações',
+    sub: switch (_notifPermission) {
+      true => 'Concedida',
+      false => 'Negada',
+      null => 'Desconhecida',
+    },
+    trailing: _PillButton(label: 'Pedir permissão', onTap: _askNotifPermission),
+  );
+
+  Future<void> _askNotifPermission() async {
+    final granted = await widget.notifier?.requestPermission();
+    if (mounted) setState(() => _notifPermission = granted);
+  }
 
   Widget _gravacao() => _Groups([
     _Group(

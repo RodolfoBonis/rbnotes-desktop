@@ -180,6 +180,33 @@ class FakeAiClient implements AiClient {
     return seedDiaryPrompts[doy % seedDiaryPrompts.length];
   }
 
+  @override
+  Future<WeeklySummary> weeklySummary({
+    required DateTime weekStart,
+    required String tz,
+  }) async {
+    await Future<void>.delayed(thinkDelay);
+    return const WeeklySummary(
+      title: 'Sua semana em foco',
+      summary:
+          'Você registrou várias notas e avançou em tarefas de trabalho '
+          'e estudos. Alguns itens ficaram em aberto para a próxima semana.',
+      highlights: [
+        'Fechou o escopo do protótipo',
+        'Três reuniões com decisões registradas',
+        'Diário mantido em dia',
+      ],
+      openTasks: [
+        WeeklyOpenTask(text: 'Enviar a proposta revisada'),
+        WeeklyOpenTask(text: 'Confirmar a data do teste com usuários'),
+      ],
+      themes: [
+        DiaryTheme(name: 'Trabalho', count: 5),
+        DiaryTheme(name: 'Estudos', count: 2),
+      ],
+    );
+  }
+
   // ---------- geração ----------
 
   _ChatAnswer _chatAnswer(

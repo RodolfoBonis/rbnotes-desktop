@@ -24,12 +24,19 @@ class EnrichmentService {
     required NoteAiRepository noteAi,
     required VocabularyRepository vocabulary,
     required SettingsStore settings,
+    void Function({
+      required String noteId,
+      required String title,
+      required bool failed,
+    })?
+    onNoteReady,
     Uuid? uuid,
   }) : _ai = ai,
        _notes = notes,
        _noteAi = noteAi,
        _vocabulary = vocabulary,
        _settings = settings,
+       _onNoteReady = onNoteReady,
        _uuid = uuid ?? const Uuid();
 
   final AiClient _ai;
@@ -37,6 +44,12 @@ class EnrichmentService {
   final NoteAiRepository _noteAi;
   final VocabularyRepository _vocabulary;
   final SettingsStore _settings;
+  final void Function({
+    required String noteId,
+    required String title,
+    required bool failed,
+  })?
+  _onNoteReady;
   final Uuid _uuid;
 
   StreamSubscription<TranscriptionProgress>? _sub;
@@ -134,6 +147,10 @@ class EnrichmentService {
         await _notes.updateTitle(noteId, ai.title.trim(), autoTitle: true);
       }
       await _notes.setAiStatus(noteId, AiStatus.ready);
+      final finalTitle = ai.title.trim().isNotEmpty
+          ? ai.title.trim()
+          : note.title;
+      _onNoteReady?.call(noteId: noteId, title: finalTitle, failed: false);
     } on Object catch (e, st) {
       await AppLogger.error(e, st, reason: 'enrich', category: 'ai');
       try {
@@ -141,6 +158,7 @@ class EnrichmentService {
       } on Object catch (_) {
         // nota apagada no meio-tempo; ignore.
       }
+      _onNoteReady?.call(noteId: noteId, title: '', failed: true);
     }
   }
 
