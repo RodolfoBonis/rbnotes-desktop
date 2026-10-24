@@ -50,6 +50,8 @@ void main() {
         'captureSystemAudio': false,
         'liveTranscription': true,
         'inputDeviceId': 'device-uid-42',
+        'noiseReduction': false,
+        'language': null,
       });
     });
 
@@ -320,6 +322,7 @@ void main() {
       expect(calls.single.arguments, {
         'mode': 'recording',
         'startedAtMs': 1700000000000,
+        'accentArgb': null,
       });
     });
 

@@ -87,6 +87,8 @@ void main() {
         'captureSystemAudio': true,
         'liveTranscription': false,
         'inputDeviceId': null,
+        'noiseReduction': false,
+        'language': null,
       });
     });
 

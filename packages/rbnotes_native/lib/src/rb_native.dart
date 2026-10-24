@@ -39,12 +39,23 @@ abstract interface class RbNative {
   /// dropped if the transcription lane falls behind).
   ///
   /// Throws `RbNativeException('already_recording')` if [id] is in progress.
+  ///
+  /// With [noiseReduction] true the plugin enables voice processing on the
+  /// microphone input node (noise/echo cancellation) before starting the
+  /// engine. If it cannot be enabled the recording continues without it and a
+  /// diagnostic is emitted; it never breaks system-audio capture or live
+  /// transcription.
+  ///
+  /// [language] overrides the live-transcription language (`auto`/`pt`/`en`/…);
+  /// null keeps the default (`pt`). It does not affect the final [transcribe].
   Future<RecordingHandle> startRecording({
     required String id,
     required String directory,
     required bool captureSystemAudio,
     bool liveTranscription = false,
     String? inputDeviceId,
+    bool noiseReduction = false,
+    String? language,
   });
 
   /// Stops the recording [id], finalizes the wav headers and the `.m4a` mix.
@@ -194,9 +205,14 @@ abstract interface class RbNative {
   /// The overlay never steals focus from the frontmost app (so dictation can
   /// still paste into it) and floats above full-screen apps on every Space.
   /// Calling it again while visible re-targets the existing panel to [mode].
+  ///
+  /// [accentArgb] recolors the overlay accent (REC finish button, progress bar,
+  /// checkmarks) to the app's current accent; null keeps the default
+  /// (`#E0512E`). The value is a 0xAARRGGBB integer.
   Future<void> showActivityOverlay({
     required OverlayMode mode,
     required DateTime startedAt,
+    int? accentArgb,
   });
 
   /// Pushes a partial update into the visible overlay. Every argument is
@@ -229,4 +245,76 @@ abstract interface class RbNative {
   /// User actions performed on the overlay (button taps or a click on the
   /// pill body). A single permanent broadcast stream, like [diagnostics].
   Stream<OverlayAction> overlayActions();
+
+  // ---------- App lock triggers (Phase 3) ----------
+
+  /// Emits a [LockTrigger] whenever the system signals that the app should
+  /// lock itself: the screen was locked, the screen saver started, or the
+  /// display/machine is going to sleep. A single permanent broadcast stream
+  /// (like [diagnostics]); the app covers its window with the lock screen.
+  Stream<LockTrigger> lockTriggers();
+
+  // ---------- Login item (Phase 3) ----------
+
+  /// Whether RbNotes is currently registered to launch at login
+  /// (`SMAppService.mainApp.status == .enabled`).
+  Future<bool> launchAtLogin();
+
+  /// Registers (true) or unregisters (false) RbNotes as a login item.
+  ///
+  /// Throws `RbNativeException('login_item_failed')` with the system message on
+  /// failure. When macOS requires the user to approve the item in System
+  /// Settings, the message makes that explicit (the enabled state only becomes
+  /// true after approval).
+  // ignore: avoid_positional_boolean_parameters
+  Future<void> setLaunchAtLogin(bool enabled);
+
+  // ---------- Silence detection (Phase 3) ----------
+
+  /// Detects runs of near-silence in the 16 kHz mono wav at [wavPath] using an
+  /// energy VAD (RMS over 30 ms windows, adaptive noise-percentile threshold),
+  /// returning only runs longer than [minSilence]. Runs off the main thread.
+  ///
+  /// Throws `RbNativeException('invalid_argument')` if the file does not exist.
+  Future<List<SilenceRange>> detectSilences(
+    String wavPath, {
+    Duration minSilence = const Duration(seconds: 2),
+  });
+
+  // ---------- Meeting detection (Phase 3) ----------
+
+  /// Signals emitted when a meeting is detected to start/stop: another process
+  /// is using the default input device and a conferencing app (Zoom, Teams,
+  /// Webex, FaceTime, Slack, or a browser tab) is in focus/running. Debounced
+  /// (~3 s); the app's own recordings are ignored. A single permanent broadcast
+  /// stream; no events are emitted until [setMeetingDetection] is enabled.
+  Stream<MeetingSignal> meetingSignals();
+
+  /// Enables or disables meeting detection (the microphone-usage observer and
+  /// the foreground/process correlation). Disabled by default.
+  // ignore: avoid_positional_boolean_parameters
+  Future<void> setMeetingDetection(bool enabled);
+
+  // ---------- Local diarization (sherpa-onnx, Phase 3) ----------
+
+  /// Whether the local diarization models (segmentation + speaker embedding)
+  /// are downloaded, and their total size on disk.
+  Future<DiarizationModelState> diarizationModelState();
+
+  /// Downloads the diarization models into Application Support/RbNotes/models/
+  /// diarization, emitting combined progress 0..1. Cancelling the subscription
+  /// cancels the download. Verifies SHA-256 and size per file. Emits
+  /// `RbNativeException('diarization_model_missing')`/`model_download_failed`
+  /// on error.
+  Stream<double> downloadDiarizationModel();
+
+  /// Runs local speaker diarization over the 16 kHz mono wav at [wavPath]
+  /// (typically `<id>.system.wav`) off the main thread, returning speaker turns
+  /// ordered by start time. [numSpeakers] pins the cluster count when known;
+  /// null lets the clustering decide.
+  ///
+  /// Throws `RbNativeException('diarization_model_missing')` if the models are
+  /// not downloaded, `invalid_argument` if the file is missing, or
+  /// `diarization_failed` on other errors.
+  Future<List<SpeakerTurn>> diarize(String wavPath, {int? numSpeakers});
 }

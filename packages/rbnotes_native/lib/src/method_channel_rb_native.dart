@@ -19,6 +19,10 @@ abstract final class RbNativeChannels {
   static const String liveTranscript = 'rbnotes_native/live_transcript';
   static const String overlayActions = 'rbnotes_native/overlay_actions';
   static const String globalHotkeys = 'rbnotes_native/global_hotkeys';
+  static const String lockTriggers = 'rbnotes_native/lock_triggers';
+  static const String meetingSignals = 'rbnotes_native/meeting_signals';
+  static const String diarizationDownload =
+      'rbnotes_native/diarization_download';
 }
 
 /// `MethodChannel` backed implementation of [RbNative].
@@ -36,6 +40,9 @@ class MethodChannelRbNative implements RbNative {
     EventChannel? liveTranscriptChannel,
     EventChannel? overlayActionsChannel,
     EventChannel? globalHotkeysChannel,
+    EventChannel? lockTriggersChannel,
+    EventChannel? meetingSignalsChannel,
+    EventChannel? diarizationDownloadChannel,
   }) : _method = methodChannel ?? const MethodChannel(RbNativeChannels.method),
        _levels = levelsChannel ?? const EventChannel(RbNativeChannels.levels),
        _dictation =
@@ -57,7 +64,16 @@ class MethodChannelRbNative implements RbNative {
            const EventChannel(RbNativeChannels.overlayActions),
        _globalHotkeys =
            globalHotkeysChannel ??
-           const EventChannel(RbNativeChannels.globalHotkeys);
+           const EventChannel(RbNativeChannels.globalHotkeys),
+       _lockTriggers =
+           lockTriggersChannel ??
+           const EventChannel(RbNativeChannels.lockTriggers),
+       _meetingSignals =
+           meetingSignalsChannel ??
+           const EventChannel(RbNativeChannels.meetingSignals),
+       _diarizationDownload =
+           diarizationDownloadChannel ??
+           const EventChannel(RbNativeChannels.diarizationDownload);
 
   final MethodChannel _method;
   final EventChannel _levels;
@@ -68,6 +84,9 @@ class MethodChannelRbNative implements RbNative {
   final EventChannel _liveTranscript;
   final EventChannel _overlayActions;
   final EventChannel _globalHotkeys;
+  final EventChannel _lockTriggers;
+  final EventChannel _meetingSignals;
+  final EventChannel _diarizationDownload;
 
   /// Single permanent fan-out of the native transcription-progress stream.
   /// Each native event is a `{wavPath, progress}` map; [transcribe] subscribes
@@ -156,6 +175,8 @@ class MethodChannelRbNative implements RbNative {
     required bool captureSystemAudio,
     bool liveTranscription = false,
     String? inputDeviceId,
+    bool noiseReduction = false,
+    String? language,
   }) async {
     final map = await _invoke<Map<Object?, Object?>>('startRecording', {
       'id': id,
@@ -163,6 +184,8 @@ class MethodChannelRbNative implements RbNative {
       'captureSystemAudio': captureSystemAudio,
       'liveTranscription': liveTranscription,
       'inputDeviceId': inputDeviceId,
+      'noiseReduction': noiseReduction,
+      'language': language,
     });
     return RecordingHandle.fromMap(map);
   }
@@ -347,9 +370,11 @@ class MethodChannelRbNative implements RbNative {
   Future<void> showActivityOverlay({
     required OverlayMode mode,
     required DateTime startedAt,
+    int? accentArgb,
   }) => _invoke<void>('showActivityOverlay', {
     'mode': mode.wireName,
     'startedAtMs': startedAt.millisecondsSinceEpoch,
+    'accentArgb': accentArgb,
   });
 
   @override
@@ -380,6 +405,76 @@ class MethodChannelRbNative implements RbNative {
       _mapStreamErrors(_overlayActions.receiveBroadcastStream()).map(
         (event) => OverlayActionWire.fromWire(event! as String),
       );
+
+  // ---------- App lock triggers (Phase 3) ----------
+
+  @override
+  Stream<LockTrigger> lockTriggers() =>
+      _mapStreamErrors(_lockTriggers.receiveBroadcastStream())
+          .map((event) => LockTriggerWire.fromWire(event! as String));
+
+  // ---------- Login item (Phase 3) ----------
+
+  @override
+  Future<bool> launchAtLogin() async {
+    final value = await _invoke<bool>('launchAtLogin');
+    return value;
+  }
+
+  @override
+  Future<void> setLaunchAtLogin(bool enabled) =>
+      _invoke<void>('setLaunchAtLogin', {'enabled': enabled});
+
+  // ---------- Silence detection (Phase 3) ----------
+
+  @override
+  Future<List<SilenceRange>> detectSilences(
+    String wavPath, {
+    Duration minSilence = const Duration(seconds: 2),
+  }) async {
+    final list = await _invoke<List<Object?>>('detectSilences', {
+      'wavPath': wavPath,
+      'minSilenceMs': minSilence.inMilliseconds,
+    });
+    return list
+        .cast<Map<Object?, Object?>>()
+        .map(SilenceRange.fromMap)
+        .toList();
+  }
+
+  // ---------- Meeting detection (Phase 3) ----------
+
+  @override
+  Stream<MeetingSignal> meetingSignals() =>
+      _mapStreamErrors(_meetingSignals.receiveBroadcastStream()).map(
+        (event) => MeetingSignal.fromMap(event! as Map<Object?, Object?>),
+      );
+
+  @override
+  Future<void> setMeetingDetection(bool enabled) =>
+      _invoke<void>('setMeetingDetection', {'enabled': enabled});
+
+  // ---------- Local diarization (sherpa-onnx, Phase 3) ----------
+
+  @override
+  Future<DiarizationModelState> diarizationModelState() async {
+    final map = await _invoke<Map<Object?, Object?>>('diarizationModelState');
+    return DiarizationModelState.fromMap(map);
+  }
+
+  @override
+  Stream<double> downloadDiarizationModel() =>
+      _mapStreamErrors(_diarizationDownload.receiveBroadcastStream())
+          .map((event) => (event! as num).toDouble());
+
+  @override
+  Future<List<SpeakerTurn>> diarize(String wavPath, {int? numSpeakers}) async {
+    final list = await _invoke<List<Object?>>('diarize', {
+      'wavPath': wavPath,
+      'numSpeakers': numSpeakers,
+    });
+    return list.cast<Map<Object?, Object?>>().map(SpeakerTurn.fromMap).toList();
+  }
 
   // ---------- Helpers ----------
 

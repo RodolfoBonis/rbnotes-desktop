@@ -105,6 +105,36 @@ extension TranscriptionPriorityWire on TranscriptionPriority {
   };
 }
 
+/// A system event that should make the app lock itself (Phase 3, Touch ID).
+///
+/// [screenLocked] = the screen was locked (`com.apple.screenIsLocked`);
+/// [screensaver] = the screen saver started (`com.apple.screensaver.didstart`);
+/// [systemSleep] = the display slept or the machine is about to sleep
+/// (`NSWorkspace.screensDidSleepNotification` / `willSleepNotification`).
+enum LockTrigger { screenLocked, systemSleep, screensaver }
+
+extension LockTriggerWire on LockTrigger {
+  String get wireName => switch (this) {
+    LockTrigger.screenLocked => 'screenLocked',
+    LockTrigger.systemSleep => 'systemSleep',
+    LockTrigger.screensaver => 'screensaver',
+  };
+
+  /// Decodes a lock trigger coming from the native side.
+  ///
+  /// Throws `RbNativeException('invalid_event')` for an unknown value, so a
+  /// malformed trigger never silently becomes a default.
+  static LockTrigger fromWire(String value) => switch (value) {
+    'screenLocked' => LockTrigger.screenLocked,
+    'systemSleep' => LockTrigger.systemSleep,
+    'screensaver' => LockTrigger.screensaver,
+    _ => throw RbNativeException(
+      RbNativeErrorCode.invalidEvent,
+      'Unknown LockTrigger: $value',
+    ),
+  };
+}
+
 /// Which activity the notch overlay represents.
 ///
 /// [recording] shows the full recording HUD (REC dot, timer, live waveform,

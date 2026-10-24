@@ -299,6 +299,130 @@ class NativeDiagnostic {
   int get hashCode => Object.hash(code, message, recordingId);
 }
 
+/// A detected run of near-silence in a recording, from [start] to [end]
+/// (Phase 3, "remove long silences").
+@immutable
+class SilenceRange {
+  const SilenceRange({required this.start, required this.end});
+
+  factory SilenceRange.fromMap(Map<Object?, Object?> map) => SilenceRange(
+    start: Duration(milliseconds: (map['startMs']! as num).toInt()),
+    end: Duration(milliseconds: (map['endMs']! as num).toInt()),
+  );
+
+  final Duration start;
+  final Duration end;
+
+  Duration get duration => end - start;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SilenceRange && other.start == start && other.end == end;
+
+  @override
+  int get hashCode => Object.hash(start, end);
+}
+
+/// A meeting-detection signal (Phase 3, "suggest recording a meeting").
+///
+/// Emitted at the start and the end of a detected meeting. [micInUse] is true
+/// while the input device is in use by another process (meeting in progress)
+/// and false on the end event. [app] is the correlated foreground/running app
+/// (e.g. `zoom.us`, `Microsoft Teams`, `Google Chrome`) or empty if unknown.
+/// [startedAt] is when the meeting started.
+@immutable
+class MeetingSignal {
+  const MeetingSignal({
+    required this.app,
+    required this.micInUse,
+    required this.startedAt,
+  });
+
+  factory MeetingSignal.fromMap(Map<Object?, Object?> map) => MeetingSignal(
+    app: map['app']! as String,
+    micInUse: map['micInUse']! as bool,
+    startedAt: DateTime.fromMillisecondsSinceEpoch(
+      (map['startedAtMs']! as num).toInt(),
+    ),
+  );
+
+  final String app;
+  final bool micInUse;
+  final DateTime startedAt;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MeetingSignal &&
+      other.app == app &&
+      other.micInUse == micInUse &&
+      other.startedAt == startedAt;
+
+  @override
+  int get hashCode => Object.hash(app, micInUse, startedAt);
+}
+
+/// Download/availability state of the local diarization models
+/// (sherpa-onnx segmentation + speaker-embedding), Phase 3.
+///
+/// [downloaded] is true only when every required model file is present with
+/// its exact expected size; [sizeBytes] is the total on-disk size then.
+@immutable
+class DiarizationModelState {
+  const DiarizationModelState({
+    required this.downloaded,
+    required this.sizeBytes,
+  });
+
+  factory DiarizationModelState.fromMap(Map<Object?, Object?> map) =>
+      DiarizationModelState(
+        downloaded: map['downloaded']! as bool,
+        sizeBytes: (map['sizeBytes'] as num?)?.toInt(),
+      );
+
+  final bool downloaded;
+  final int? sizeBytes;
+
+  @override
+  bool operator ==(Object other) =>
+      other is DiarizationModelState &&
+      other.downloaded == downloaded &&
+      other.sizeBytes == sizeBytes;
+
+  @override
+  int get hashCode => Object.hash(downloaded, sizeBytes);
+}
+
+/// A diarized speaker turn (Phase 3): the span [start]..[end] was spoken by
+/// [speaker] (a zero-based cluster index, rendered as "Pessoa 1/2…" by the app).
+@immutable
+class SpeakerTurn {
+  const SpeakerTurn({
+    required this.start,
+    required this.end,
+    required this.speaker,
+  });
+
+  factory SpeakerTurn.fromMap(Map<Object?, Object?> map) => SpeakerTurn(
+    start: Duration(milliseconds: (map['startMs']! as num).toInt()),
+    end: Duration(milliseconds: (map['endMs']! as num).toInt()),
+    speaker: (map['speaker']! as num).toInt(),
+  );
+
+  final Duration start;
+  final Duration end;
+  final int speaker;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SpeakerTurn &&
+      other.start == start &&
+      other.end == end &&
+      other.speaker == speaker;
+
+  @override
+  int get hashCode => Object.hash(start, end, speaker);
+}
+
 /// Events emitted by the global dictation hotkey.
 sealed class DictationEvent {
   const DictationEvent();

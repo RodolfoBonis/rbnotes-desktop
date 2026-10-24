@@ -26,6 +26,16 @@ abstract final class RbNativeErrorCode {
   /// A dictation event map could not be decoded (unknown/missing `type`).
   static const String invalidEvent = 'invalid_event';
 
+  /// The local diarization models are not downloaded (see
+  /// `RbNative.diarize` / `downloadDiarizationModel`).
+  static const String diarizationModelMissing = 'diarization_model_missing';
+
+  /// Local diarization (sherpa-onnx) failed to run or produced no result.
+  static const String diarizationFailed = 'diarization_failed';
+
+  /// Registering/unregistering the macOS login item (`SMAppService`) failed.
+  static const String loginItemFailed = 'login_item_failed';
+
   /// Fallback used when a platform error arrives without a recognized code
   /// (should not happen, but keeps the boundary total).
   static const String unknown = 'unknown';
