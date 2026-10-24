@@ -15,6 +15,7 @@ import 'package:rbnotes/core/ui/motion.dart';
 import 'package:rbnotes/core/ui/pulse_dot.dart';
 import 'package:rbnotes/core/ui/rb_menu.dart';
 import 'package:rbnotes/data/database/database.dart';
+import 'package:rbnotes/features/diary/presentation/diary_gate_barrier.dart';
 import 'package:rbnotes/features/library/presentation/library_cubit.dart';
 import 'package:rbnotes/features/notes/domain/note_export.dart';
 import 'package:rbnotes/features/notes/domain/note_models.dart';
@@ -45,49 +46,70 @@ class NoteDetailPane extends StatelessWidget {
     final rb = context.rb;
     return ColoredBox(
       color: rb.bg,
-      child: Column(
-        children: [
-          DetailToolbar(
-            onOpenAsk: onOpenAsk,
-            onStartRecording: onStartRecording,
-            onExport: () => exportCurrentNote(context),
-            onMore: (pos) {
-              final note = context.read<NoteViewCubit>().state.note;
-              if (note == null) return;
-              unawaited(
-                showNoteContextMenu(
-                  context: context,
-                  position: pos,
-                  note: note,
-                  library: context.read<LibraryCubit>(),
-                ),
-              );
-            },
-          ),
-          Expanded(
-            child: BlocBuilder<NoteViewCubit, NoteViewState>(
-              builder: (context, state) {
-                if (state.note == null) {
-                  return const SizedBox.shrink();
-                }
-                if (state.needsUnlock) {
-                  return const _LockedNotePlaceholder();
-                }
-                return SingleChildScrollView(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 640),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(40, 34, 40, 140),
-                        child: _NoteBody(state: state, onFixWord: onFixWord),
+      child: BlocBuilder<NoteViewCubit, NoteViewState>(
+        builder: (context, state) {
+          // Nota bloqueada sem sessão de desbloqueio: exportar e o menu "…"
+          // (copiar/exportar/conteúdo) ficam inertes até o Touch ID (C2).
+          final locked = state.needsUnlock;
+          return Column(
+            children: [
+              DetailToolbar(
+                onOpenAsk: onOpenAsk,
+                onStartRecording: onStartRecording,
+                onExport: locked ? null : () => exportCurrentNote(context),
+                onMore: locked
+                    ? null
+                    : (pos) {
+                        final note = context.read<NoteViewCubit>().state.note;
+                        if (note == null) return;
+                        unawaited(
+                          showNoteContextMenu(
+                            context: context,
+                            position: pos,
+                            note: note,
+                            library: context.read<LibraryCubit>(),
+                            // Só chegamos aqui com a nota já desbloqueada na
+                            // sessão, então o conteúdo pode ser exportado.
+                            allowContent: true,
+                          ),
+                        );
+                      },
+              ),
+              Expanded(
+                child: Builder(
+                  builder: (context) {
+                    if (state.note == null) {
+                      return const SizedBox.shrink();
+                    }
+                    if (state.needsUnlock) {
+                      return const _LockedNotePlaceholder();
+                    }
+                    final body = SingleChildScrollView(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 640),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(40, 34, 40, 140),
+                            child: _NoteBody(
+                              state: state,
+                              onFixWord: onFixWord,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+                    );
+                    // Entradas do diário abertas pela lista/favoritos/busca/⌘K
+                    // passam pelo mesmo gate de Touch ID do Diário (M12).
+                    if (state.note!.kind == NoteKind.diary) {
+                      return DiaryGateBarrier(child: body);
+                    }
+                    return body;
+                  },
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1609,6 +1631,8 @@ Future<void> exportCurrentNote(BuildContext context) async {
   final state = cubit.state;
   final note = state.note;
   if (note == null) return;
+  // Defesa extra: nunca exporta o conteúdo de uma nota bloqueada sem unlock.
+  if (state.needsUnlock) return;
 
   final format = await showDialog<_ExportFormat>(
     context: context,

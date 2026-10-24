@@ -32,6 +32,17 @@ void main() {
             locked: const Value(true),
           ),
         );
+    await db
+        .into(db.transcriptSegments)
+        .insert(
+          TranscriptSegmentsCompanion.insert(
+            noteId: 'n',
+            speaker: SegmentSpeaker.me,
+            startMs: 0,
+            endMs: 1000,
+            content: 'texto secreto da nota',
+          ),
+        );
   });
 
   tearDown(() => db.close());
@@ -77,6 +88,47 @@ void main() {
     final ok = await cubit.unlockNote();
     expect(ok, isFalse);
     expect(cubit.state.needsUnlock, isTrue);
+    addTearDown(cubit.close);
+  });
+
+  // C2/B16: o conteúdo da nota bloqueada não é carregado antes do Touch ID.
+  test('locked content is not loaded before unlock', () async {
+    final cubit = build(FakeBiometricAuth());
+    await cubit.load('n');
+    await settle();
+    expect(cubit.state.needsUnlock, isTrue);
+    expect(cubit.state.segments, isEmpty);
+    expect(cubit.state.ai, isNull);
+    addTearDown(cubit.close);
+  });
+
+  test('unlock reveals the content, expiry clears it again', () async {
+    final cubit = NoteViewCubit(
+      notes: notes,
+      noteAi: NoteAiRepository(db),
+      ai: FakeAiClient(),
+      native: FakeRbNative(),
+      player: FakeAudioPlayer(),
+      aiActivity: AiActivity(),
+      auth: FakeBiometricAuth(),
+      unlockSession: const Duration(milliseconds: 80),
+    );
+    await cubit.load('n');
+    await settle();
+    expect(cubit.state.segments, isEmpty);
+
+    await cubit.unlockNote();
+    await settle();
+    expect(cubit.state.needsUnlock, isFalse);
+    expect(
+      cubit.state.segments.single.content,
+      'texto secreto da nota',
+    );
+
+    // A sessão expira: o conteúdo em claro some e volta o placeholder.
+    await Future<void>.delayed(const Duration(milliseconds: 160));
+    expect(cubit.state.needsUnlock, isTrue);
+    expect(cubit.state.segments, isEmpty);
     addTearDown(cubit.close);
   });
 }

@@ -201,6 +201,7 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     AiActivity? aiActivity,
     BiometricAuth? auth,
     Uuid? uuid,
+    Duration unlockSession = const Duration(minutes: 5),
   }) : _notes = notes,
        _noteAi = noteAi,
        _ai = ai,
@@ -213,6 +214,7 @@ class NoteViewCubit extends Cubit<NoteViewState> {
        _aiActivity = aiActivity,
        _auth = auth,
        _uuid = uuid ?? const Uuid(),
+       _unlockSession = unlockSession,
        super(const NoteViewState()) {
     _posSub = _player.positionStream.listen((p) {
       final ms = p.inMilliseconds;
@@ -247,6 +249,7 @@ class NoteViewCubit extends Cubit<NoteViewState> {
   final AiActivity? _aiActivity;
   final BiometricAuth? _auth;
   final Uuid _uuid;
+  final Duration _unlockSession;
 
   String? _noteId;
   SilenceSkipper _skipper = SilenceSkipper(const []);
@@ -270,15 +273,27 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     _noteId = noteId;
     await _cancelSubs();
     _skipper = SilenceSkipper(const []);
-    emit(
-      const NoteViewState(),
-    );
-    unawaited(_loadSilences(noteId));
-    unawaited(_loadDiarization(noteId));
+    emit(const NoteViewState());
 
+    // A nota em si é assinada sempre (metadados + flag `locked`). O conteúdo
+    // (segmentos, resumo, chat, ações, silêncios, diarização) e o áudio só são
+    // assinados/carregados depois do desbloqueio (C2/B16): nada de conteúdo de
+    // nota bloqueada em claro no estado antes do Touch ID.
     _noteSub = _notes.watchNote(noteId).listen((n) {
       emit(state.copyWith(note: n));
     });
+
+    final note = await _notes.getNote(noteId);
+    if (_noteId != noteId || isClosed) return;
+    if (note?.locked ?? false) return; // aguarda unlockNote() revelar.
+    _revealContent(noteId, note);
+  }
+
+  /// Assina o conteúdo da nota e carrega o áudio/sidecars. Chamado em [load]
+  /// para notas abertas e em [unlockNote] para as bloqueadas (após o Touch ID).
+  void _revealContent(String noteId, NoteRow? note) {
+    unawaited(_loadSilences(noteId));
+    unawaited(_loadDiarization(noteId));
     _segSub = _notes.watchSegments(noteId).listen((s) {
       emit(state.copyWith(segments: s));
     });
@@ -291,8 +306,6 @@ class NoteViewCubit extends Cubit<NoteViewState> {
     _chatSub = _noteAi.watchChat(noteId).listen((c) {
       emit(state.copyWith(chat: c));
     });
-
-    final note = await _notes.getNote(noteId);
     unawaited(_resolveAudio(noteId, note));
   }
 
@@ -649,18 +662,56 @@ class NoteViewCubit extends Cubit<NoteViewState> {
   }
 
   /// Pede Touch ID para abrir a nota bloqueada e mantém a sessão por 5 min.
+  /// Só depois do desbloqueio o conteúdo é assinado/carregado (C2/B16).
   Future<bool> unlockNote() async {
     if (!(state.note?.locked ?? false)) return true;
+    if (state.unlockedForLocked) return true;
     final auth = _auth;
     if (auth != null && !await auth.authenticate('Abrir nota bloqueada')) {
       return false;
     }
+    final noteId = _noteId;
+    if (noteId == null || isClosed) return false;
     _unlockTimer?.cancel();
-    _unlockTimer = Timer(const Duration(minutes: 5), () {
-      if (!isClosed) emit(state.copyWith(unlockedForLocked: false));
-    });
+    _unlockTimer = Timer(
+      _unlockSession,
+      () => unawaited(_expireUnlock()),
+    );
     emit(state.copyWith(unlockedForLocked: true));
+    final note = await _notes.getNote(noteId);
+    if (_noteId != noteId || isClosed) return true;
+    _revealContent(noteId, note);
     return true;
+  }
+
+  /// Fecha a sessão de desbloqueio (expira em 5 min): cancela as assinaturas de
+  /// conteúdo e esquece o conteúdo em claro do estado, voltando ao placeholder.
+  Future<void> _expireUnlock() async {
+    if (isClosed) return;
+    await _segSub?.cancel();
+    await _aiSub?.cancel();
+    await _actionsSub?.cancel();
+    await _chatSub?.cancel();
+    await _streamSub?.cancel();
+    _segSub = null;
+    _aiSub = null;
+    _actionsSub = null;
+    _chatSub = null;
+    _streamSub = null;
+    if (isClosed) return;
+    emit(
+      state.copyWith(
+        unlockedForLocked: false,
+        segments: const [],
+        actions: const [],
+        chat: const [],
+        clearAi: true,
+        clearStreaming: true,
+        streamingCites: const [],
+        silences: const [],
+        speakerLabels: const {},
+      ),
+    );
   }
 
   Future<void> _cancelSubs() async {

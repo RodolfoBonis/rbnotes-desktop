@@ -37,7 +37,11 @@ Future<void> showNoteContextMenu({
   required Offset position,
   required NoteRow note,
   required LibraryCubit library,
+  bool? allowContent,
 }) async {
+  // Conteúdo (exportar/copiar transcrição) só aparece quando acessível: por
+  // padrão, nunca para uma nota bloqueada (sem sessão de desbloqueio) (C2).
+  final showContent = allowContent ?? !note.locked;
   final action = await showRbMenu<NoteAction>(
     context: context,
     position: position,
@@ -63,17 +67,19 @@ Future<void> showNoteContextMenu({
         label: 'Duplicar',
         icon: Icons.copy_outlined,
       ),
-      const RbMenuItem(
-        value: NoteAction.export,
-        label: 'Exportar…',
-        icon: Icons.ios_share,
-        dividerAbove: true,
-      ),
-      const RbMenuItem(
-        value: NoteAction.copyTranscript,
-        label: 'Copiar transcrição',
-        icon: Icons.content_copy_outlined,
-      ),
+      if (showContent) ...[
+        const RbMenuItem(
+          value: NoteAction.export,
+          label: 'Exportar…',
+          icon: Icons.ios_share,
+          dividerAbove: true,
+        ),
+        const RbMenuItem(
+          value: NoteAction.copyTranscript,
+          label: 'Copiar transcrição',
+          icon: Icons.content_copy_outlined,
+        ),
+      ],
       const RbMenuItem(
         value: NoteAction.retryTranscription,
         label: 'Tentar transcrever de novo',
@@ -140,6 +146,7 @@ Future<void> runNoteAction({
     case NoteAction.duplicate:
       await library.duplicateNote(note.id);
     case NoteAction.export:
+      if (note.locked) return; // nunca exporta conteúdo bloqueado sem unlock.
       final bundle = await library.exportBundle(note.id);
       if (!context.mounted || bundle.note == null) return;
       await exportNoteData(
@@ -149,6 +156,7 @@ Future<void> runNoteAction({
         ai: bundle.ai,
       );
     case NoteAction.copyTranscript:
+      if (note.locked) return; // nunca copia transcrição bloqueada sem unlock.
       final text = await library.transcriptText(note.id);
       await Clipboard.setData(ClipboardData(text: text));
       messenger?.showSnackBar(
