@@ -32,6 +32,7 @@ import 'package:rbnotes/features/notes/presentation/note_view_cubit.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/security/data/biometric_auth.dart';
+import 'package:rbnotes/features/security/data/note_key_store.dart';
 import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
@@ -88,6 +89,7 @@ class ShellHarness {
       ..registerSingleton<VocabularyRepository>(VocabularyRepository(db))
       ..registerSingleton<AiClient>(ai)
       ..registerSingleton<AiUsageClient>(const FakeAiUsageClient())
+      ..registerSingleton<NoteKeyStore>(InMemoryNoteKeyStore())
       ..registerSingleton<TranscriptionQueue>(queue)
       ..registerSingleton<AuthService>(auth)
       ..registerSingleton<DiagnosticsMonitor>(DiagnosticsMonitor(native))

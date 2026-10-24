@@ -38,6 +38,7 @@ import 'package:rbnotes/features/recording/presentation/recovery_cubit.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/settings/presentation/settings_modal.dart';
+import 'package:rbnotes/features/sync/data/sync_crypto.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/notifications/notification_service.dart';
 import 'package:uuid/uuid.dart';
@@ -445,6 +446,10 @@ class _SettingsLayer extends StatelessWidget {
       vocabulary: di(),
       recordNoteHotkey: di(),
       aiUsageClient: di(),
+      noteKeyStore: di(),
+      onRecoveryKeyChanged: () {
+        if (di.isRegistered<SyncCrypto>()) di<SyncCrypto>().invalidate();
+      },
       userName: user?.name ?? 'Você',
       userEmail: user?.email ?? '',
       userInitials: user?.initials ?? 'V',

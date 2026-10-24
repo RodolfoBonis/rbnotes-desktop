@@ -15,11 +15,13 @@ import 'package:rbnotes/features/ai/data/ai_usage_client.dart';
 import 'package:rbnotes/features/ai/presentation/ai_usage_cubit.dart';
 import 'package:rbnotes/features/recording/data/mac_key_codes.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
+import 'package:rbnotes/features/security/data/note_key_store.dart';
 import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/settings/presentation/accent_picker.dart';
 import 'package:rbnotes/features/settings/presentation/ai_usage_pane.dart';
+import 'package:rbnotes/features/settings/presentation/recovery_key_dialog.dart';
 import 'package:rbnotes/features/settings/presentation/vocabulary_editor.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/sync/data/sync_status.dart';
@@ -76,6 +78,8 @@ class SettingsModal extends StatefulWidget {
     required this.onClose,
     required this.onLogout,
     required this.onEraseAllData,
+    this.noteKeyStore,
+    this.onRecoveryKeyChanged,
     this.sync,
     super.key,
   });
@@ -90,6 +94,13 @@ class SettingsModal extends StatefulWidget {
 
   /// Cliente de consumo de IA para a aba "Uso" (GET /v1/ai/usage).
   final AiUsageClient aiUsageClient;
+
+  /// Chave das notas bloqueadas (aba Privacidade → "Chave de recuperação").
+  /// Null esconde a linha (ex.: em testes de golden do shell).
+  final NoteKeyStore? noteKeyStore;
+
+  /// Chamado após importar/gerar a chave (invalida o cache do SyncCrypto).
+  final VoidCallback? onRecoveryKeyChanged;
   final String userName;
   final String userEmail;
   final String userInitials;
@@ -552,6 +563,13 @@ class _SettingsModalState extends State<SettingsModal> {
           _s.deleteAudioAfter,
           (v) => _s.setDeleteAudioAfter(value: v),
         ),
+        if (widget.noteKeyStore != null)
+          _button(
+            'Chave de recuperação',
+            'Abra suas notas bloqueadas em outro Mac',
+            'Gerenciar…',
+            onTap: _openRecoveryKey,
+          ),
       ],
     ),
     _Group(
@@ -586,6 +604,18 @@ class _SettingsModalState extends State<SettingsModal> {
       ],
     ),
   ]);
+
+  Future<void> _openRecoveryKey() async {
+    final store = widget.noteKeyStore;
+    if (store == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => RecoveryKeyDialog(
+        keyStore: store,
+        onKeyChanged: widget.onRecoveryKeyChanged,
+      ),
+    );
+  }
 
   Future<void> _openAccountConsole() async {
     final uri = Uri.parse(
