@@ -27,6 +27,7 @@ import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/presentation/audio_player_controller.dart';
 import 'package:rbnotes/features/notes/presentation/just_audio_player.dart';
+import 'package:rbnotes/features/recording/data/meeting_detection_service.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/security/data/biometric_auth.dart';
 import 'package:rbnotes/features/security/data/note_key_store.dart';
@@ -87,6 +88,10 @@ Future<void> configureDependencies(AppConfig config) async {
     vocabulary: vocabulary,
   );
   final recordNoteHotkey = RecordNoteHotkeyService(
+    native: native,
+    settings: settings,
+  );
+  final meetingDetection = MeetingDetectionService(
     native: native,
     settings: settings,
   );
@@ -221,6 +226,7 @@ Future<void> configureDependencies(AppConfig config) async {
     ..registerSingleton<TranscriptionQueue>(queue)
     ..registerSingleton<DictationService>(dictation)
     ..registerSingleton<RecordNoteHotkeyService>(recordNoteHotkey)
+    ..registerSingleton<MeetingDetectionService>(meetingDetection)
     ..registerSingleton<DiagnosticsMonitor>(diagnostics)
     ..registerSingleton<AiActivity>(aiActivity)
     ..registerSingleton<AiClient>(ai)

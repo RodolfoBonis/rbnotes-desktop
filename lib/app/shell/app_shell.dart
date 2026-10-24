@@ -37,6 +37,7 @@ import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/presentation/note_actions.dart';
 import 'package:rbnotes/features/notes/presentation/note_detail_pane.dart';
 import 'package:rbnotes/features/notes/presentation/note_view_cubit.dart';
+import 'package:rbnotes/features/recording/data/meeting_detection_service.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/recording/presentation/recording_hud.dart';
@@ -58,6 +59,7 @@ import 'package:rbnotes/features/sync/data/sync_status.dart';
 import 'package:rbnotes/notifications/notification_coordinator.dart';
 import 'package:rbnotes/notifications/notifier.dart';
 import 'package:uuid/uuid.dart';
+import 'package:window_manager/window_manager.dart';
 
 /// Casca de 3 colunas (sidebar, lista, detalhe) com overlays, HUDs e atalhos.
 class AppShell extends StatefulWidget {
@@ -75,6 +77,7 @@ class _AppShellState extends State<AppShell> {
   StreamSubscription<CreatedNote>? _createdSub;
   StreamSubscription<SyncStatus>? _syncStatusSub;
   StreamSubscription<AppLockState>? _lockSub;
+  StreamSubscription<MeetingSuggestion>? _meetingSub;
   CreatedNote? _pendingCreated;
   DateTime? _lastRescheduleSyncAt;
 
@@ -110,12 +113,26 @@ class _AppShellState extends State<AppShell> {
     });
 
     // Ao destravar, revela a nota gravada enquanto o app estava bloqueado.
+    // Também espelha a trava na detecção de reunião (não sugere travado).
+    final meeting = di.isRegistered<MeetingDetectionService>()
+        ? di<MeetingDetectionService>()
+        : null;
+    meeting?.locked = context.read<AppLockCubit>().state.locked;
     _lockSub = context.read<AppLockCubit>().stream.listen((lock) {
+      meeting?.locked = lock.locked;
       if (!lock.locked && _pendingCreated != null && mounted) {
         _revealNote(_pendingCreated!);
         _pendingCreated = null;
       }
     });
+
+    // Reunião detectada: prompt em foco, notificação fora de foco.
+    _meetingSub = meeting?.suggestions.listen(_onMeetingSuggestion);
+
+    // Toque na notificação "Gravar esta reunião?" inicia a gravação.
+    if (di.isRegistered<NotificationCoordinator>()) {
+      di<NotificationCoordinator>().onStartMeeting = _startMeetingRecording;
+    }
 
     // Atalho global "Gravar nota": liga o disparo ao RecordingCubit (o serviço
     // já registrou o atalho no boot). A janela em foco → HUD interno; sem foco
@@ -193,14 +210,46 @@ class _AppShellState extends State<AppShell> {
     return lock.unlock();
   }
 
+  Future<void> _onMeetingSuggestion(MeetingSuggestion s) async {
+    if (!mounted) return;
+    final focused = await windowManager.isFocused();
+    if (!mounted) return;
+    if (focused) {
+      context.read<ShellOverlayCubit>().openMeetingPrompt(s.app);
+    } else if (di.isRegistered<Notifier>()) {
+      await di<Notifier>().show(
+        id: 'meeting:${s.meetingKey}',
+        title: 'Gravar esta reunião?',
+        body: 'Detectei uma chamada em ${s.app}.',
+        payload: AppNotification(
+          kind: NotificationKind.meetingSuggestion,
+          date: s.app,
+        ),
+      );
+    }
+  }
+
+  /// Inicia a gravação da reunião com o áudio do sistema ligado.
+  void _startMeetingRecording() {
+    if (!mounted) return;
+    context.read<ShellOverlayCubit>().closeMeetingPrompt();
+    final rec = context.read<RecordingCubit>()
+      ..setCaptureSystemAudio(value: true);
+    unawaited(rec.start());
+  }
+
   @override
   void dispose() {
     unawaited(_noticesSub?.cancel());
     unawaited(_lockSub?.cancel());
+    unawaited(_meetingSub?.cancel());
     unawaited(_createdSub?.cancel());
     unawaited(_syncStatusSub?.cancel());
     if (di.isRegistered<RecordNoteHotkeyService>()) {
       di<RecordNoteHotkeyService>().onTriggered = null;
+    }
+    if (di.isRegistered<NotificationCoordinator>()) {
+      di<NotificationCoordinator>().onStartMeeting = null;
     }
     _searchFocus.dispose();
     if (di.isRegistered<TrayController>()) {
@@ -463,6 +512,20 @@ class _OverlayLayer extends StatelessWidget {
             if (state.settingsOpen) const FadeScaleIn(child: _SettingsLayer()),
             if (state.weeklyOpen) const FadeScaleIn(child: _WeeklyLayer()),
             if (state.toast != null) ShellToast(message: state.toast!),
+            if (state.meetingApp != null)
+              FadeScaleIn(
+                child: _MeetingPrompt(
+                  app: state.meetingApp!,
+                  onRecord: () {
+                    overlay.closeMeetingPrompt();
+                    context.read<RecordingCubit>().setCaptureSystemAudio(
+                      value: true,
+                    );
+                    unawaited(context.read<RecordingCubit>().start());
+                  },
+                  onDismiss: overlay.closeMeetingPrompt,
+                ),
+              ),
           ],
         );
       },
@@ -540,6 +603,105 @@ class _FixModal extends StatelessWidget {
   }
 }
 
+class _MeetingPrompt extends StatelessWidget {
+  const _MeetingPrompt({
+    required this.app,
+    required this.onRecord,
+    required this.onDismiss,
+  });
+
+  final String app;
+  final VoidCallback onRecord;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final rb = context.rb;
+    return Align(
+      alignment: Alignment.topCenter,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 56),
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 360,
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+            decoration: BoxDecoration(
+              color: rb.bg3,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: rb.onSurface(0.12), width: 0.5),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 40,
+                  offset: Offset(0, 16),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Gravar esta reunião?', style: context.serif(size: 16)),
+                const SizedBox(height: 4),
+                Text(
+                  'Detectei uma chamada em $app.',
+                  style: context.bodyText(size: 12.5, color: rb.secondary(0.7)),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    GestureDetector(
+                      onTap: onDismiss,
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        child: Text(
+                          'Agora não',
+                          style: context.bodyText(
+                            size: 12.5,
+                            color: rb.secondary(0.75),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: onRecord,
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        height: 30,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: rb.accent,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Gravar',
+                          style: context.bodyText(
+                            size: 12.5,
+                            weight: FontWeight.w600,
+                            color: rb.onAccent,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SettingsLayer extends StatelessWidget {
   const _SettingsLayer();
 
@@ -555,6 +717,9 @@ class _SettingsLayer extends StatelessWidget {
       aiUsageClient: di(),
       dictation: di.isRegistered<DictationService>()
           ? di<DictationService>()
+          : null,
+      meetingDetection: di.isRegistered<MeetingDetectionService>()
+          ? di<MeetingDetectionService>()
           : null,
       noteKeyStore: di(),
       onMenuBarChanged: (enabled) {

@@ -16,6 +16,7 @@ import 'package:rbnotes/features/ai/presentation/ai_usage_cubit.dart';
 import 'package:rbnotes/features/dictation/data/dictation_service.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/recording/data/mac_key_codes.dart';
+import 'package:rbnotes/features/recording/data/meeting_detection_service.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/security/data/note_key_store.dart';
 import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
@@ -87,6 +88,7 @@ class SettingsModal extends StatefulWidget {
     required this.onLogout,
     required this.onEraseAllData,
     this.dictation,
+    this.meetingDetection,
     this.noteKeyStore,
     this.onMenuBarChanged,
     this.onRecoveryKeyChanged,
@@ -113,6 +115,9 @@ class SettingsModal extends StatefulWidget {
   /// Ditado global, para o editor do atalho de ditado (aba Gravação). Null em
   /// testes/goldens: a linha cai para o atalho estático.
   final DictationService? dictation;
+
+  /// Detecção de reunião, para aplicar a opção ao vivo. Null em testes/goldens.
+  final MeetingDetectionService? meetingDetection;
 
   /// Chave das notas bloqueadas (aba Privacidade → "Chave de recuperação").
   /// Null esconde a linha (ex.: em testes de golden do shell).
@@ -427,9 +432,12 @@ class _SettingsModalState extends State<SettingsModal> {
         ),
         _toggle(
           'Sugerir gravação ao detectar reunião',
-          null,
+          'Oferece gravar quando uma chamada começa no Meet, Zoom ou Teams',
           _s.autoMeet,
-          (v) => _s.setAutoMeet(value: v),
+          (v) {
+            unawaited(_s.setAutoMeet(value: v));
+            unawaited(widget.meetingDetection?.applySettings());
+          },
         ),
       ],
     ),

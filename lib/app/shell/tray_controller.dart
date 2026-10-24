@@ -107,8 +107,12 @@ class TrayController with TrayListener {
 
   void dispose() {
     unawaited(_sub?.cancel());
-    if (_listening) _host.removeListener(this);
-    unawaited(_host.destroy());
+    if (_listening) {
+      _host.removeListener(this);
+      // Sem o plugin (testes) ou se a barra nunca apareceu, destroy pode
+      // falhar; engolimos para não virar um erro assíncrono não tratado.
+      unawaited(_host.destroy().catchError((Object _) {}));
+    }
   }
 }
 

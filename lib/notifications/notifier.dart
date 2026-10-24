@@ -8,7 +8,13 @@ import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 /// As quatro notificações do RbNotes (Fase 3).
-enum NotificationKind { noteReady, taskDue, diaryPrompt, weeklySummary }
+enum NotificationKind {
+  noteReady,
+  taskDue,
+  diaryPrompt,
+  weeklySummary,
+  meetingSuggestion,
+}
 
 /// Payload de uma notificação: para onde o toque leva.
 class AppNotification {

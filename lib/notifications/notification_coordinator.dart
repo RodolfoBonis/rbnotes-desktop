@@ -42,6 +42,10 @@ class NotificationCoordinator {
   void Function()? onOpenDiary;
   void Function(DateTime weekStart)? onOpenWeekly;
 
+  /// Toque na notificação "Gravar esta reunião?": inicia a gravação com áudio
+  /// do sistema.
+  void Function()? onStartMeeting;
+
   /// True se o resumo semanal deveria ter rodado (segunda já passou) e não
   /// rodou — a UI gera na primeira abertura.
   bool get weeklyDue => _scheduler.shouldGenerateWeeklyNow(_now());
@@ -117,6 +121,8 @@ class NotificationCoordinator {
               ? DateTime.parse(date)
               : NotificationScheduler.weekStartOf(_now()),
         );
+      case NotificationKind.meetingSuggestion:
+        onStartMeeting?.call();
     }
   }
 

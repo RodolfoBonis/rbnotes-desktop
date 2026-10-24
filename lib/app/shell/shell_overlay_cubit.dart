@@ -13,6 +13,7 @@ class ShellOverlayState extends Equatable {
     this.weeklyOpen = false,
     this.fixWord,
     this.toast,
+    this.meetingApp,
   });
 
   final bool askOpen;
@@ -26,7 +27,12 @@ class ShellOverlayState extends Equatable {
   /// Mensagem de toast efêmera (null = sem toast).
   final String? toast;
 
+  /// App da reunião detectada, para o prompt "Gravar esta reunião?" (null =
+  /// sem prompt).
+  final String? meetingApp;
+
   bool get fixOpen => fixWord != null;
+  bool get meetingOpen => meetingApp != null;
 
   ShellOverlayState copyWith({
     bool? askOpen,
@@ -37,6 +43,8 @@ class ShellOverlayState extends Equatable {
     bool clearFix = false,
     String? toast,
     bool clearToast = false,
+    String? meetingApp,
+    bool clearMeeting = false,
   }) => ShellOverlayState(
     askOpen: askOpen ?? this.askOpen,
     settingsOpen: settingsOpen ?? this.settingsOpen,
@@ -44,6 +52,7 @@ class ShellOverlayState extends Equatable {
     weeklyOpen: weeklyOpen ?? this.weeklyOpen,
     fixWord: clearFix ? null : (fixWord ?? this.fixWord),
     toast: clearToast ? null : (toast ?? this.toast),
+    meetingApp: clearMeeting ? null : (meetingApp ?? this.meetingApp),
   );
 
   @override
@@ -54,6 +63,7 @@ class ShellOverlayState extends Equatable {
     weeklyOpen,
     fixWord,
     toast,
+    meetingApp,
   ];
 }
 
@@ -82,6 +92,9 @@ class ShellOverlayCubit extends Cubit<ShellOverlayState> {
   void openFix(String word) => emit(state.copyWith(fixWord: word));
   void closeFix() => emit(state.copyWith(clearFix: true));
 
+  void openMeetingPrompt(String app) => emit(state.copyWith(meetingApp: app));
+  void closeMeetingPrompt() => emit(state.copyWith(clearMeeting: true));
+
   /// Fecha o overlay de topo no Esc; retorna true se algo foi fechado.
   bool closeTop() {
     if (state.weeklyOpen) {
@@ -102,6 +115,10 @@ class ShellOverlayCubit extends Cubit<ShellOverlayState> {
     }
     if (state.askOpen) {
       closeAsk();
+      return true;
+    }
+    if (state.meetingOpen) {
+      closeMeetingPrompt();
       return true;
     }
     return false;
