@@ -234,6 +234,7 @@ class TranscriptionQueue {
       final mic = await _native.transcribe(
         wavPath: micPath,
         model: model,
+        language: _settings.languageCode,
         initialPrompt: initialPrompt,
         onProgress: (p) => _emit(noteId, hasSystem ? p * 0.5 : p),
       );
@@ -245,6 +246,7 @@ class TranscriptionQueue {
           system = await _native.transcribe(
             wavPath: systemPath,
             model: model,
+            language: _settings.languageCode,
             initialPrompt: initialPrompt,
             onProgress: (p) => _emit(noteId, 0.5 + p * 0.5),
           );

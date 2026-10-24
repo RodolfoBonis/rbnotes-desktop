@@ -58,6 +58,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late final TrayController _tray;
   final _focusNode = FocusNode();
+  final _searchFocus = FocusNode();
   StreamSubscription<String>? _noticesSub;
   StreamSubscription<CreatedNote>? _createdSub;
   StreamSubscription<SyncStatus>? _syncStatusSub;
@@ -156,6 +157,7 @@ class _AppShellState extends State<AppShell> {
     if (di.isRegistered<RecordNoteHotkeyService>()) {
       di<RecordNoteHotkeyService>().onTriggered = null;
     }
+    _searchFocus.dispose();
     _tray.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -185,6 +187,10 @@ class _AppShellState extends State<AppShell> {
     }
     if (meta && key == LogicalKeyboardKey.keyR) {
       unawaited(context.read<RecordingCubit>().start());
+      return KeyEventResult.handled;
+    }
+    if (meta && key == LogicalKeyboardKey.keyF) {
+      _searchFocus.requestFocus();
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.space &&
@@ -241,11 +247,11 @@ class _AppShellState extends State<AppShell> {
                   unawaited(context.read<DiaryCubit>().load());
                 }
               },
-              child: const Row(
+              child: Row(
                 children: [
-                  _SidebarColumn(),
-                  NoteList(),
-                  Expanded(child: _MainColumn()),
+                  const _SidebarColumn(),
+                  NoteList(searchFocus: _searchFocus),
+                  const Expanded(child: _MainColumn()),
                 ],
               ),
             ),

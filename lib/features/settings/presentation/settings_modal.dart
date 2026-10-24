@@ -277,7 +277,10 @@ class _SettingsModalState extends State<SettingsModal> {
           'Abrir ao iniciar sessão',
           null,
           _s.launchAtLogin,
-          (v) => _s.setLaunchAtLogin(value: v),
+          (v) {
+            unawaited(_s.setLaunchAtLogin(value: v));
+            unawaited(widget.native.setLaunchAtLogin(v));
+          },
         ),
         _toggle(
           'Mostrar na barra de menus',

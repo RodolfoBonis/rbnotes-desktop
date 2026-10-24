@@ -257,6 +257,14 @@ class SettingsStore {
       _prefs.getString(_kLanguage) ?? 'Detectar automaticamente';
   Future<void> setLanguage(String value) => _prefs.setString(_kLanguage, value);
 
+  /// Código de idioma para o whisper (`auto`/`pt`/`en`/`es`).
+  String get languageCode => switch (language) {
+    'Português (Brasil)' => 'pt',
+    'English' => 'en',
+    'Español' => 'es',
+    _ => 'auto',
+  };
+
   bool get identifySpeakers => _prefs.getBool(_kIdentifySpeakers) ?? true;
   Future<void> setIdentifySpeakers({required bool value}) =>
       _prefs.setBool(_kIdentifySpeakers, value);

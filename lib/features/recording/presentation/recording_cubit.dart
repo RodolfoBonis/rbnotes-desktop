@@ -252,7 +252,9 @@ class RecordingCubit extends Cubit<RecordingState> {
           updatedAt: now,
           status: NoteStatus.recording,
           source: NoteSource.recording,
-          folderId: Value(kind == NoteKind.diary ? 'diario' : null),
+          folderId: Value(
+            kind == NoteKind.diary ? 'diario' : _settings.defaultFolder,
+          ),
           kind: Value(kind),
         ),
       );

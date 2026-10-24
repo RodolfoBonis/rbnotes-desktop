@@ -274,7 +274,7 @@ class _Permissions extends StatelessWidget {
       OnbPerm.ax,
       'Acessibilidade',
       'Opcional',
-      'Para o atalho ⌥ Espaço iniciar uma gravação em qualquer app.',
+      'Para o ditado global (⌥ Espaço) colar o texto em qualquer app.',
       Icons.accessibility_new,
       false,
     ),
@@ -700,11 +700,13 @@ class _Ready extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              'De qualquer app:',
+              'Gravar de qualquer app:',
               style: context.bodyText(size: 12.5, color: rb.secondary(0.7)),
             ),
             const SizedBox(width: 8),
             const _Key('⌥'),
+            const SizedBox(width: 4),
+            const _Key('⇧'),
             const SizedBox(width: 4),
             const _Key('Espaço'),
           ],

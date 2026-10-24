@@ -12,7 +12,10 @@ import 'package:rbnotes/features/notes/presentation/note_actions.dart';
 /// Lista de notas (304px): título da seção, busca FTS, grupos por data e o
 /// item selecionado em laranja.
 class NoteList extends StatelessWidget {
-  const NoteList({super.key});
+  const NoteList({this.searchFocus, super.key});
+
+  /// Foco da busca (⌘F foca a caixa de busca).
+  final FocusNode? searchFocus;
 
   static const _groupOrder = [
     'Hoje',
@@ -56,6 +59,7 @@ class NoteList extends StatelessWidget {
             children: [
               _Header(title: _title(state), count: visible.length),
               _SearchBox(
+                focusNode: searchFocus,
                 value: state.query,
                 onChanged: cubit.setQuery,
               ),
@@ -179,9 +183,14 @@ class _Header extends StatelessWidget {
 }
 
 class _SearchBox extends StatelessWidget {
-  const _SearchBox({required this.value, required this.onChanged});
+  const _SearchBox({
+    required this.value,
+    required this.onChanged,
+    this.focusNode,
+  });
   final String value;
   final ValueChanged<String> onChanged;
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -201,6 +210,7 @@ class _SearchBox extends StatelessWidget {
             const SizedBox(width: 6),
             Expanded(
               child: TextField(
+                focusNode: focusNode,
                 controller: TextEditingController(text: value)
                   ..selection = TextSelection.collapsed(offset: value.length),
                 onChanged: onChanged,
