@@ -31,6 +31,7 @@ class AudioSync {
     String filePath, {
     int startPart = 1,
     String contentType = 'audio/mp4',
+    void Function(double progress)? onProgress,
   }) async {
     final bytes = await File(filePath).readAsBytes();
     await uploadBytes(
@@ -38,6 +39,7 @@ class AudioSync {
       bytes,
       startPart: startPart,
       contentType: contentType,
+      onProgress: onProgress,
     );
   }
 
@@ -47,9 +49,11 @@ class AudioSync {
     Uint8List bytes, {
     int startPart = 1,
     String contentType = 'audio/mp4',
+    void Function(double progress)? onProgress,
   }) async {
     final total = partsFor(bytes.length);
     var part = startPart.clamp(1, total);
+    onProgress?.call((part - 1) / total);
     while (part <= total) {
       final start = (part - 1) * chunkSize;
       final end = (start + chunkSize).clamp(0, bytes.length);
@@ -62,8 +66,12 @@ class AudioSync {
           contentType: contentType,
         );
         final completed = (res['completed'] as bool?) ?? false;
-        if (completed) return;
+        if (completed) {
+          onProgress?.call(1);
+          return;
+        }
         part++;
+        onProgress?.call(((part - 1) / total).clamp(0.0, 1.0));
       } on ApiError catch (e) {
         // Upload perdido no servidor: recomeça da parte 1.
         if (e.isConflict && e.code == 'audio_no_upload' && part > 1) {

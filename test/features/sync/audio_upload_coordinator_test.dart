@@ -28,6 +28,7 @@ void main() {
     notes = NoteRepository(db);
     settings = SettingsStore(prefs);
     audio = FakeAudioSync();
+    await settings.setSendAudio(value: true);
     queue = AudioUploadQueue(
       audio: audio,
       settings: settings,
@@ -172,6 +173,35 @@ void main() {
       await drain();
 
       expect(audio2.uploaded, contains('n2'));
+    });
+  });
+
+  group('Enviar áudios (pedido B1)', () {
+    test('com "Enviar áudios" desligado, não faz upload', () async {
+      await settings.setSendAudio(value: false);
+      final path = await seedWithAudio('n1');
+      await queue.enqueue('n1', path);
+      await drain();
+      expect(audio.uploaded, isEmpty);
+      expect(queue.pending.map((t) => t.noteId), contains('n1'));
+    });
+
+    test('expõe o progresso por nota e marca falha para retry', () async {
+      audio.failUploads = true;
+      final path = await seedWithAudio('n1');
+      await queue.enqueue('n1', path);
+      await drain();
+      final items = queue.current;
+      expect(items, isNotEmpty);
+      expect(items.first.noteId, 'n1');
+      expect(items.first.status, AudioUploadStatus.failed);
+
+      // "Tentar de novo" após o servidor voltar: sobe e limpa a fila.
+      audio.failUploads = false;
+      await queue.retry();
+      await drain();
+      expect(audio.uploaded, contains('n1'));
+      expect(queue.pending, isEmpty);
     });
   });
 }

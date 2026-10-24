@@ -41,6 +41,7 @@ import 'package:rbnotes/features/recording/presentation/recovery_cubit.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/settings/presentation/settings_modal.dart';
+import 'package:rbnotes/features/sync/data/audio_upload_queue.dart';
 import 'package:rbnotes/features/sync/data/sync_crypto.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/sync/data/sync_status.dart';
@@ -532,6 +533,10 @@ class _SettingsLayer extends StatelessWidget {
       userEmail: user?.email ?? '',
       userInitials: user?.initials ?? 'V',
       sync: di.isRegistered<SyncService>() ? di<SyncService>() : null,
+      audioQueue: di.isRegistered<AudioUploadQueue>()
+          ? di<AudioUploadQueue>()
+          : null,
+      notes: di<NoteRepository>(),
       onClose: overlay.closeSettings,
       onLogout: () async {
         overlay.closeSettings();

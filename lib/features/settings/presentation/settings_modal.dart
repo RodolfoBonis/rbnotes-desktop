@@ -14,6 +14,7 @@ import 'package:rbnotes/features/ai/data/ai_client.dart';
 import 'package:rbnotes/features/ai/data/ai_usage_client.dart';
 import 'package:rbnotes/features/ai/presentation/ai_usage_cubit.dart';
 import 'package:rbnotes/features/dictation/data/dictation_service.dart';
+import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/recording/data/mac_key_codes.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/security/data/note_key_store.dart';
@@ -24,8 +25,10 @@ import 'package:rbnotes/features/settings/presentation/accent_picker.dart';
 import 'package:rbnotes/features/settings/presentation/ai_usage_pane.dart';
 import 'package:rbnotes/features/settings/presentation/recovery_key_dialog.dart';
 import 'package:rbnotes/features/settings/presentation/vocabulary_editor.dart';
+import 'package:rbnotes/features/sync/data/audio_upload_queue.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/sync/data/sync_status.dart';
+import 'package:rbnotes/features/sync/presentation/audio_queue_panel.dart';
 import 'package:rbnotes/native/rb_native.dart';
 import 'package:rbnotes/notifications/notifier.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -87,6 +90,8 @@ class SettingsModal extends StatefulWidget {
     this.notifier,
     this.onNotificationsChanged,
     this.sync,
+    this.audioQueue,
+    this.notes,
     super.key,
   });
 
@@ -134,6 +139,13 @@ class SettingsModal extends StatefulWidget {
   /// Sync real (quando o backend está ligado): habilita o status ao vivo e o
   /// botão "Sincronizar agora" na aba Conta. Null = local-first (estático).
   final SyncService? sync;
+
+  /// Fila de upload de áudio (só com backend): habilita "Enviar áudios" e a
+  /// visualização da fila. Null = sem backend.
+  final AudioUploadQueue? audioQueue;
+
+  /// Repositório de notas, para resolver títulos na fila de upload.
+  final NoteRepository? notes;
 
   @override
   State<SettingsModal> createState() => _SettingsModalState();
@@ -543,6 +555,19 @@ class _SettingsModalState extends State<SettingsModal> {
           _syncStatusRow(widget.sync!)
         else
           _status('Última sincronização', 'há 2 minutos'),
+        if (widget.audioQueue != null) ...[
+          _toggle(
+            'Enviar áudios',
+            'Sobe o áudio das notas para abrir em outro Mac. Separado do '
+                'texto, que sempre sincroniza.',
+            _s.sendAudio,
+            (v) {
+              unawaited(_s.setSendAudio(value: v));
+              if (v) unawaited(widget.audioQueue!.process());
+            },
+          ),
+          if (_s.sendAudio) _audioQueueRow(),
+        ],
       ],
     ),
     _Group(
@@ -557,6 +582,32 @@ class _SettingsModalState extends State<SettingsModal> {
       ],
     ),
   ]);
+
+  Widget _audioQueueRow() => StreamBuilder<List<AudioUploadItem>>(
+    stream: widget.audioQueue!.items,
+    initialData: widget.audioQueue!.current,
+    builder: (context, snap) {
+      final items = snap.data ?? const [];
+      final failed = items
+          .where((i) => i.status == AudioUploadStatus.failed)
+          .length;
+      final sub = items.isEmpty
+          ? 'Tudo enviado'
+          : failed > 0
+          ? '$failed com falha · ${items.length} na fila'
+          : '${items.length} na fila';
+      return _button('Fila de upload', sub, 'Ver', onTap: _openAudioQueue);
+    },
+  );
+
+  Future<void> _openAudioQueue() async {
+    final notes = widget.notes;
+    if (notes == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AudioQueueDialog(queue: widget.audioQueue!, notes: notes),
+    );
+  }
 
   Widget _uso() => BlocProvider(
     create: (_) {

@@ -10,8 +10,8 @@ import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 /// transcrever (fluxo normal **ou** recuperação de crash, ambos emitem `done`),
 /// enfileira o `.m4a` na [AudioUploadQueue] — desde que o sync esteja ligado.
 ///
-/// Com o sync desligado nada é enfileirado; o arquivo fica local e o
-/// `RetentionService` cuida de apagá-lo na hora se "apagar áudio após
+/// Com o sync ou "Enviar áudios" desligado nada é enfileirado; o arquivo fica
+/// local e o `RetentionService` cuida de apagá-lo na hora se "apagar áudio após
 /// transcrever" estiver ativo.
 class AudioUploadCoordinator {
   AudioUploadCoordinator({
@@ -38,7 +38,7 @@ class AudioUploadCoordinator {
   /// Enfileira o áudio de [noteId] para upload, se houver `.m4a` local e o sync
   /// estiver ligado. Silencioso em falha (nunca derruba o pipeline).
   Future<void> onTranscribed(String noteId) async {
-    if (!_settings.syncEnabled) return;
+    if (!_settings.syncEnabled || !_settings.sendAudio) return;
     try {
       final note = await _notes.getNote(noteId);
       final path = note?.playbackPath;

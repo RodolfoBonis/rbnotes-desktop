@@ -178,6 +178,7 @@ void main() {
     test('enfileira o áudio em vez de apagar na hora', () async {
       await settings.setRetention('Para sempre');
       await settings.setDeleteAudioAfter(value: true);
+      await settings.setSendAudio(value: true);
       // syncEnabled é true por padrão.
       final path = await seed(
         'ready',

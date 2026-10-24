@@ -96,11 +96,14 @@ class RetentionService {
           note.systemWavPath != null;
       if (!hasAudio) continue;
 
-      // Sync ligado + há `.m4a`: sobe antes de apagar. Enfileira (idempotente)
-      // e deixa a fila remover o arquivo local após o upload concluir, para não
-      // perder o áudio que ainda não está no servidor.
+      // Sync + "Enviar áudios" ligados e há `.m4a`: sobe antes de apagar.
+      // Enfileira (idempotente) e deixa a fila apagar o arquivo local após o
+      // upload concluir, para não perder o que ainda não está no servidor.
       final playback = note.playbackPath;
-      if (_settings.syncEnabled && _audioQueue != null && playback != null) {
+      if (_settings.syncEnabled &&
+          _settings.sendAudio &&
+          _audioQueue != null &&
+          playback != null) {
         await _audioQueue.enqueue(note.id, playback);
         continue;
       }

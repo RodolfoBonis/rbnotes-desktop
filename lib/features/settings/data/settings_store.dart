@@ -58,6 +58,7 @@ class SettingsStore {
   static const _kRedact = 'settings.redact';
   // Conta / Privacidade
   static const _kSync = 'settings.sync';
+  static const _kSendAudio = 'settings.send_audio';
   static const _kTouchId = 'settings.touch_id';
   static const _kRetention = 'settings.retention';
   static const _kDeleteAudio = 'settings.delete_audio';
@@ -309,6 +310,12 @@ class SettingsStore {
   bool get syncEnabled => _prefs.getBool(_kSync) ?? true;
   Future<void> setSyncEnabled({required bool value}) =>
       _prefs.setBool(_kSync, value);
+
+  /// "Enviar áudios": separado do sync, controla o `AudioUploadQueue`. Padrão
+  /// desligado — o áudio só sobe quando o dono liga explicitamente.
+  bool get sendAudio => _prefs.getBool(_kSendAudio) ?? false;
+  Future<void> setSendAudio({required bool value}) =>
+      _prefs.setBool(_kSendAudio, value);
 
   bool get touchIdLock => _prefs.getBool(_kTouchId) ?? false;
   Future<void> setTouchIdLock({required bool value}) =>

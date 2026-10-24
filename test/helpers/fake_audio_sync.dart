@@ -43,8 +43,11 @@ class FakeAudioSync extends AudioSync {
     String filePath, {
     int startPart = 1,
     String contentType = 'audio/mp4',
+    void Function(double progress)? onProgress,
   }) async {
+    onProgress?.call(0);
     if (failUploads) throw const ApiError.network();
+    onProgress?.call(1);
     uploaded.add(noteId);
   }
 

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:equatable/equatable.dart';
 import 'package:rbnotes/core/network/api_error.dart';
 import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
@@ -24,13 +25,36 @@ class AudioUploadTask {
   Map<String, dynamic> toJson() => {'noteId': noteId, 'path': path};
 }
 
+enum AudioUploadStatus { pending, uploading, failed }
+
+/// Estado de um item da fila para a UI (progresso por nota + retry).
+class AudioUploadItem extends Equatable {
+  const AudioUploadItem({
+    required this.noteId,
+    required this.status,
+    this.progress = 0,
+  });
+
+  final String noteId;
+  final AudioUploadStatus status;
+
+  /// Progresso do item em andamento (0..1). Zero para os que esperam a vez.
+  final double progress;
+
+  @override
+  List<Object?> get props => [noteId, status, progress];
+}
+
 /// Fila persistente de upload de áudio, com retomada entre execuções e backoff.
 ///
-/// Só roda com "Sincronizar" ligado. Coordena com "Apagar áudio após
-/// transcrever": quando a opção está ligada, o arquivo local só é apagado
-/// **depois** do upload concluído (aqui, em [_onUploaded]); se o sync estiver
-/// desligado, nem chega a enfileirar e o `RetentionService` apaga na hora.
-/// A fila descarta silenciosamente itens cujo arquivo já sumiu.
+/// Só roda com "Sincronizar" **e** "Enviar áudios" ligados. Coordena com
+/// "Apagar áudio após transcrever": quando a opção está ligada, o arquivo local
+/// só é apagado **depois** do upload concluído (aqui, em [_onUploaded]); se o
+/// sync estiver desligado, nem chega a enfileirar e o `RetentionService` apaga
+/// na hora. A fila descarta silenciosamente itens cujo arquivo já sumiu.
+///
+/// O progresso por nota é publicado em [items] para a tela de Configurações
+/// mostrar a fila e oferecer "Tentar de novo".
 class AudioUploadQueue {
   AudioUploadQueue({
     required AudioSync audio,
@@ -56,6 +80,40 @@ class AudioUploadQueue {
   bool _running = false;
   Timer? _retry;
 
+  /// Nota em upload no momento e seu progresso (para compor [items]).
+  String? _activeId;
+  double _activeProgress = 0;
+  bool _lastFailed = false;
+
+  final _itemsController = StreamController<List<AudioUploadItem>>.broadcast();
+
+  /// Estado ao vivo da fila (upload por nota + status).
+  Stream<List<AudioUploadItem>> get items async* {
+    yield current;
+    yield* _itemsController.stream;
+  }
+
+  /// Snapshot atual da fila.
+  List<AudioUploadItem> get current {
+    final tasks = pending;
+    return [
+      for (final t in tasks)
+        AudioUploadItem(
+          noteId: t.noteId,
+          status: t.noteId == _activeId
+              ? AudioUploadStatus.uploading
+              : (_lastFailed && t == tasks.first
+                    ? AudioUploadStatus.failed
+                    : AudioUploadStatus.pending),
+          progress: t.noteId == _activeId ? _activeProgress : 0,
+        ),
+    ];
+  }
+
+  void _emit() {
+    if (!_itemsController.isClosed) _itemsController.add(current);
+  }
+
   List<AudioUploadTask> get pending {
     final raw = _prefs.getString(_kQueue);
     if (raw == null || raw.isEmpty) return const [];
@@ -76,13 +134,22 @@ class AudioUploadQueue {
     final tasks = pending.where((t) => t.noteId != noteId).toList()
       ..add(AudioUploadTask(noteId: noteId, path: path));
     await _save(tasks);
+    _emit();
     unawaited(process());
+  }
+
+  /// "Tentar de novo": limpa o backoff e reprocessa a partir da cabeça da fila.
+  Future<void> retry() async {
+    _retry?.cancel();
+    _lastFailed = false;
+    _emit();
+    await process();
   }
 
   /// Processa a fila em ordem. Sucesso remove o item; falha transitória agenda
   /// um retry com backoff.
   Future<void> process() async {
-    if (_running || !_settings.syncEnabled) return;
+    if (_running || !_settings.syncEnabled || !_settings.sendAudio) return;
     _running = true;
     _retry?.cancel();
     try {
@@ -93,16 +160,34 @@ class AudioUploadQueue {
         if (!File(task.path).existsSync()) {
           tasks = tasks.sublist(1);
           await _save(tasks);
+          _emit();
           continue;
         }
+        _activeId = task.noteId;
+        _activeProgress = 0;
+        _lastFailed = false;
+        _emit();
         try {
-          await _audio.uploadFile(task.noteId, task.path);
+          await _audio.uploadFile(
+            task.noteId,
+            task.path,
+            onProgress: (p) {
+              _activeProgress = p;
+              _emit();
+            },
+          );
           tasks = tasks.sublist(1);
           await _save(tasks);
+          _activeId = null;
+          _activeProgress = 0;
           failures = 0;
+          _emit();
           await _onUploaded(task.noteId);
         } on ApiError catch (e) {
           failures++;
+          _activeId = null;
+          _lastFailed = true;
+          _emit();
           AppLogger.warning(
             'Falha no upload de áudio',
             category: 'sync',
@@ -153,5 +238,8 @@ class AudioUploadQueue {
     _retry = Timer(delay, () => unawaited(process()));
   }
 
-  void dispose() => _retry?.cancel();
+  void dispose() {
+    _retry?.cancel();
+    unawaited(_itemsController.close());
+  }
 }
