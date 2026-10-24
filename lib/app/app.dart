@@ -8,6 +8,7 @@ import 'package:rbnotes/core/di/injector.dart';
 import 'package:rbnotes/core/observability/diagnostics_monitor.dart';
 import 'package:rbnotes/core/theme/rbnotes_theme.dart';
 import 'package:rbnotes/features/auth/presentation/session_cubit.dart';
+import 'package:rbnotes/features/diary/presentation/diary_gate.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
 import 'package:rbnotes/features/security/presentation/lock_screen.dart';
@@ -29,6 +30,7 @@ class RbNotesApp extends StatelessWidget {
         BlocProvider(
           create: (_) => SessionCubit(auth: di(), prefs: di()),
         ),
+        BlocProvider(create: (_) => DiaryGate(auth: di())),
         BlocProvider(
           create: (context) => RecordingCubit(
             native: di(),
@@ -68,15 +70,15 @@ class RbNotesApp extends StatelessWidget {
             ],
             home: const RootView(),
             builder: (context, child) => SentryWidget(
-              child: Stack(
-                children: [
-                  child!,
-                  BlocBuilder<AppLockCubit, AppLockState>(
-                    builder: (context, lock) => lock.locked
-                        ? const LockScreen()
-                        : const SizedBox.shrink(),
-                  ),
-                ],
+              child: BlocBuilder<AppLockCubit, AppLockState>(
+                builder: (context, lock) => Stack(
+                  children: [
+                    // Sob a LockScreen o conteúdo não recebe foco (C1): nenhum
+                    // atalho/campo age enquanto o app está travado.
+                    ExcludeFocus(excluding: lock.locked, child: child!),
+                    if (lock.locked) const LockScreen(),
+                  ],
+                ),
               ),
             ),
           ),

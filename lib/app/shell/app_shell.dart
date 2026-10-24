@@ -25,6 +25,7 @@ import 'package:rbnotes/features/collections/domain/collection_rule.dart';
 import 'package:rbnotes/features/collections/domain/forgotten_tasks.dart';
 import 'package:rbnotes/features/collections/presentation/tasks_pane.dart';
 import 'package:rbnotes/features/diary/presentation/diary_cubit.dart';
+import 'package:rbnotes/features/diary/presentation/diary_gate.dart';
 import 'package:rbnotes/features/diary/presentation/diary_pane.dart';
 import 'package:rbnotes/features/dictation/data/dictation_service.dart';
 import 'package:rbnotes/features/library/data/library_repository.dart';
@@ -120,6 +121,8 @@ class _AppShellState extends State<AppShell> {
     meeting?.locked = context.read<AppLockCubit>().state.locked;
     _lockSub = context.read<AppLockCubit>().stream.listen((lock) {
       meeting?.locked = lock.locked;
+      // A sessão do Diário (M12) expira quando o app trava.
+      if (lock.locked && mounted) context.read<DiaryGate>().clear();
       if (!lock.locked && _pendingCreated != null && mounted) {
         _revealNote(_pendingCreated!);
         _pendingCreated = null;
@@ -263,6 +266,11 @@ class _AppShellState extends State<AppShell> {
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    // Travado: nenhum atalho de teclado age atrás da LockScreen (C1). O atalho
+    // global "Gravar nota" é tratado pelo RecordNoteHotkeyService, fora daqui.
+    if (context.read<AppLockCubit>().state.locked) {
+      return KeyEventResult.ignored;
+    }
     final meta =
         HardwareKeyboard.instance.isMetaPressed ||
         HardwareKeyboard.instance.isControlPressed;
