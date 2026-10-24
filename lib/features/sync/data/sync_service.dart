@@ -77,6 +77,19 @@ class SyncService {
     unawaited(syncNow());
   }
 
+  /// Reage ao toggle "Sincronizar entre dispositivos": ligar dispara um sync
+  /// na hora e religa o periódico; desligar cancela os timers pendentes.
+  void onEnabledChanged({required bool enabled}) {
+    if (enabled) {
+      start();
+    } else {
+      _periodic?.cancel();
+      _debounceTimer?.cancel();
+      _backoffTimer?.cancel();
+      _emit(const SyncStatus(phase: SyncPhase.disabled));
+    }
+  }
+
   /// Agenda um sync após mudanças locais (debounced).
   void requestSync() {
     if (!_settings.syncEnabled) return;

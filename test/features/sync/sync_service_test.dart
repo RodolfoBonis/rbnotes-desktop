@@ -159,4 +159,18 @@ void main() {
     await service.syncNow(manual: true);
     expect(service.current.phase, SyncPhase.error);
   });
+
+  group('onEnabledChanged', () {
+    test('ligar dispara um sync imediato', () async {
+      await settings.setSyncEnabled(value: true);
+      service.onEnabledChanged(enabled: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(client.pushed, isNotEmpty);
+    });
+
+    test('desligar cancela e marca disabled', () async {
+      service.onEnabledChanged(enabled: false);
+      expect(service.current.phase, SyncPhase.disabled);
+    });
+  });
 }

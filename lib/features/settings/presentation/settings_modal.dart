@@ -502,7 +502,10 @@ class _SettingsModalState extends State<SettingsModal> {
           'Suas notas sincronizam entre seus Macs. Notas bloqueadas sobem '
               'cifradas de ponta a ponta.',
           _s.syncEnabled,
-          (v) => _s.setSyncEnabled(value: v),
+          (v) {
+            unawaited(_s.setSyncEnabled(value: v));
+            widget.sync?.onEnabledChanged(enabled: v);
+          },
         ),
         if (widget.sync != null)
           _syncStatusRow(widget.sync!)
