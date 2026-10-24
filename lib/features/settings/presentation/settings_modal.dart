@@ -15,6 +15,7 @@ import 'package:rbnotes/features/ai/data/ai_usage_client.dart';
 import 'package:rbnotes/features/ai/presentation/ai_usage_cubit.dart';
 import 'package:rbnotes/features/recording/data/mac_key_codes.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
+import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/settings/presentation/accent_picker.dart';
@@ -534,9 +535,10 @@ class _SettingsModalState extends State<SettingsModal> {
       rows: [
         _toggle(
           'Bloquear com Touch ID',
-          null,
+          'Pede o Touch ID ao voltar de tela bloqueada, sono ou protetor '
+              'de tela. Cobre também o diário.',
           _s.touchIdLock,
-          (v) => _s.setTouchIdLock(value: v),
+          (v) => context.read<AppLockCubit>().setEnabled(enabled: v),
         ),
         _select(
           'Manter áudios originais',

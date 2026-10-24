@@ -31,6 +31,8 @@ import 'package:rbnotes/features/notes/presentation/audio_player_controller.dart
 import 'package:rbnotes/features/notes/presentation/note_view_cubit.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
+import 'package:rbnotes/features/security/data/biometric_auth.dart';
+import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
@@ -115,6 +117,13 @@ void main() {
     providers: [
       BlocProvider(create: (_) => ThemeModeCubit(di())),
       BlocProvider(create: (_) => AccentCubit(di())),
+      BlocProvider(
+        create: (_) => AppLockCubit(
+          native: native,
+          auth: FakeBiometricAuth(),
+          settings: di(),
+        ),
+      ),
       BlocProvider(
         create: (_) => SessionCubit(auth: di(), prefs: di()),
       ),

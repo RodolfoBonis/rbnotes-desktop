@@ -17,6 +17,7 @@ void main() {
     kind: NoteKind.note,
     autoTitle: false,
     aiStatus: AiStatus.none,
+    locked: false,
     deleted: false,
   );
   const segments = [

@@ -16,7 +16,7 @@ class _ThrowingUsageClient implements AiUsageClient {
 void main() {
   group('AiUsage.fromJson', () {
     test('parses the contract example', () {
-      final usage = AiUsage.fromJson({
+      final usage = AiUsage.fromJson(const {
         'from': '2026-10-01',
         'to': '2026-10-24',
         'tz': 'America/Sao_Paulo',

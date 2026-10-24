@@ -9,6 +9,8 @@ import 'package:rbnotes/core/observability/diagnostics_monitor.dart';
 import 'package:rbnotes/core/theme/rbnotes_theme.dart';
 import 'package:rbnotes/features/auth/presentation/session_cubit.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
+import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
+import 'package:rbnotes/features/security/presentation/lock_screen.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -21,6 +23,9 @@ class RbNotesApp extends StatelessWidget {
       providers: [
         BlocProvider(create: (_) => ThemeModeCubit(di())),
         BlocProvider(create: (_) => AccentCubit(di())),
+        BlocProvider(
+          create: (_) => AppLockCubit(native: di(), auth: di(), settings: di()),
+        ),
         BlocProvider(
           create: (_) => SessionCubit(auth: di(), prefs: di()),
         ),
@@ -60,7 +65,18 @@ class RbNotesApp extends StatelessWidget {
               GlobalCupertinoLocalizations.delegate,
             ],
             home: const RootView(),
-            builder: (context, child) => SentryWidget(child: child!),
+            builder: (context, child) => SentryWidget(
+              child: Stack(
+                children: [
+                  child!,
+                  BlocBuilder<AppLockCubit, AppLockState>(
+                    builder: (context, lock) => lock.locked
+                        ? const LockScreen()
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
