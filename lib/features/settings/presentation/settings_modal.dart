@@ -80,6 +80,7 @@ class SettingsModal extends StatefulWidget {
     required this.onLogout,
     required this.onEraseAllData,
     this.noteKeyStore,
+    this.onMenuBarChanged,
     this.onRecoveryKeyChanged,
     this.notifier,
     this.onNotificationsChanged,
@@ -101,6 +102,10 @@ class SettingsModal extends StatefulWidget {
   /// Chave das notas bloqueadas (aba Privacidade → "Chave de recuperação").
   /// Null esconde a linha (ex.: em testes de golden do shell).
   final NoteKeyStore? noteKeyStore;
+
+  /// Chamado ao alternar "Mostrar na barra de menus" (mostra/remove a tray ao
+  /// vivo). Null em testes sem a casca do app.
+  final ValueChanged<bool>? onMenuBarChanged;
 
   /// Chamado após importar/gerar a chave (invalida o cache do SyncCrypto).
   final VoidCallback? onRecoveryKeyChanged;
@@ -297,7 +302,10 @@ class _SettingsModalState extends State<SettingsModal> {
           'Mostrar na barra de menus',
           'Grave de qualquer app pelo ícone na barra',
           _s.showInMenuBar,
-          (v) => _s.setShowInMenuBar(value: v),
+          (v) {
+            unawaited(_s.setShowInMenuBar(value: v));
+            widget.onMenuBarChanged?.call(v);
+          },
         ),
         _select(
           'Pasta para novas notas',

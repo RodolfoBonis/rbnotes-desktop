@@ -70,7 +70,11 @@ class _AppShellState extends State<AppShell> {
     _tray = TrayController(
       recording: context.read<RecordingCubit>(),
       onOpen: () async {},
+      settings: di<SettingsStore>(),
     );
+    if (!di.isRegistered<TrayController>()) {
+      di.registerSingleton<TrayController>(_tray);
+    }
     unawaited(_tray.init());
 
     // Avisos do detalhe (ex.: correção de palavra) viram toast.
@@ -158,6 +162,10 @@ class _AppShellState extends State<AppShell> {
       di<RecordNoteHotkeyService>().onTriggered = null;
     }
     _searchFocus.dispose();
+    if (di.isRegistered<TrayController>()) {
+      final removal = di.unregister<TrayController>();
+      if (removal is Future) unawaited(removal);
+    }
     _tray.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -502,6 +510,11 @@ class _SettingsLayer extends StatelessWidget {
       recordNoteHotkey: di(),
       aiUsageClient: di(),
       noteKeyStore: di(),
+      onMenuBarChanged: (enabled) {
+        if (di.isRegistered<TrayController>()) {
+          unawaited(di<TrayController>().setVisible(enabled: enabled));
+        }
+      },
       onRecoveryKeyChanged: () {
         if (di.isRegistered<SyncCrypto>()) di<SyncCrypto>().invalidate();
       },
