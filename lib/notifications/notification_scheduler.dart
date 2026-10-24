@@ -9,6 +9,7 @@ class TaskReminder {
     required this.text,
     required this.due,
     required this.done,
+    this.locked = false,
   });
 
   final String id;
@@ -16,7 +17,14 @@ class TaskReminder {
   final String text;
   final DateTime? due;
   final bool done;
+
+  /// A nota da tarefa está bloqueada: o lembrete não revela o texto (M7).
+  final bool locked;
 }
+
+/// Corpo genérico dos lembretes de tarefa de notas bloqueadas (M7): nunca
+/// expõe o texto nem o título da tarefa.
+const _lockedTaskBody = 'Você tem uma tarefa com prazo hoje';
 
 /// Agenda e cancela as notificações da Fase 3, respeitando os toggles e os
 /// horários configuráveis (Geral). A lógica de datas é determinística e
@@ -86,7 +94,7 @@ class NotificationScheduler {
             id: key,
             when: at,
             title: 'Tarefa com prazo hoje',
-            body: t.text,
+            body: t.locked ? _lockedTaskBody : t.text,
             payload: AppNotification(
               kind: NotificationKind.taskDue,
               noteId: t.noteId,
@@ -102,7 +110,7 @@ class NotificationScheduler {
               id: key,
               when: eveAt,
               title: 'Tarefa com prazo amanhã',
-              body: t.text,
+              body: t.locked ? _lockedTaskBody : t.text,
               payload: AppNotification(
                 kind: NotificationKind.taskDue,
                 noteId: t.noteId,

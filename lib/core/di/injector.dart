@@ -180,6 +180,7 @@ Future<void> configureDependencies(AppConfig config) async {
     notifier: notifier,
     scheduler: notificationScheduler,
     noteAi: noteAi,
+    notes: repository,
     ai: ai,
     settings: settings,
   );

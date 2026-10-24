@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
+import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/notifications/notification_scheduler.dart';
 import 'package:rbnotes/notifications/notifier.dart';
@@ -18,12 +19,14 @@ class NotificationCoordinator {
     required Notifier notifier,
     required NotificationScheduler scheduler,
     required NoteAiRepository noteAi,
+    required NoteRepository notes,
     required AiClient ai,
     required SettingsStore settings,
     DateTime Function()? now,
   }) : _notifier = notifier,
        _scheduler = scheduler,
        _noteAi = noteAi,
+       _notes = notes,
        _ai = ai,
        _settings = settings,
        _now = now ?? DateTime.now;
@@ -31,6 +34,7 @@ class NotificationCoordinator {
   final Notifier _notifier;
   final NotificationScheduler _scheduler;
   final NoteAiRepository _noteAi;
+  final NoteRepository _notes;
   final AiClient _ai;
   final SettingsStore _settings;
   final DateTime Function() _now;
@@ -66,6 +70,11 @@ class NotificationCoordinator {
   Future<void> _rescheduleTasks() async {
     try {
       final actions = await _noteAi.allActions();
+      // Notas bloqueadas: o lembrete não revela o texto da tarefa (M7).
+      final lockedIds = (await _notes.getAllNotes())
+          .where((n) => n.locked)
+          .map((n) => n.id)
+          .toSet();
       final tasks = [
         for (final a in actions)
           TaskReminder(
@@ -74,6 +83,7 @@ class NotificationCoordinator {
             text: a.content,
             due: a.due,
             done: a.done || a.dismissed,
+            locked: lockedIds.contains(a.noteId),
           ),
       ];
       await _scheduler.syncTaskReminders(tasks, now: _now());

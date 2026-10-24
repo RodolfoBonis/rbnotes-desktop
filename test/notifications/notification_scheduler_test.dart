@@ -84,6 +84,35 @@ void main() {
       expect(sch.body, 'Enviar proposta');
     });
 
+    // M7: lembrete de tarefa de nota bloqueada não vaza o texto.
+    test('nota bloqueada usa corpo genérico e não revela o texto', () async {
+      final s = NotificationScheduler(
+        notifier: notifier,
+        settings: await settingsWith({'settings.notif.task_eve': true}),
+      );
+      await s.syncTaskReminders(
+        [
+          TaskReminder(
+            id: 't1',
+            noteId: 'n1',
+            text: 'Ligar para o advogado sobre o processo',
+            due: DateTime(2026, 10, 30),
+            done: false,
+            locked: true,
+          ),
+        ],
+        now: DateTime(2026, 10, 24, 12),
+      );
+      final day = notifier.scheduledFor('task:t1')!;
+      final eve = notifier.scheduledFor('task-eve:t1')!;
+      expect(day.body, 'Você tem uma tarefa com prazo hoje');
+      expect(eve.body, 'Você tem uma tarefa com prazo hoje');
+      for (final n in notifier.scheduled) {
+        expect(n.body.contains('advogado'), isFalse);
+        expect(n.title.contains('advogado'), isFalse);
+      }
+    });
+
     test('ignora tarefas concluídas e prazos passados', () async {
       final s = NotificationScheduler(
         notifier: notifier,
