@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:forma_ui/forma_ui.dart';
 import 'package:rbnotes/core/format/formatters.dart';
+import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/features/recording/presentation/recovery_cubit.dart';
 
 /// Oferece recuperar ou descartar gravações interrompidas.
@@ -20,12 +20,15 @@ class _RecoveryDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<RecoveryCubit, RecoveryState>(
+    // Fecha sozinho quando não sobra nada para recuperar: sem isso o diálogo
+    // ficava vazio e a barreira cinza bloqueava o app.
+    return BlocConsumer<RecoveryCubit, RecoveryState>(
+      listenWhen: (prev, next) => prev.hasRecoverable && !next.hasRecoverable,
+      listener: (context, _) => Navigator.of(context).maybePop(),
       builder: (context, state) {
         final cubit = context.read<RecoveryCubit>();
-        if (!state.hasRecoverable) {
-          return const SizedBox.shrink();
-        }
+        final rb = context.rb;
+        final body = Theme.of(context).textTheme.bodyMedium;
         return AlertDialog(
           title: const Text('Gravações interrompidas'),
           content: SizedBox(
@@ -37,32 +40,37 @@ class _RecoveryDialog extends StatelessWidget {
                 Text(
                   'Encontramos gravações que não foram finalizadas. '
                   'Recuperar transcreve e salva como nota.',
-                  style: context.formaTypography.body13,
+                  style: body?.copyWith(color: rb.textSecondary),
                 ),
-                const SizedBox(height: FormaSpacing.base),
+                const SizedBox(height: 16),
                 for (final rec in state.recoverable)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: FormaSpacing.sm),
+                    padding: const EdgeInsets.only(bottom: 8),
                     child: Row(
                       children: [
-                        const Icon(Icons.restore_rounded, size: 18),
-                        const SizedBox(width: FormaSpacing.sm),
+                        Icon(
+                          Icons.restore_rounded,
+                          size: 18,
+                          color: rb.textSecondary,
+                        ),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             'Gravação ${Formatters.duration(rec.duration)}',
-                            style: context.formaTypography.body14,
+                            style: body,
                           ),
                         ),
-                        FormaButton.secondary(
-                          label: 'Descartar',
-                          small: true,
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            foregroundColor: RbTokens.destructive,
+                          ),
                           onPressed: () => cubit.discard(rec),
+                          child: const Text('Descartar'),
                         ),
-                        const SizedBox(width: FormaSpacing.xs),
-                        FormaButton.primary(
-                          label: 'Recuperar',
-                          small: true,
+                        const SizedBox(width: 4),
+                        FilledButton(
                           onPressed: () => cubit.recover(rec),
+                          child: const Text('Recuperar'),
                         ),
                       ],
                     ),
@@ -71,10 +79,9 @@ class _RecoveryDialog extends StatelessWidget {
             ),
           ),
           actions: [
-            FormaButton.secondary(
-              label: 'Fechar',
-              small: true,
+            TextButton(
               onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Fechar'),
             ),
           ],
         );

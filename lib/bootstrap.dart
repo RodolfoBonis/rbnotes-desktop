@@ -106,9 +106,26 @@ Future<void> bootstrap(
 
   Future<void> run() async => runApp(builder());
 
+  // Erros de build/render (ex.: um diálogo que quebra) também vão para o log
+  // em arquivo: em release o Flutter só desenha uma caixa cinza no lugar.
+  void logFlutterError(FlutterErrorDetails details) {
+    unawaited(
+      AppLogger.error(
+        details.exception,
+        details.stack,
+        reason: details.context?.toDescription() ?? 'flutter_error',
+        category: 'flutter',
+      ),
+    );
+  }
+
   if (!config.hasSentry) {
-    FlutterError.onError = FlutterError.presentError;
+    FlutterError.onError = (details) {
+      logFlutterError(details);
+      FlutterError.presentError(details);
+    };
     PlatformDispatcher.instance.onError = (error, stack) {
+      logFlutterError(FlutterErrorDetails(exception: error, stack: stack));
       FlutterError.presentError(
         FlutterErrorDetails(exception: error, stack: stack),
       );
