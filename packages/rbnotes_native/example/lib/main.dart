@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+// Flutter master (pinned for windowing) deprecates flutter/material in favour
+// of material_ui; the app stays on flutter/material for now (see root
+// analysis_options.yaml).
+// ignore: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:rbnotes_native/rbnotes_native.dart';
@@ -170,9 +174,10 @@ class _HomePageState extends State<HomePage> {
       setState(() => _overlayShown = true);
       _append('overlay shown — feeding fake levels/transcript');
       // Feed fake levels + a growing transcript so the HUD looks alive.
-      final words = 'Esta é uma demonstração do overlay que sai do notch '
-              'enquanto o RbNotes grava o seu áudio localmente'
-          .split(' ');
+      final words =
+          'Esta é uma demonstração do overlay que sai do notch '
+                  'enquanto o RbNotes grava o seu áudio localmente'
+              .split(' ');
       var tick = 0;
       _overlayDemoTimer = Timer.periodic(const Duration(milliseconds: 100), (
         _,
