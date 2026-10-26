@@ -3,12 +3,11 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 
-/// Estado dos overlays do shell: ⌘K (perguntar), ⌘, (ajustes),
-/// corrigir palavra, nova coleção e toast.
+/// Estado dos overlays do shell: ⌘K (perguntar), corrigir palavra,
+/// nova coleção e toast. (Ajustes agora é uma janela nativa própria.)
 class ShellOverlayState extends Equatable {
   const ShellOverlayState({
     this.askOpen = false,
-    this.settingsOpen = false,
     this.newCollectionOpen = false,
     this.weeklyOpen = false,
     this.fixWord,
@@ -17,7 +16,6 @@ class ShellOverlayState extends Equatable {
   });
 
   final bool askOpen;
-  final bool settingsOpen;
   final bool newCollectionOpen;
   final bool weeklyOpen;
 
@@ -36,7 +34,6 @@ class ShellOverlayState extends Equatable {
 
   ShellOverlayState copyWith({
     bool? askOpen,
-    bool? settingsOpen,
     bool? newCollectionOpen,
     bool? weeklyOpen,
     String? fixWord,
@@ -47,7 +44,6 @@ class ShellOverlayState extends Equatable {
     bool clearMeeting = false,
   }) => ShellOverlayState(
     askOpen: askOpen ?? this.askOpen,
-    settingsOpen: settingsOpen ?? this.settingsOpen,
     newCollectionOpen: newCollectionOpen ?? this.newCollectionOpen,
     weeklyOpen: weeklyOpen ?? this.weeklyOpen,
     fixWord: clearFix ? null : (fixWord ?? this.fixWord),
@@ -58,7 +54,6 @@ class ShellOverlayState extends Equatable {
   @override
   List<Object?> get props => [
     askOpen,
-    settingsOpen,
     newCollectionOpen,
     weeklyOpen,
     fixWord,
@@ -73,15 +68,9 @@ class ShellOverlayCubit extends Cubit<ShellOverlayState> {
 
   Timer? _toastTimer;
 
-  void openAsk() => emit(state.copyWith(askOpen: true, settingsOpen: false));
+  void openAsk() => emit(state.copyWith(askOpen: true));
   void closeAsk() => emit(state.copyWith(askOpen: false));
   void toggleAsk() => state.askOpen ? closeAsk() : openAsk();
-
-  void openSettings() =>
-      emit(state.copyWith(settingsOpen: true, askOpen: false));
-  void closeSettings() => emit(state.copyWith(settingsOpen: false));
-  void toggleSettings() =>
-      state.settingsOpen ? closeSettings() : openSettings();
 
   void openNewCollection() => emit(state.copyWith(newCollectionOpen: true));
   void closeNewCollection() => emit(state.copyWith(newCollectionOpen: false));
@@ -107,10 +96,6 @@ class ShellOverlayCubit extends Cubit<ShellOverlayState> {
     }
     if (state.newCollectionOpen) {
       closeNewCollection();
-      return true;
-    }
-    if (state.settingsOpen) {
-      closeSettings();
       return true;
     }
     if (state.askOpen) {

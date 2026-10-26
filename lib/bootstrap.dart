@@ -14,18 +14,21 @@ import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/core/observability/diagnostics_monitor.dart';
 import 'package:rbnotes/core/observability/file_log_sink.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
+import 'package:rbnotes/core/windowing/app_windows.dart';
+import 'package:rbnotes/core/windowing/settings_window_manager.dart';
 import 'package:rbnotes/features/ai/data/enrichment_service.dart';
 import 'package:rbnotes/features/dictation/data/dictation_service.dart';
 import 'package:rbnotes/features/recording/data/meeting_detection_service.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/settings/data/retention_service.dart';
+import 'package:rbnotes/features/settings/presentation/settings_modal.dart';
+import 'package:rbnotes/features/settings/presentation/settings_window.dart';
 import 'package:rbnotes/features/sync/data/audio_upload_queue.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/sync/data/sync_trigger.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:window_manager/window_manager.dart';
 
 Future<void> bootstrap(
   Widget Function() builder, {
@@ -49,29 +52,18 @@ Future<void> bootstrap(
   Intl.defaultLocale = 'pt_BR';
   await initializeDateFormatting('pt_BR');
 
-  await windowManager.ensureInitialized();
-  await windowManager.waitUntilReadyToShow(
-    const WindowOptions(
-      title: 'RbNotes',
-      size: Size(1280, 800),
-      minimumSize: Size(1040, 680),
-      center: true,
-      backgroundColor: Colors.transparent,
-      titleBarStyle: TitleBarStyle.hidden,
-    ),
-    () async {
-      // Esconde os botões nativos: o app desenha os próprios traffic lights
-      // (ver TrafficLights), posicionados como no design.
-      await windowManager.setTitleBarStyle(
-        TitleBarStyle.hidden,
-        windowButtonVisibility: false,
-      );
-      await windowManager.show();
-      await windowManager.focus();
-    },
-  );
+  // A janela principal é criada pela API de windowing do Flutter (ver
+  // core/windowing/app_windows.dart), não mais pelo window_manager: no macOS
+  // a engine roda headless/multi-view para suportar múltiplas janelas.
 
   await configureDependencies(config);
+  // Owns the single Settings window (opened on ⌘, / focused if already open).
+  di.registerSingleton<SettingsWindowManager>(
+    SettingsWindowManager(
+      createWindow: createSettingsNativeWindow,
+      resolveInitialTitle: () => settingsTabTitle(SettingsTab.geral),
+    ),
+  );
   Bloc.observer = const AppBlocObserver();
   // Ditado global: registra o atalho e escuta os eventos do plugin.
   unawaited(di<DictationService>().start());
@@ -104,7 +96,11 @@ Future<void> bootstrap(
     unawaited(di<AudioUploadQueue>().process());
   }
 
-  Future<void> run() async => runApp(builder());
+  Future<void> run() async => runRbNotesWindows(
+    mainApp: builder(),
+    settingsManager: di<SettingsWindowManager>(),
+    settingsBuilder: (_) => const SettingsWindowApp(),
+  );
 
   // Erros de build/render (ex.: um diálogo que quebra) também vão para o log
   // em arquivo: em release o Flutter só desenha uma caixa cinza no lugar.

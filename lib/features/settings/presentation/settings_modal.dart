@@ -10,7 +10,6 @@ import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/rb_select.dart';
-import 'package:rbnotes/core/ui/traffic_lights.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
 import 'package:rbnotes/features/ai/data/ai_usage_client.dart';
 import 'package:rbnotes/features/ai/presentation/ai_usage_cubit.dart';
@@ -72,6 +71,18 @@ enum SettingsTab {
   privacidade,
 }
 
+/// The window-title label for each Settings tab.
+String settingsTabTitle(SettingsTab tab) => switch (tab) {
+  SettingsTab.geral => 'Geral',
+  SettingsTab.gravacao => 'Gravação',
+  SettingsTab.transcricao => 'Transcrição',
+  SettingsTab.ia => 'Inteligência',
+  SettingsTab.conta => 'Conta',
+  SettingsTab.uso => 'Uso',
+  SettingsTab.atalhos => 'Atalhos',
+  SettingsTab.privacidade => 'Privacidade',
+};
+
 /// Escolha do diálogo de saída: manter os dados locais ou apagá-los.
 enum _LogoutChoice { keep, wipe }
 
@@ -89,6 +100,7 @@ class SettingsModal extends StatefulWidget {
     required this.onClose,
     required this.onLogout,
     required this.onEraseAllData,
+    this.onTitleChanged,
     this.dictation,
     this.meetingDetection,
     this.noteKeyStore,
@@ -142,6 +154,10 @@ class SettingsModal extends StatefulWidget {
   final String userInitials;
   final VoidCallback onClose;
 
+  /// Reports the current tab's title so the host (the native Settings window)
+  /// can keep its title bar in sync ("Geral", "Gravação", …).
+  final ValueChanged<String>? onTitleChanged;
+
   /// Encerra a sessão. `wipe` = o dono escolheu "Apagar dados locais" no
   /// diálogo de saída (limpa banco, cursor, filas e caches de áudio).
   final Future<void> Function({required bool wipe}) onLogout;
@@ -188,6 +204,7 @@ class _SettingsModalState extends State<SettingsModal> {
   @override
   void initState() {
     super.initState();
+    widget.onTitleChanged?.call(settingsTabTitle(_tab));
     unawaited(_refreshModels());
     unawaited(_refreshVocabCount());
     // Reflete a (re)registração do atalho "Gravar nota" ao vivo na aba Atalhos.
@@ -282,53 +299,27 @@ class _SettingsModalState extends State<SettingsModal> {
   @override
   Widget build(BuildContext context) {
     final rb = context.rb;
-    return GestureDetector(
-      onTap: widget.onClose,
-      behavior: HitTestBehavior.opaque,
-      child: ColoredBox(
-        color: const Color(0x241E1914),
-        child: Center(
-          child: GestureDetector(
-            onTap: () {},
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                width: 700,
-                height: 580,
-                decoration: BoxDecoration(
-                  color: rb.bg3,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: rb.onSurface(0.22), width: 0.5),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x4D000000),
-                      blurRadius: 80,
-                      offset: Offset(0, 30),
-                    ),
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  children: [
-                    _TabStrip(
-                      tab: _tab,
-                      onTab: (t) => setState(() => _tab = t),
-                      onClose: widget.onClose,
-                    ),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(32, 22, 32, 30),
-                        child: _buildPane(context),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+    // The native Settings window provides the chrome (title bar, traffic
+    // lights, shadow); the body simply fills it.
+    return Material(
+      color: rb.bg3,
+      child: Column(
+        children: [
+          _TabStrip(tab: _tab, onTab: _selectTab),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(32, 22, 32, 30),
+              child: _buildPane(context),
             ),
           ),
-        ),
+        ],
       ),
     );
+  }
+
+  void _selectTab(SettingsTab tab) {
+    setState(() => _tab = tab);
+    widget.onTitleChanged?.call(settingsTabTitle(tab));
   }
 
   Widget _buildPane(BuildContext context) {
@@ -1394,15 +1385,10 @@ class _SettingsModalState extends State<SettingsModal> {
 // ============ widgets ============
 
 class _TabStrip extends StatelessWidget {
-  const _TabStrip({
-    required this.tab,
-    required this.onTab,
-    required this.onClose,
-  });
+  const _TabStrip({required this.tab, required this.onTab});
 
   final SettingsTab tab;
   final ValueChanged<SettingsTab> onTab;
-  final VoidCallback onClose;
 
   static const _defs = <(SettingsTab, String, IconData)>[
     (SettingsTab.geral, 'Geral', Icons.settings_outlined),
@@ -1418,74 +1404,49 @@ class _TabStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final rb = context.rb;
-    final title = _defs.firstWhere((d) => d.$1 == tab).$2;
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
       decoration: BoxDecoration(
         color: rb.side,
         border: Border(
           bottom: BorderSide(color: rb.onSurface(0.1), width: 0.5),
         ),
       ),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SizedBox(
-            height: 16,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TrafficLights(onClose: onClose, interactive: false),
+          for (final d in _defs)
+            GestureDetector(
+              onTap: () => onTab(d.$1),
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                width: 78,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: tab == d.$1 ? rb.onSurface(0.08) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                Text(
-                  title,
-                  style: context.bodyText(size: 13, weight: FontWeight.w600),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      d.$3,
+                      size: 20,
+                      color: tab == d.$1 ? rb.accent : rb.secondary(0.8),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      d.$2,
+                      style: context.bodyText(
+                        size: 11,
+                        weight: FontWeight.w500,
+                        color: tab == d.$1 ? rb.accent : rb.secondary(0.8),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (final d in _defs)
-                GestureDetector(
-                  onTap: () => onTab(d.$1),
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    width: 78,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: tab == d.$1
-                          ? rb.onSurface(0.08)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          d.$3,
-                          size: 20,
-                          color: tab == d.$1 ? rb.accent : rb.secondary(0.8),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          d.$2,
-                          style: context.bodyText(
-                            size: 11,
-                            weight: FontWeight.w500,
-                            color: tab == d.$1 ? rb.accent : rb.secondary(0.8),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
         ],
       ),
     );

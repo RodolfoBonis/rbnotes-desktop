@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:get_it/get_it.dart';
+import 'package:rbnotes/app/accent_cubit.dart';
+import 'package:rbnotes/app/theme_mode_cubit.dart';
 import 'package:rbnotes/core/auth/oidc_client.dart';
 import 'package:rbnotes/core/auth/token_store.dart';
 import 'package:rbnotes/core/config/app_config.dart';
@@ -9,6 +11,7 @@ import 'package:rbnotes/core/network/api_client.dart';
 import 'package:rbnotes/core/network/session_events.dart';
 import 'package:rbnotes/core/observability/diagnostics_monitor.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
+import 'package:rbnotes/core/windowing/main_window.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/ai_activity.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
@@ -31,6 +34,7 @@ import 'package:rbnotes/features/recording/data/meeting_detection_service.dart';
 import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart';
 import 'package:rbnotes/features/security/data/biometric_auth.dart';
 import 'package:rbnotes/features/security/data/note_key_store.dart';
+import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
 import 'package:rbnotes/features/settings/data/retention_service.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
@@ -49,7 +53,6 @@ import 'package:rbnotes/notifications/notification_coordinator.dart';
 import 'package:rbnotes/notifications/notification_scheduler.dart';
 import 'package:rbnotes/notifications/notifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:window_manager/window_manager.dart';
 
 final GetIt di = GetIt.instance;
 
@@ -191,7 +194,7 @@ Future<void> configureDependencies(AppConfig config) async {
     noteAi: noteAi,
     onNoteReady: ({required noteId, required title, required failed}) {
       unawaited(() async {
-        final focused = await windowManager.isFocused();
+        final focused = di<MainWindowHandle>().isActive;
         await notificationScheduler.notifyNoteReady(
           noteId: noteId,
           title: title,
@@ -243,6 +246,16 @@ Future<void> configureDependencies(AppConfig config) async {
     ..registerSingleton<NotificationCoordinator>(notificationCoordinator)
     ..registerSingleton<EnrichmentService>(enrichment)
     ..registerFactory<AudioPlayerController>(JustAudioPlayer.new);
+
+  // Presentation cubits shared between the main window and the Settings
+  // window (same isolate): registered here so both trees resolve the SAME
+  // instance via BlocProvider.value, giving live theme/accent/lock sync.
+  di
+    ..registerLazySingleton<ThemeModeCubit>(() => ThemeModeCubit(di()))
+    ..registerLazySingleton<AccentCubit>(() => AccentCubit(di()))
+    ..registerLazySingleton<AppLockCubit>(
+      () => AppLockCubit(native: di(), auth: di(), settings: di()),
+    );
 
   if (sessionEvents != null) di.registerSingleton<SessionEvents>(sessionEvents);
   if (apiClient != null) di.registerSingleton<ApiClient>(apiClient);

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -11,11 +10,10 @@ import 'package:rbnotes/app/shell/shell_overlay_cubit.dart';
 import 'package:rbnotes/app/shell/tray_controller.dart';
 import 'package:rbnotes/app/theme_mode_cubit.dart';
 import 'package:rbnotes/core/di/injector.dart';
-import 'package:rbnotes/core/observability/app_logger.dart';
-import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/core/theme/rb_tokens.dart';
 import 'package:rbnotes/core/ui/motion.dart';
-import 'package:rbnotes/core/ui/task_progress_dialog.dart';
+import 'package:rbnotes/core/windowing/main_window.dart';
+import 'package:rbnotes/core/windowing/settings_window_manager.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/ai_activity.dart';
 import 'package:rbnotes/features/ai/presentation/weekly_summary_cubit.dart';
@@ -27,12 +25,10 @@ import 'package:rbnotes/features/collections/presentation/tasks_pane.dart';
 import 'package:rbnotes/features/diary/presentation/diary_cubit.dart';
 import 'package:rbnotes/features/diary/presentation/diary_gate.dart';
 import 'package:rbnotes/features/diary/presentation/diary_pane.dart';
-import 'package:rbnotes/features/dictation/data/dictation_service.dart';
 import 'package:rbnotes/features/library/data/library_repository.dart';
 import 'package:rbnotes/features/library/presentation/library_cubit.dart';
 import 'package:rbnotes/features/library/presentation/note_list.dart';
 import 'package:rbnotes/features/library/presentation/sidebar.dart';
-import 'package:rbnotes/features/notes/data/export_service.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/presentation/note_actions.dart';
@@ -43,25 +39,16 @@ import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart'
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/recording/presentation/recording_hud.dart';
 import 'package:rbnotes/features/recording/presentation/recovery_cubit.dart';
-import 'package:rbnotes/features/security/data/biometric_auth.dart';
 import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
-import 'package:rbnotes/features/settings/data/erase_all_service.dart';
-import 'package:rbnotes/features/settings/data/local_data_wiper.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/system_settings.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
-import 'package:rbnotes/features/settings/presentation/erase_progress_dialog.dart';
 import 'package:rbnotes/features/settings/presentation/settings_modal.dart';
-import 'package:rbnotes/features/sync/data/audio_sync.dart';
-import 'package:rbnotes/features/sync/data/audio_upload_queue.dart';
-import 'package:rbnotes/features/sync/data/sync_crypto.dart';
-import 'package:rbnotes/features/sync/data/sync_local_store.dart';
 import 'package:rbnotes/features/sync/data/sync_service.dart';
 import 'package:rbnotes/features/sync/data/sync_status.dart';
 import 'package:rbnotes/notifications/notification_coordinator.dart';
 import 'package:rbnotes/notifications/notifier.dart';
 import 'package:uuid/uuid.dart';
-import 'package:window_manager/window_manager.dart';
 
 /// Casca de 3 colunas (sidebar, lista, detalhe) com overlays, HUDs e atalhos.
 class AppShell extends StatefulWidget {
@@ -88,7 +75,7 @@ class _AppShellState extends State<AppShell> {
     super.initState();
     _tray = TrayController(
       recording: context.read<RecordingCubit>(),
-      onOpen: () async {},
+      onOpen: () async => di<MainWindowHandle>().activate(),
       settings: di<SettingsStore>(),
     );
     if (!di.isRegistered<TrayController>()) {
@@ -216,7 +203,7 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _onMeetingSuggestion(MeetingSuggestion s) async {
     if (!mounted) return;
-    final focused = await windowManager.isFocused();
+    final focused = di<MainWindowHandle>().isActive;
     if (!mounted) return;
     if (focused) {
       context.read<ShellOverlayCubit>().openMeetingPrompt(s.app);
@@ -279,7 +266,7 @@ class _AppShellState extends State<AppShell> {
     final key = event.logicalKey;
 
     if (meta && key == LogicalKeyboardKey.comma) {
-      overlay.toggleSettings();
+      di<SettingsWindowManager>().openOrFocus();
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.escape) {
@@ -287,7 +274,6 @@ class _AppShellState extends State<AppShell> {
           ? KeyEventResult.handled
           : KeyEventResult.ignored;
     }
-    if (overlay.state.settingsOpen) return KeyEventResult.ignored;
     if (meta && key == LogicalKeyboardKey.keyK) {
       overlay.toggleAsk();
       return KeyEventResult.handled;
@@ -424,7 +410,9 @@ class _SidebarColumn extends StatelessWidget {
           ? di<SyncService>().status
           : null,
       onOpenNewCollection: context.read<ShellOverlayCubit>().openNewCollection,
-      onOpenSettings: context.read<ShellOverlayCubit>().openSettings,
+      // Resolve lazily (on tap), not during build, so the shell renders even
+      // where the manager isn't registered (e.g. some widget tests).
+      onOpenSettings: () => di<SettingsWindowManager>().openOrFocus(),
       onOpenWeekly: context.read<ShellOverlayCubit>().openWeekly,
       onToggleAppearance: () => unawaited(
         context.read<ThemeModeCubit>().toggle(Theme.of(context).brightness),
@@ -553,7 +541,6 @@ class _OverlayLayer extends StatelessWidget {
               ),
             if (state.fixOpen)
               FadeScaleIn(child: _FixModal(word: state.fixWord!)),
-            if (state.settingsOpen) const FadeScaleIn(child: _SettingsLayer()),
             if (state.weeklyOpen) const FadeScaleIn(child: _WeeklyLayer()),
             if (state.toast != null) ShellToast(message: state.toast!),
             if (state.meetingApp != null)
@@ -746,57 +733,6 @@ class _MeetingPrompt extends StatelessWidget {
   }
 }
 
-class _SettingsLayer extends StatelessWidget {
-  const _SettingsLayer();
-
-  @override
-  Widget build(BuildContext context) {
-    final overlay = context.read<ShellOverlayCubit>();
-    final user = di<AuthService>().currentUser;
-    return SettingsModal(
-      store: di<SettingsStore>(),
-      native: di(),
-      vocabulary: di(),
-      recordNoteHotkey: di(),
-      aiUsageClient: di(),
-      dictation: di.isRegistered<DictationService>()
-          ? di<DictationService>()
-          : null,
-      meetingDetection: di.isRegistered<MeetingDetectionService>()
-          ? di<MeetingDetectionService>()
-          : null,
-      noteKeyStore: di(),
-      onMenuBarChanged: (enabled) {
-        if (di.isRegistered<TrayController>()) {
-          unawaited(di<TrayController>().setVisible(enabled: enabled));
-        }
-      },
-      onRecoveryKeyChanged: () {
-        if (di.isRegistered<SyncCrypto>()) di<SyncCrypto>().invalidate();
-      },
-      notifier: di(),
-      onNotificationsChanged: () =>
-          unawaited(di<NotificationCoordinator>().rescheduleAll()),
-      userName: user?.name ?? 'Você',
-      userEmail: user?.email ?? '',
-      userInitials: user?.initials ?? 'V',
-      sync: di.isRegistered<SyncService>() ? di<SyncService>() : null,
-      audioQueue: di.isRegistered<AudioUploadQueue>()
-          ? di<AudioUploadQueue>()
-          : null,
-      notes: di<NoteRepository>(),
-      onClose: overlay.closeSettings,
-      onLogout: ({required wipe}) async {
-        overlay.closeSettings();
-        if (wipe) await _wipeLocalData();
-        await di<AuthService>().signOut();
-      },
-      onEraseAllData: () => _eraseAllFlow(context),
-      onExportAll: () => _exportAllFlow(context),
-    );
-  }
-}
-
 class _WeeklyLayer extends StatelessWidget {
   const _WeeklyLayer();
 
@@ -812,162 +748,4 @@ class _WeeklyLayer extends StatelessWidget {
       child: WeeklySummaryScreen(onClose: overlay.closeWeekly),
     );
   }
-}
-
-/// "Exportar todas as notas": seletor de destino (file_selector), progresso e
-/// Touch ID para as notas bloqueadas (ou deixa-as de fora, com aviso).
-Future<void> _exportAllFlow(BuildContext context) async {
-  final overlay = context.read<ShellOverlayCubit>();
-  final nav = Navigator.of(context, rootNavigator: true);
-
-  final location = await getSaveLocation(
-    suggestedName: 'rbnotes-export.zip',
-    acceptedTypeGroups: const [
-      XTypeGroup(label: 'Zip', extensions: ['zip']),
-    ],
-  );
-  final path = location?.path;
-  if (path == null) return;
-
-  final message = ValueNotifier<String>('Preparando…');
-  final progress = ValueNotifier<double?>(null);
-  if (!nav.mounted) {
-    message.dispose();
-    progress.dispose();
-    return;
-  }
-  unawaited(
-    showDialog<void>(
-      context: nav.context,
-      barrierDismissible: false,
-      builder: (_) => TaskProgressDialog(
-        title: 'Exportando notas',
-        message: message,
-        progress: progress,
-      ),
-    ),
-  );
-
-  final service = ExportService(notes: di<NoteRepository>());
-  final biometric = di<BiometricAuth>();
-  try {
-    final result = await service.exportAll(
-      destinationPath: path,
-      onProgress: (done, total) {
-        message.value = 'Exportando $done de $total…';
-        progress.value = total == 0 ? null : done / total;
-      },
-      unlockLocked: () =>
-          biometric.authenticate('Desbloquear notas para exportar'),
-    );
-    if (nav.canPop()) nav.pop();
-    final extra = result.excludedLocked > 0
-        ? ' (${result.excludedLocked} bloqueada'
-              '${result.excludedLocked == 1 ? '' : 's'} ficaram de fora)'
-        : '';
-    overlay.showToast('Exportadas ${result.exported} notas$extra.');
-  } on Object catch (e, st) {
-    if (nav.canPop()) nav.pop();
-    await AppLogger.error(e, st, reason: 'export_all', category: 'notes');
-    overlay.showToast('Não foi possível exportar as notas.');
-  } finally {
-    message.dispose();
-    progress.dispose();
-  }
-}
-
-/// Monta o limpador de dados locais a partir do container de DI.
-LocalDataWiper _buildWiper() => LocalDataWiper(
-  db: di<AppDatabase>(),
-  notes: di<NoteRepository>(),
-  paths: di<AppPaths>(),
-  sync: di.isRegistered<SyncService>() ? di<SyncService>() : null,
-  audioQueue: di.isRegistered<AudioUploadQueue>()
-      ? di<AudioUploadQueue>()
-      : null,
-);
-
-/// "Apagar dados locais" do logout: banco, cursor/marca d'água, fila de áudio e
-/// os caches de áudio (recordings + audio_cache).
-Future<void> _wipeLocalData() => _buildWiper().wipe();
-
-/// "Apagar todos os dados" da aba Privacidade, com progresso. Ordem: tombstones
-/// → push → DELETE do áudio na nuvem → limpeza local → reset do cursor. Offline
-/// no push: oferece apagar só neste Mac, com aviso.
-Future<void> _eraseAllFlow(BuildContext context) async {
-  final overlay = context.read<ShellOverlayCubit>();
-  final nav = Navigator.of(context, rootNavigator: true);
-  final progress = ValueNotifier<EraseProgress?>(null);
-  final service = EraseAllService(
-    notes: di<NoteRepository>(),
-    store: SyncLocalStore(
-      di<AppDatabase>(),
-      crypto: di.isRegistered<SyncCrypto>() ? di<SyncCrypto>() : null,
-    ),
-    wiper: _buildWiper(),
-    sync: di.isRegistered<SyncService>() ? di<SyncService>() : null,
-    audio: di.isRegistered<AudioSync>() ? di<AudioSync>() : null,
-  );
-
-  void openProgress() => unawaited(
-    showDialog<void>(
-      context: nav.context,
-      barrierDismissible: false,
-      builder: (_) => EraseProgressDialog(progress: progress),
-    ),
-  );
-
-  openProgress();
-  var result = await service.eraseAll(onProgress: (p) => progress.value = p);
-
-  if (result == EraseResult.offlinePending) {
-    if (nav.canPop()) nav.pop();
-    if (!nav.mounted) {
-      progress.dispose();
-      return;
-    }
-    final goLocal = await showDialog<bool>(
-      context: nav.context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Você está offline'),
-        content: const Text(
-          'Não consegui falar com o servidor agora. Posso apagar os dados '
-          'deste Mac mesmo assim — a exclusão na nuvem acontece quando você '
-          'reconectar.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Aguardar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: TextButton.styleFrom(foregroundColor: RbTokens.destructive),
-            child: const Text('Apagar só neste Mac'),
-          ),
-        ],
-      ),
-    );
-    if (goLocal ?? false) {
-      progress.value = null;
-      openProgress();
-      result = await service.finishLocalOnly(
-        onProgress: (p) => progress.value = p,
-      );
-    } else {
-      progress.dispose();
-      overlay
-        ..closeSettings()
-        ..showToast('Exclusão adiada — você está offline.');
-      return;
-    }
-  }
-
-  if (nav.canPop()) nav.pop();
-  progress.dispose();
-  overlay.closeSettings();
-  if (result == EraseResult.doneLocalOnly) {
-    overlay.showToast('Dados apagados neste Mac. A nuvem será limpa depois.');
-  }
-  await di<AuthService>().signOut();
 }
