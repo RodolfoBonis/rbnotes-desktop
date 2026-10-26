@@ -57,6 +57,8 @@ jobs:
     name: Build macOS
     needs: check
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Install fvm
@@ -90,6 +92,44 @@ jobs:
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
       - name: Build macOS (release)
-        run: fvm flutter build macos --release -t lib/main_production.dart
+        run: |
+          args=()
+          # Tag v1.2.3 → versão 1.2.3 no Info.plist (build number = run).
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            args+=(--build-name "${GITHUB_REF_NAME#v}" --build-number "$GITHUB_RUN_NUMBER")
+          fi
+          fvm flutter build macos --release -t lib/main_production.dart "${args[@]}"
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+
+      # Release: só em tag v*. Empacota o .app (ad-hoc, sem notarização) em
+      # .dmg + .zip e publica nas Releases do GitHub.
+      - name: Package release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          app=build/macos/Build/Products/Release/RbNotes.app
+          codesign --verify --deep --strict "$app"
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p dist/dmg
+          ditto "$app" dist/dmg/RbNotes.app
+          ln -s /Applications dist/dmg/Applications
+          hdiutil create -volname "RbNotes $version" -srcfolder dist/dmg \
+            -ov -format UDZO "dist/RbNotes-$version.dmg"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "dist/RbNotes-$version.zip"
+          (cd dist && shasum -a 256 RbNotes-*.dmg RbNotes-*.zip > SHA256SUMS.txt)
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > dist/notes.md <<'MD'
+          ## Instalação
+          1. Baixe o `.dmg`, abra e arraste o **RbNotes** para **Aplicativos**.
+          2. O app não é notarizado pela Apple. Na primeira abertura, rode no Terminal:
+             `xattr -dr com.apple.quarantine /Applications/RbNotes.app`
+             (ou clique com o botão direito → **Abrir** → **Abrir**).
+          3. Conceda Microfone, Gravação de Tela e Acessibilidade quando o macOS pedir.
+          MD
+          gh release create "$GITHUB_REF_NAME" dist/RbNotes-*.dmg dist/RbNotes-*.zip dist/SHA256SUMS.txt \
+            --title "RbNotes $GITHUB_REF_NAME" --notes-file dist/notes.md --generate-notes --verify-tag
