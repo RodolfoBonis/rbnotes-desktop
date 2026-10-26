@@ -11,6 +11,11 @@ void main() {
 
   testWidgets('transcribe real wav with the default model', (tester) async {
     const wav = String.fromEnvironment('RBNOTES_SMOKE_WAV');
+    // `auto` é o padrão do app ("Detectar automaticamente").
+    const language = String.fromEnvironment(
+      'RBNOTES_SMOKE_LANGUAGE',
+      defaultValue: 'auto',
+    );
     if (wav.isEmpty || !File(wav).existsSync()) {
       markTestSkipped('RBNOTES_SMOKE_WAV não definido');
       return;
@@ -24,6 +29,7 @@ void main() {
       final segs = await native.transcribe(
         wavPath: wav,
         model: WhisperModel.largeV3TurboQ5,
+        language: language,
         initialPrompt: '',
       );
       // Smoke manual: o resultado sai no console do `flutter test -d macos`.
