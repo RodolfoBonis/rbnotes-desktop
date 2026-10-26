@@ -22,6 +22,7 @@ import 'package:rbnotes/features/recording/data/record_note_hotkey_service.dart'
 import 'package:rbnotes/features/security/data/note_key_store.dart';
 import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
+import 'package:rbnotes/features/settings/data/system_settings.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/settings/presentation/accent_picker.dart';
 import 'package:rbnotes/features/settings/presentation/ai_usage_pane.dart';
@@ -850,6 +851,20 @@ class _SettingsModalState extends State<SettingsModal> {
 
   Widget _privacidade() => _Groups([
     _Group(
+      title: 'Permissões',
+      foot:
+          'Se você reinstalou o app ou ele mudou de assinatura, reative em '
+          'Ajustes → Privacidade.',
+      rows: [
+        _systemPermissionRow('Microfone', RbPermission.microphone),
+        _systemPermissionRow(
+          'Gravação de Tela',
+          RbPermission.screenRecording,
+        ),
+        _systemPermissionRow('Acessibilidade', RbPermission.accessibility),
+      ],
+    ),
+    _Group(
       rows: [
         _toggle(
           'Bloquear com Touch ID',
@@ -912,6 +927,45 @@ class _SettingsModalState extends State<SettingsModal> {
       ],
     ),
   ]);
+
+  /// Linha de status real de uma permissão (Microfone/Tela/Acessibilidade) com
+  /// o botão "Abrir Ajustes" que leva ao painel certo de Privacidade.
+  Widget _systemPermissionRow(String label, RbPermission permission) {
+    return FutureBuilder<PermissionStatus>(
+      future: widget.native.permissionStatus(permission),
+      builder: (context, snap) {
+        final status = snap.data;
+        final (text, color) = switch (status) {
+          PermissionStatus.granted => (
+            'Concedida',
+            context.rb.secondary(0.65),
+          ),
+          PermissionStatus.denied => ('Negada', const Color(0xFFD70015)),
+          PermissionStatus.notDetermined => (
+            'Não solicitada',
+            context.rb.secondary(0.65),
+          ),
+          null => ('Verificando…', context.rb.secondary(0.5)),
+        };
+        return _SettingRow(
+          label: label,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(text, style: context.bodyText(size: 12, color: color)),
+              const SizedBox(width: 10),
+              _PillButton(
+                label: 'Abrir Ajustes',
+                onTap: () => unawaited(
+                  const SystemSettingsOpener().openPrivacyPane(permission),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   Future<void> _openRecoveryKey() async {
     final store = widget.noteKeyStore;

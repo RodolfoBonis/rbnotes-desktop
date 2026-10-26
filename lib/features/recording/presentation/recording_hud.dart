@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:rbnotes/core/format/formatters.dart';
@@ -157,6 +159,11 @@ class _RecordingCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
+          if (state.micNoSignal || state.systemNoSignal || state.screenDenied)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _SignalWarning(state: state),
+            ),
           Row(
             children: [
               Expanded(
@@ -285,11 +292,18 @@ class _ProcessingErrorCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              _HudButton(
-                label: 'Fechar',
-                onTap: cubit.closeHud,
-                color: Colors.white.withValues(alpha: 0.75),
-              ),
+              if (state.audioSignalFailure)
+                _HudButton(
+                  label: 'Abrir Ajustes',
+                  onTap: cubit.openMicrophoneSettings,
+                  color: Colors.white.withValues(alpha: 0.75),
+                )
+              else
+                _HudButton(
+                  label: 'Fechar',
+                  onTap: cubit.closeHud,
+                  color: Colors.white.withValues(alpha: 0.75),
+                ),
               const SizedBox(width: 8),
               _HudButton(
                 label: 'Tentar de novo',
@@ -298,6 +312,67 @@ class _ProcessingErrorCard extends StatelessWidget {
                 color: const Color(0xFF1D1D1F),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Aviso de "sem sinal"/"tela negada" no HUD de gravação, com "Abrir Ajustes".
+class _SignalWarning extends StatelessWidget {
+  const _SignalWarning({required this.state});
+  final RecordingState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final cubit = context.read<RecordingCubit>();
+    final (message, onSettings) = switch (state) {
+      _ when state.micNoSignal => (
+        'Sem sinal do microfone: verifique a permissão ou o dispositivo de '
+            'entrada',
+        cubit.openMicrophoneSettings,
+      ),
+      _ when state.systemNoSignal => (
+        'Sem sinal do áudio do sistema: verifique a permissão de Gravação de '
+            'Tela',
+        cubit.openScreenRecordingSettings,
+      ),
+      _ => (
+        'Sem acesso à Gravação de Tela: gravando só o microfone',
+        cubit.openScreenRecordingSettings,
+      ),
+    };
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: RbTokens.recDot.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.warning_amber_rounded,
+            size: 15,
+            color: Colors.white,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: context.bodyText(
+                size: 11.5,
+                height: 1.3,
+                color: Colors.white.withValues(alpha: 0.9),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _HudButton(
+            label: 'Abrir Ajustes',
+            onTap: () => unawaited(onSettings()),
+            background: Colors.white.withValues(alpha: 0.14),
+            color: Colors.white,
           ),
         ],
       ),

@@ -70,6 +70,18 @@ final class RecordingSession {
   /// deleted); system-audio failure is swallowed so the recording continues
   /// mic-only (`systemAudioActive == false`).
   func start() async throws {
+    // Native preflight: never start the engine without microphone
+    // authorization. On a build whose signature changed (Apple Development vs
+    // ad-hoc), the old TCC grant stops applying and macOS hands back digital
+    // silence with no prompt — which used to produce an empty "ready" note.
+    // Request the prompt when undetermined; throw permission_denied otherwise.
+    do {
+      try await RecordingSession.ensureMicrophoneAuthorized()
+    } catch {
+      cleanupFiles()
+      throw error
+    }
+
     if liveTranscriptionEnabled {
       let live = LiveTranscriber(
         language: liveLanguage,
@@ -128,6 +140,27 @@ final class RecordingSession {
     }
 
     startLevelTimer()
+  }
+
+  /// Ensures microphone access before capture. Requests the system prompt when
+  /// the status is undetermined (so a reset/re-signed app re-prompts instead of
+  /// silently capturing zeros), and throws `permission_denied` when not granted.
+  private static func ensureMicrophoneAuthorized() async throws {
+    switch AVCaptureDevice.authorizationStatus(for: .audio) {
+    case .authorized:
+      return
+    case .notDetermined:
+      let granted: Bool = await withCheckedContinuation { cont in
+        AVCaptureDevice.requestAccess(for: .audio) { cont.resume(returning: $0) }
+      }
+      if !granted {
+        throw RbNativeError.permissionDenied("microphone access denied")
+      }
+    case .denied, .restricted:
+      throw RbNativeError.permissionDenied("microphone access denied")
+    @unknown default:
+      throw RbNativeError.permissionDenied("microphone access unavailable")
+    }
   }
 
   // MARK: - Writes

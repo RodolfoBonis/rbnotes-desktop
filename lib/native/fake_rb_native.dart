@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 import 'package:rbnotes/native/rb_native.dart';
@@ -18,6 +19,8 @@ class FakeRbNative implements RbNative {
     List<TranscriptSegment>? transcriptResult,
     this.systemAudioAvailable = true,
     this.levelsInterval = const Duration(milliseconds: 50),
+    this.silentMic = false,
+    this.silentSystem = false,
   }) : _permissions = {
          RbPermission.microphone: PermissionStatus.granted,
          RbPermission.screenRecording: PermissionStatus.granted,
@@ -56,6 +59,13 @@ class FakeRbNative implements RbNative {
   final Map<RbPermission, PermissionStatus> _permissions;
   bool modelDownloaded;
   final bool systemAudioAvailable;
+
+  /// Simula o bug de produção: o macOS entrega áudio zerado (silêncio digital)
+  /// quando o TCC do microfone/tela deixou de valer. Com [silentMic] ligado, os
+  /// níveis do mic vêm 0.0 e o `mic.wav` é gravado só com samples zero; idem
+  /// [silentSystem] para o canal do sistema.
+  bool silentMic;
+  bool silentSystem;
   final Duration levelsInterval;
   final List<TranscriptSegment> _transcriptResult;
 
@@ -63,6 +73,10 @@ class FakeRbNative implements RbNative {
   final _diagnostics = StreamController<NativeDiagnostic>.broadcast();
   final _live = <String, StreamController<LiveTranscript>>{};
   final Set<String> _recording = {};
+
+  /// Ids cuja gravação está capturando o áudio do sistema (para os níveis
+  /// refletirem a ausência de canal quando não se captura o sistema).
+  final Set<String> _systemCaptured = {};
   final Map<String, String> _dirs = {};
   final Set<WhisperModel> _downloadedModels = {...WhisperModel.values};
 
@@ -168,9 +182,13 @@ class FakeRbNative implements RbNative {
     lastNoiseReduction = noiseReduction;
     lastStartLanguage = language;
     await Directory(directory).create(recursive: true);
-    await _touch(p.join(directory, '$id.mic.wav'));
+    await _writeWav(p.join(directory, '$id.mic.wav'), silent: silentMic);
     if (captureSystemAudio && systemAudioAvailable) {
-      await _touch(p.join(directory, '$id.system.wav'));
+      _systemCaptured.add(id);
+      await _writeWav(
+        p.join(directory, '$id.system.wav'),
+        silent: silentSystem,
+      );
     }
     await _touch(p.join(directory, '$id.m4a'));
     if (liveTranscription) {
@@ -181,6 +199,7 @@ class FakeRbNative implements RbNative {
 
   @override
   Future<RecordingResult> stopRecording(String id) async {
+    _systemCaptured.remove(id);
     if (!_recording.remove(id)) {
       throw const RbNativeException(
         RbNativeErrorCode.notRecording,
@@ -214,11 +233,18 @@ class FakeRbNative implements RbNative {
     var t = 0;
     return Stream.periodic(levelsInterval, (_) {
       t++;
-      final mic = (0.3 + 0.3 * ((t % 5) / 5)).clamp(0.0, 1.0);
-      return AudioLevels(
-        mic: mic,
-        system: systemAudioAvailable ? (mic * 0.6) : null,
-      );
+      // Silêncio digital: nível exatamente 0.0 (o plugin real devolve 0.0
+      // quando os samples são zero), distinto de ambiente baixo (> 0).
+      final mic = silentMic ? 0.0 : (0.3 + 0.3 * ((t % 5) / 5)).clamp(0.0, 1.0);
+      final double? system;
+      if (!systemAudioAvailable || !_systemCaptured.contains(id)) {
+        system = null;
+      } else if (silentSystem) {
+        system = 0.0;
+      } else {
+        system = mic * 0.6;
+      }
+      return AudioLevels(mic: mic, system: system);
     }).takeWhile((_) => _recording.contains(id));
   }
 
@@ -527,5 +553,46 @@ class FakeRbNative implements RbNative {
   Future<void> _touch(String path) async {
     final file = File(path);
     if (!file.existsSync()) await file.writeAsBytes(const [0, 0, 0, 0]);
+  }
+
+  /// Grava um WAV PCM 16-bit mono 16 kHz real em disco (para o leitor de pico
+  /// funcionar). Com [silent], todos os samples são zero (silêncio digital);
+  /// senão, inclui um sample não-nulo para dar pico > 0.
+  Future<void> _writeWav(String path, {required bool silent}) async {
+    const sampleRate = 16000;
+    const frames = 64;
+    final pcm = Int16List(frames);
+    if (!silent) {
+      for (var i = 0; i < frames; i++) {
+        pcm[i] = (8000 * math.sin(i / 4)).round();
+      }
+    }
+    final dataBytes = pcm.buffer.asUint8List();
+    final header = ByteData(44);
+    void tag(int at, String s) {
+      for (var i = 0; i < 4; i++) {
+        header.setUint8(at + i, s.codeUnitAt(i));
+      }
+    }
+
+    tag(0, 'RIFF');
+    header
+      ..setUint32(4, 36 + dataBytes.length, Endian.little)
+      ..setUint16(20, 1, Endian.little) // PCM
+      ..setUint16(22, 1, Endian.little) // mono
+      ..setUint32(24, sampleRate, Endian.little)
+      ..setUint32(28, sampleRate * 2, Endian.little) // byte rate
+      ..setUint16(32, 2, Endian.little) // block align
+      ..setUint16(34, 16, Endian.little); // bits
+    tag(8, 'WAVE');
+    tag(12, 'fmt ');
+    header.setUint32(16, 16, Endian.little);
+    tag(36, 'data');
+    header.setUint32(40, dataBytes.length, Endian.little);
+
+    final out = BytesBuilder()
+      ..add(header.buffer.asUint8List())
+      ..add(dataBytes);
+    await File(path).writeAsBytes(out.takeBytes());
   }
 }

@@ -22,6 +22,15 @@ final class AudioCapture {
   private var configObserver: NSObjectProtocol?
   private var inputDeviceId: AudioDeviceID?
   private var noiseReduction = false
+  /// Voice processing (noise reduction) is applied once per capture lifetime.
+  /// Re-enabling it on a configuration-change restart itself fires another
+  /// `AVAudioEngineConfigurationChange`, which caused an endless restart loop
+  /// that never delivered real samples (mic.wav came out all zeros). We apply
+  /// it only on the first start and leave it enabled on the input node across
+  /// restarts.
+  private var voiceProcessingApplied = false
+  /// Guards against overlapping/re-entrant restarts.
+  private var restarting = false
 
   /// Called on the audio thread with converted s16le bytes to persist.
   var onData: ((Data) -> Void)?
@@ -108,7 +117,12 @@ final class AudioCapture {
   /// it never aborts the recording, and it does not touch system-audio capture
   /// or live transcription (both consume the converted 16 kHz mono stream).
   private func applyNoiseReductionIfNeeded(_ input: AVAudioInputNode) {
-    guard noiseReduction else { return }
+    guard noiseReduction, !voiceProcessingApplied else { return }
+    // Mark as applied before the attempt: whether it succeeds or degrades to
+    // raw capture, we never re-toggle it (which would re-trigger a config
+    // change and loop). The input node keeps its voice-processing state across
+    // engine stop/start, so a restart reads the right format without re-enabling.
+    voiceProcessingApplied = true
     do {
       try input.setVoiceProcessingEnabled(true)
       RbLog.recording.info("voice processing (noise reduction) enabled")
@@ -134,8 +148,14 @@ final class AudioCapture {
   private func handleConfigurationChange() {
     lock.lock()
     let running = _isRunning
+    // A restart already in progress? Skip — avoids stacking restarts when the
+    // system fires several change notifications in quick succession.
+    if restarting || !running {
+      lock.unlock()
+      return
+    }
+    restarting = true
     lock.unlock()
-    guard running else { return }
 
     RbLog.recording.notice("AVAudioEngine configuration changed — restarting mic engine")
     onError?(
@@ -147,9 +167,12 @@ final class AudioCapture {
     input.removeTap(onBus: 0)
     engine.stop()
     do {
+      // Does NOT re-enable voice processing (voiceProcessingApplied stays set),
+      // so this restart does not trigger another configuration change.
       try startEngine()
+      lock.lock(); restarting = false; lock.unlock()
     } catch {
-      lock.lock(); _isRunning = false; lock.unlock()
+      lock.lock(); _isRunning = false; restarting = false; lock.unlock()
       RbLog.recording.error("mic engine restart failed: \(error.localizedDescription)")
       onError?(
         NativeDiagnostic(

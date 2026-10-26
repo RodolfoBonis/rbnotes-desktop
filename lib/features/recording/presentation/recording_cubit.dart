@@ -10,12 +10,34 @@ import 'package:rbnotes/features/ai/data/ai_activity.dart';
 import 'package:rbnotes/features/ai/data/enrichment_service.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/data/silence_store.dart';
+import 'package:rbnotes/features/recording/domain/wav_peak.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
+import 'package:rbnotes/features/settings/data/system_settings.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:rbnotes/native/rb_native.dart';
 import 'package:uuid/uuid.dart';
 
 enum RecordingStatus { idle, recording, paused, processing }
+
+/// Tipo de aviso acionável de permissão mostrado antes/depois da gravação.
+enum RecordingAlertKind { microphoneDenied }
+
+/// Aviso acionável de permissão: uma mensagem e o painel de Ajustes a abrir.
+/// Bloqueia a gravação (ex.: microfone negado) e a UI mostra "Abrir Ajustes".
+class RecordingAlert extends Equatable {
+  const RecordingAlert({
+    required this.kind,
+    required this.message,
+    required this.permission,
+  });
+
+  final RecordingAlertKind kind;
+  final String message;
+  final RbPermission permission;
+
+  @override
+  List<Object?> get props => [kind, message, permission];
+}
 
 const _systemAudioStoppedCode = 'system_audio_stopped';
 
@@ -44,6 +66,11 @@ class RecordingState extends Equatable {
     this.failedStep,
     this.hudDismissed = false,
     this.background = false,
+    this.alert,
+    this.micNoSignal = false,
+    this.systemNoSignal = false,
+    this.screenDenied = false,
+    this.audioSignalFailure = false,
   });
 
   final RecordingStatus status;
@@ -79,6 +106,25 @@ class RecordingState extends Equatable {
   /// usa o overlay do notch em vez do HUD interno (evita duplicação).
   final bool background;
 
+  /// Aviso acionável de permissão que impediu a gravação (ex.: microfone
+  /// negado). A UI mostra a mensagem + "Abrir Ajustes". Null quando não há.
+  final RecordingAlert? alert;
+
+  /// Silêncio digital ao vivo no microfone (níveis exatamente 0 nos primeiros
+  /// ~2 s): sem sinal, provável permissão/dispositivo. Mostrado no HUD/overlay.
+  final bool micNoSignal;
+
+  /// Idem [micNoSignal] para o canal de áudio do sistema.
+  final bool systemNoSignal;
+
+  /// Gravando só o microfone porque a Gravação de Tela está negada (o usuário
+  /// pediu áudio do sistema). A UI avisa e oferece "Abrir Ajustes".
+  final bool screenDenied;
+
+  /// A gravação terminou sem sinal (pico 0 no mic.wav): a nota foi marcada como
+  /// falha, não concluída vazia. Dirige o card de erro com "Abrir Ajustes".
+  final bool audioSignalFailure;
+
   bool get isRecording =>
       status == RecordingStatus.recording || status == RecordingStatus.paused;
   bool get isProcessing => status == RecordingStatus.processing;
@@ -113,6 +159,12 @@ class RecordingState extends Equatable {
     bool clearFailedStep = false,
     bool? hudDismissed,
     bool? background,
+    RecordingAlert? alert,
+    bool clearAlert = false,
+    bool? micNoSignal,
+    bool? systemNoSignal,
+    bool? screenDenied,
+    bool? audioSignalFailure,
   }) => RecordingState(
     status: status ?? this.status,
     noteId: clearNoteId ? null : (noteId ?? this.noteId),
@@ -132,6 +184,11 @@ class RecordingState extends Equatable {
     failedStep: clearFailedStep ? null : (failedStep ?? this.failedStep),
     hudDismissed: hudDismissed ?? this.hudDismissed,
     background: background ?? this.background,
+    alert: clearAlert ? null : (alert ?? this.alert),
+    micNoSignal: micNoSignal ?? this.micNoSignal,
+    systemNoSignal: systemNoSignal ?? this.systemNoSignal,
+    screenDenied: screenDenied ?? this.screenDenied,
+    audioSignalFailure: audioSignalFailure ?? this.audioSignalFailure,
   );
 
   @override
@@ -152,6 +209,11 @@ class RecordingState extends Equatable {
     failedStep,
     hudDismissed,
     background,
+    alert,
+    micNoSignal,
+    systemNoSignal,
+    screenDenied,
+    audioSignalFailure,
   ];
 }
 
@@ -170,6 +232,8 @@ class RecordingCubit extends Cubit<RecordingState> {
     Future<bool> Function()? isForeground,
     Future<void> Function()? onOpenApp,
     bool Function()? isLocked,
+    SystemSettingsOpener? systemSettings,
+    Duration signalCheckDelay = const Duration(seconds: 2),
     Uuid? uuid,
   }) : _native = native,
        _repository = repository,
@@ -181,6 +245,8 @@ class RecordingCubit extends Cubit<RecordingState> {
        _isForeground = isForeground,
        _onOpenApp = onOpenApp,
        _isLocked = isLocked,
+       _systemSettings = systemSettings ?? const SystemSettingsOpener(),
+       _signalCheckDelay = signalCheckDelay,
        _uuid = uuid ?? const Uuid(),
        super(RecordingState(captureSystemAudio: settings.captureSystemAudio)) {
     _diagSub = diagnostics.listen(_onDiagnostic);
@@ -203,6 +269,11 @@ class RecordingCubit extends Cubit<RecordingState> {
   /// Com o app travado por Touch ID, o overlay do notch não mostra a
   /// transcrição ao vivo (só "RbNotes" e o estado da gravação).
   final bool Function()? _isLocked;
+  final SystemSettingsOpener _systemSettings;
+
+  /// Janela inicial para detectar silêncio digital ao vivo (~2 s). Injetável
+  /// nos testes para não depender de um timer real de 2 s.
+  final Duration _signalCheckDelay;
   final Uuid _uuid;
 
   StreamSubscription<AudioLevels>? _levelsSub;
@@ -215,6 +286,10 @@ class RecordingCubit extends Cubit<RecordingState> {
   bool _overlayShown = false;
   Timer? _ticker;
   Timer? _stepTicker;
+  Timer? _signalTimer;
+  bool _micSawSignal = false;
+  bool _systemSawSignal = false;
+  bool _systemSawAny = false;
   DateTime? _startedAt;
   Duration _accumulated = Duration.zero;
 
@@ -238,14 +313,62 @@ class RecordingCubit extends Cubit<RecordingState> {
     if (state.isActive) return;
     final foreground = await (_isForeground?.call() ?? Future.value(true));
     final bg = background || !foreground;
-    emit(state.copyWith(clearError: true, kind: kind, background: bg));
+    emit(
+      state.copyWith(
+        clearError: true,
+        clearAlert: true,
+        kind: kind,
+        background: bg,
+        micNoSignal: false,
+        systemNoSignal: false,
+        screenDenied: false,
+        audioSignalFailure: false,
+      ),
+    );
 
-    final mic = await _native.permissionStatus(RbPermission.microphone);
-    if (mic != PermissionStatus.granted) {
-      final result = await _native.requestPermission(RbPermission.microphone);
-      if (result != PermissionStatus.granted) {
-        emit(state.copyWith(error: 'Permissão de microfone necessária.'));
-        return;
+    // Pré-checagem de microfone: pede se indeterminado, bloqueia se negado.
+    // Sem isso, um TCC inválido (app reassinado) grava áudio zerado e conclui
+    // uma nota vazia sem avisar.
+    var micStatus = await _native.permissionStatus(RbPermission.microphone);
+    if (micStatus == PermissionStatus.notDetermined) {
+      micStatus = await _native.requestPermission(RbPermission.microphone);
+    }
+    if (micStatus != PermissionStatus.granted) {
+      AppLogger.warning(
+        'microfone negado na pré-checagem da gravação',
+        category: 'recording',
+      );
+      emit(
+        state.copyWith(
+          alert: const RecordingAlert(
+            kind: RecordingAlertKind.microphoneDenied,
+            message:
+                'O RbNotes não tem acesso ao microfone. '
+                'Abra Ajustes → Privacidade → Microfone.',
+            permission: RbPermission.microphone,
+          ),
+        ),
+      );
+      return;
+    }
+
+    // Áudio do sistema exige Gravação de Tela. Negada → grava só o mic e avisa.
+    var captureSystem = state.captureSystemAudio;
+    var screenDenied = false;
+    if (captureSystem) {
+      var screen = await _native.permissionStatus(
+        RbPermission.screenRecording,
+      );
+      if (screen == PermissionStatus.notDetermined) {
+        screen = await _native.requestPermission(RbPermission.screenRecording);
+      }
+      if (screen != PermissionStatus.granted) {
+        captureSystem = false;
+        screenDenied = true;
+        AppLogger.warning(
+          'gravação de tela negada; gravando só o microfone',
+          category: 'recording',
+        );
       }
     }
 
@@ -268,7 +391,7 @@ class RecordingCubit extends Cubit<RecordingState> {
       await _native.startRecording(
         id: id,
         directory: _paths.recordingsDir,
-        captureSystemAudio: state.captureSystemAudio,
+        captureSystemAudio: captureSystem,
         liveTranscription: true,
         inputDeviceId: _settings.micDeviceId,
         noiseReduction: _settings.noiseReduction,
@@ -276,9 +399,13 @@ class RecordingCubit extends Cubit<RecordingState> {
       );
       _startedAt = now;
       _accumulated = Duration.zero;
+      _micSawSignal = false;
+      _systemSawSignal = false;
+      _systemSawAny = false;
       _listenLevels(id);
       _listenLive(id);
       _startTicker();
+      _startSignalWatch(id);
       emit(
         state.copyWith(
           status: RecordingStatus.recording,
@@ -286,6 +413,8 @@ class RecordingCubit extends Cubit<RecordingState> {
           elapsed: Duration.zero,
           liveText: '',
           systemAudioDropped: false,
+          captureSystemAudio: captureSystem,
+          screenDenied: screenDenied,
         ),
       );
     } on RbNativeException catch (e, st) {
@@ -324,6 +453,7 @@ class RecordingCubit extends Cubit<RecordingState> {
       await _native.pauseRecording(id);
       _accumulated += DateTime.now().difference(_startedAt!);
       _ticker?.cancel();
+      _signalTimer?.cancel();
       await _levelsSub?.cancel();
       emit(state.copyWith(status: RecordingStatus.paused, micLevel: 0));
     } on RbNativeException catch (e, st) {
@@ -361,10 +491,43 @@ class RecordingCubit extends Cubit<RecordingState> {
     if (!state.isRecording) return;
     final id = state.noteId!;
     _ticker?.cancel();
+    _signalTimer?.cancel();
     await _levelsSub?.cancel();
     await _liveSub?.cancel();
     try {
       final result = await _native.stopRecording(id);
+
+      // Pós-gravação: pico 0 no mic.wav é silêncio digital (ex.: TCC inválido
+      // após reassinar o app). Não conclui uma nota vazia "pronta": marca falha
+      // com motivo acionável. system.wav zerado sozinho não falha a nota (o mic
+      // ainda tem conteúdo); o aviso ao vivo já cobre esse caso.
+      final micSignal = await WavPeak.read(result.micWavPath);
+      if (micSignal?.isDigitalSilence ?? false) {
+        await _repository.finalizeRecording(
+          id,
+          durationMs: result.duration.inMilliseconds,
+          playbackPath: result.playbackPath,
+          micWavPath: result.micWavPath,
+          systemWavPath: result.systemWavPath,
+          status: NoteStatus.failed,
+        );
+        AppLogger.warning(
+          'mic.wav sem sinal (pico 0); nota marcada como falha',
+          category: 'recording',
+        );
+        emit(
+          state.copyWith(
+            status: RecordingStatus.processing,
+            step: 0,
+            stepProgress: 0,
+            failedStep: 0,
+            audioSignalFailure: true,
+            error: 'Áudio sem sinal (permissão do microfone?)',
+          ),
+        );
+        return;
+      }
+
       await _repository.finalizeRecording(
         id,
         durationMs: result.duration.inMilliseconds,
@@ -401,6 +564,7 @@ class RecordingCubit extends Cubit<RecordingState> {
   Future<void> discard() async {
     final id = state.noteId;
     _ticker?.cancel();
+    _signalTimer?.cancel();
     await _levelsSub?.cancel();
     await _liveSub?.cancel();
     if (id != null) {
@@ -505,9 +669,22 @@ class RecordingCubit extends Cubit<RecordingState> {
   }
 
   /// "Tentar de novo" no HUD de erro: reexecuta a etapa que falhou.
+  ///
+  /// Na falha de áudio sem sinal, "tentar de novo" é gravar de novo: descarta a
+  /// nota vazia e inicia uma nova gravação (reexecutando a pré-checagem de
+  /// permissões), em vez de retranscrever um áudio zerado.
   Future<void> retryProcessing() async {
     final noteId = state.noteId;
     if (noteId == null || state.failedStep == null) return;
+    if (state.audioSignalFailure) {
+      final kind = state.kind;
+      final background = state.background;
+      _finishClearing();
+      await _repository.deleteNote(noteId);
+      _reset();
+      await start(kind: kind, background: background);
+      return;
+    }
     final failed = state.failedStep!;
     emit(
       state.copyWith(
@@ -524,6 +701,15 @@ class RecordingCubit extends Cubit<RecordingState> {
       _tickClaude();
       await _enrichment?.enrichNote(noteId, force: true);
     }
+  }
+
+  /// Cancela as inscrições do pipeline sem emitir estado (usado antes de um
+  /// reset/re-gravação após falha de sinal).
+  void _finishClearing() {
+    _stepTicker?.cancel();
+    unawaited(_procSub?.cancel());
+    unawaited(_aiSub?.cancel());
+    unawaited(_aiPhaseSub?.cancel());
   }
 
   /// Fecha o HUD. Se o processamento ainda roda, ele continua em background e o
@@ -613,6 +799,15 @@ class RecordingCubit extends Cubit<RecordingState> {
         }
       } else {
         final locked = _isLocked?.call() ?? false;
+        // Sem sinal ao vivo: o overlay mostra o aviso no lugar do texto; o
+        // botão de Ajustes fica no HUD interno (o overlay do notch abre o app).
+        final noSignal = s.micNoSignal
+            ? 'Sem sinal do microfone: verifique a permissão ou o dispositivo '
+                  'de entrada'
+            : (s.systemNoSignal
+                  ? 'Sem sinal do áudio do sistema: verifique a permissão de '
+                        'Gravação de Tela'
+                  : null);
         _overlay(
           _native.updateActivityOverlay(
             micLevel: s.micLevel,
@@ -620,6 +815,7 @@ class RecordingCubit extends Cubit<RecordingState> {
             // Travado: sem texto ao vivo no overlay (só "RbNotes" + estado).
             liveText: locked ? '' : s.liveText,
             phase: OverlayPhase.live,
+            message: noSignal,
             paused: s.status == RecordingStatus.paused,
           ),
         );
@@ -668,9 +864,57 @@ class RecordingCubit extends Cubit<RecordingState> {
   void _listenLevels(String id) {
     unawaited(_levelsSub?.cancel());
     _levelsSub = _native.audioLevels(id).listen((levels) {
+      if (levels.mic > 0) _micSawSignal = true;
+      final sys = levels.system;
+      if (sys != null) {
+        _systemSawAny = true;
+        if (sys > 0) _systemSawSignal = true;
+      }
       emit(state.copyWith(micLevel: levels.mic, systemLevel: levels.system));
     });
   }
+
+  /// Agenda a checagem de silêncio digital ao vivo: se, na janela inicial, os
+  /// níveis do mic (e do sistema, quando ativo) vierem exatamente 0, avisa no
+  /// HUD/overlay e emite um diagnóstico. Zero exato = sem sinal (permissão ou
+  /// dispositivo), distinto de ambiente baixo.
+  void _startSignalWatch(String id) {
+    _signalTimer?.cancel();
+    _signalTimer = Timer(_signalCheckDelay, () => _checkLiveSignal(id));
+  }
+
+  void _checkLiveSignal(String recId) {
+    if (isClosed || state.noteId != recId || !state.isRecording) return;
+    final micNoSignal = !_micSawSignal;
+    final systemNoSignal = _systemSawAny && !_systemSawSignal;
+    if (!micNoSignal && !systemNoSignal) return;
+    if (micNoSignal) {
+      AppLogger.warning(
+        'microfone sem sinal ao vivo (silêncio digital)',
+        category: 'recording',
+      );
+    }
+    if (systemNoSignal) {
+      AppLogger.warning(
+        'áudio do sistema sem sinal ao vivo (silêncio digital)',
+        category: 'recording',
+      );
+    }
+    emit(
+      state.copyWith(micNoSignal: micNoSignal, systemNoSignal: systemNoSignal),
+    );
+  }
+
+  /// Abre o painel de Ajustes → Privacidade → Microfone.
+  Future<void> openMicrophoneSettings() =>
+      _systemSettings.openPrivacyPane(RbPermission.microphone);
+
+  /// Abre o painel de Ajustes → Privacidade → Gravação de Tela.
+  Future<void> openScreenRecordingSettings() =>
+      _systemSettings.openPrivacyPane(RbPermission.screenRecording);
+
+  /// Descarta o aviso de permissão (ex.: usuário fechou o diálogo).
+  void dismissAlert() => emit(state.copyWith(clearAlert: true));
 
   void _listenLive(String id) {
     unawaited(_liveSub?.cancel());
@@ -692,6 +936,10 @@ class RecordingCubit extends Cubit<RecordingState> {
   void _reset() {
     _ticker?.cancel();
     _stepTicker?.cancel();
+    _signalTimer?.cancel();
+    _micSawSignal = false;
+    _systemSawSignal = false;
+    _systemSawAny = false;
     _startedAt = null;
     _accumulated = Duration.zero;
     emit(RecordingState(captureSystemAudio: _settings.captureSystemAudio));
@@ -708,6 +956,7 @@ class RecordingCubit extends Cubit<RecordingState> {
   Future<void> close() async {
     _ticker?.cancel();
     _stepTicker?.cancel();
+    _signalTimer?.cancel();
     await _levelsSub?.cancel();
     await _liveSub?.cancel();
     await _procSub?.cancel();

@@ -8,6 +8,7 @@ import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/notes/data/silence_store.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
+import 'package:rbnotes/features/settings/data/system_settings.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:rbnotes/native/fake_rb_native.dart';
@@ -205,7 +206,7 @@ void main() {
     await cubit.close();
   });
 
-  test('sem permissão de microfone emite erro e não grava', () async {
+  test('microfone negado mostra aviso acionável e não grava', () async {
     // requestPermission do fake normalmente concede; este nega sempre.
     final denying = _DenyingNative();
     final cubit = RecordingCubit(
@@ -218,9 +219,220 @@ void main() {
     );
     await cubit.start();
     expect(cubit.state.status, RecordingStatus.idle);
-    expect(cubit.state.error, isNotNull);
+    expect(cubit.state.noteId, isNull);
+    final alert = cubit.state.alert;
+    expect(alert, isNotNull);
+    expect(alert!.kind, RecordingAlertKind.microphoneDenied);
+    expect(alert.permission, RbPermission.microphone);
+    expect(alert.message, contains('microfone'));
     await cubit.close();
   });
+
+  test(
+    'microfone indeterminado pede permissão e grava quando concedida',
+    () async {
+      final native = FakeRbNative(
+        permissions: {RbPermission.microphone: PermissionStatus.notDetermined},
+      );
+      final q = TranscriptionQueue(
+        native: native,
+        repository: repo,
+        settings: settings,
+        vocabulary: VocabularyRepository(db),
+      );
+      final cubit = RecordingCubit(
+        native: native,
+        repository: repo,
+        queue: q,
+        settings: settings,
+        paths: paths,
+        diagnostics: native.diagnostics(),
+      );
+      await cubit.start();
+      expect(cubit.state.status, RecordingStatus.recording);
+      expect(cubit.state.alert, isNull);
+      // O fake concede ao pedir: o microfone agora está autorizado.
+      expect(
+        await native.permissionStatus(RbPermission.microphone),
+        PermissionStatus.granted,
+      );
+      await cubit.discard();
+      await cubit.close();
+      await q.dispose();
+      await native.dispose();
+    },
+  );
+
+  test('gravação de tela negada grava só o microfone e avisa', () async {
+    await settings.setCaptureSystemAudio(value: true);
+    final native = FakeRbNative(
+      permissions: {RbPermission.screenRecording: PermissionStatus.denied},
+    );
+    final q = TranscriptionQueue(
+      native: native,
+      repository: repo,
+      settings: settings,
+      vocabulary: VocabularyRepository(db),
+    );
+    final cubit = RecordingCubit(
+      native: native,
+      repository: repo,
+      queue: q,
+      settings: settings,
+      paths: paths,
+      diagnostics: native.diagnostics(),
+    );
+    await cubit.start();
+    expect(cubit.state.status, RecordingStatus.recording);
+    expect(cubit.state.screenDenied, isTrue);
+    // Grava só o mic: a captura efetiva do sistema foi desligada.
+    expect(cubit.state.captureSystemAudio, isFalse);
+    await cubit.discard();
+    await cubit.close();
+    await q.dispose();
+    await native.dispose();
+  });
+
+  test('silêncio digital ao vivo no mic marca micNoSignal', () async {
+    final native = FakeRbNative(silentMic: true);
+    final q = TranscriptionQueue(
+      native: native,
+      repository: repo,
+      settings: settings,
+      vocabulary: VocabularyRepository(db),
+    );
+    final cubit = RecordingCubit(
+      native: native,
+      repository: repo,
+      queue: q,
+      settings: settings,
+      paths: paths,
+      diagnostics: native.diagnostics(),
+      signalCheckDelay: const Duration(milliseconds: 80),
+    );
+    await cubit.start();
+    await cubit.stream.firstWhere((s) => s.micNoSignal);
+    expect(cubit.state.micNoSignal, isTrue);
+    expect(cubit.state.systemNoSignal, isFalse);
+    await cubit.discard();
+    await cubit.close();
+    await q.dispose();
+    await native.dispose();
+  });
+
+  test('silêncio digital ao vivo no sistema marca systemNoSignal', () async {
+    await settings.setCaptureSystemAudio(value: true);
+    final native = FakeRbNative(silentSystem: true);
+    final q = TranscriptionQueue(
+      native: native,
+      repository: repo,
+      settings: settings,
+      vocabulary: VocabularyRepository(db),
+    );
+    final cubit = RecordingCubit(
+      native: native,
+      repository: repo,
+      queue: q,
+      settings: settings,
+      paths: paths,
+      diagnostics: native.diagnostics(),
+      signalCheckDelay: const Duration(milliseconds: 80),
+    );
+    await cubit.start();
+    await cubit.stream.firstWhere((s) => s.systemNoSignal);
+    expect(cubit.state.systemNoSignal, isTrue);
+    expect(cubit.state.micNoSignal, isFalse);
+    await cubit.discard();
+    await cubit.close();
+    await q.dispose();
+    await native.dispose();
+  });
+
+  test('pós-gravação sem sinal marca a nota como failed (não ready)', () async {
+    final native = FakeRbNative(silentMic: true);
+    final q = TranscriptionQueue(
+      native: native,
+      repository: repo,
+      settings: settings,
+      vocabulary: VocabularyRepository(db),
+    );
+    final cubit = RecordingCubit(
+      native: native,
+      repository: repo,
+      queue: q,
+      settings: settings,
+      paths: paths,
+      diagnostics: native.diagnostics(),
+    );
+    await cubit.start();
+    final id = cubit.state.noteId!;
+    await cubit.stop();
+    expect(cubit.state.audioSignalFailure, isTrue);
+    expect(cubit.state.failedStep, 0);
+    expect(cubit.state.processingFailed, isTrue);
+    expect(cubit.state.error, contains('sem sinal'));
+    final saved = await repo.getNote(id);
+    expect(saved!.status, NoteStatus.failed);
+    await cubit.close();
+    await q.dispose();
+    await native.dispose();
+  });
+
+  test('"tentar de novo" na falha de sinal apaga a nota e regrava', () async {
+    final native = FakeRbNative(silentMic: true);
+    final q = TranscriptionQueue(
+      native: native,
+      repository: repo,
+      settings: settings,
+      vocabulary: VocabularyRepository(db),
+    );
+    final cubit = RecordingCubit(
+      native: native,
+      repository: repo,
+      queue: q,
+      settings: settings,
+      paths: paths,
+      diagnostics: native.diagnostics(),
+    );
+    await cubit.start();
+    final firstId = cubit.state.noteId!;
+    await cubit.stop();
+    expect(cubit.state.audioSignalFailure, isTrue);
+
+    await cubit.retryProcessing();
+    // A nota vazia foi descartada e uma nova gravação começou.
+    expect(await repo.getNote(firstId), isNull);
+    expect(cubit.state.status, RecordingStatus.recording);
+    expect(cubit.state.noteId, isNot(firstId));
+    await cubit.discard();
+    await cubit.close();
+    await q.dispose();
+    await native.dispose();
+  });
+
+  test(
+    'openMicrophoneSettings abre o painel de Privacidade do microfone',
+    () async {
+      final opened = <Uri>[];
+      final cubit = RecordingCubit(
+        native: native,
+        repository: repo,
+        queue: queue,
+        settings: settings,
+        paths: paths,
+        diagnostics: native.diagnostics(),
+        systemSettings: SystemSettingsOpener(
+          launcher: (uri) async {
+            opened.add(uri);
+            return true;
+          },
+        ),
+      );
+      await cubit.openMicrophoneSettings();
+      expect(opened.single.toString(), contains('Privacy_Microphone'));
+      await cubit.close();
+    },
+  );
 
   test(
     'falha de transcricao mostra erro no HUD e nao encerra (bug/pedido 7)',

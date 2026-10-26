@@ -48,6 +48,7 @@ import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
 import 'package:rbnotes/features/settings/data/erase_all_service.dart';
 import 'package:rbnotes/features/settings/data/local_data_wiper.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
+import 'package:rbnotes/features/settings/data/system_settings.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
 import 'package:rbnotes/features/settings/presentation/erase_progress_dialog.dart';
 import 'package:rbnotes/features/settings/presentation/settings_modal.dart';
@@ -328,6 +329,34 @@ class _AppShellState extends State<AppShell> {
     return KeyEventResult.ignored;
   }
 
+  /// Diálogo "sem acesso ao microfone" com o botão que abre o painel certo.
+  Future<void> _showPermissionAlert(
+    BuildContext context,
+    RecordingAlert alert,
+  ) async {
+    final cubit = context.read<RecordingCubit>();
+    const opener = SystemSettingsOpener();
+    final open = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Microfone sem acesso'),
+        content: Text(alert.message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Agora não'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Abrir Ajustes'),
+          ),
+        ],
+      ),
+    );
+    cubit.dismissAlert();
+    if (open ?? false) await opener.openPrivacyPane(alert.permission);
+  }
+
   @override
   Widget build(BuildContext context) {
     final rb = context.rb;
@@ -339,6 +368,13 @@ class _AppShellState extends State<AppShell> {
         color: rb.wallpaper,
         child: Stack(
           children: [
+            // Aviso acionável de permissão de microfone (gravação bloqueada).
+            BlocListener<RecordingCubit, RecordingState>(
+              listenWhen: (a, b) => a.alert != b.alert && b.alert != null,
+              listener: (context, state) =>
+                  unawaited(_showPermissionAlert(context, state.alert!)),
+              child: const SizedBox.shrink(),
+            ),
             // Liga a seleção da lista ao detalhe e carrega o diário.
             BlocListener<LibraryCubit, LibraryState>(
               listenWhen: (a, b) =>
