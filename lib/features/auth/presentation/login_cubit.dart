@@ -1,5 +1,7 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:rbnotes/core/auth/oidc_client.dart';
+import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/features/auth/data/auth_service.dart';
 
 enum AuthMode { login, signup }
@@ -72,10 +74,8 @@ class LoginCubit extends Cubit<LoginState> {
       } else {
         await _auth.signInWithEmail(state.email, state.password);
       }
-    } on AuthException catch (e) {
-      emit(state.copyWith(loading: false, error: e.message));
-    } on Object catch (_) {
-      emit(state.copyWith(loading: false, error: 'Não foi possível entrar.'));
+    } on Object catch (e, st) {
+      emit(state.copyWith(loading: false, error: await _messageFor(e, st)));
     }
   }
 
@@ -84,8 +84,20 @@ class LoginCubit extends Cubit<LoginState> {
     emit(state.copyWith(loading: true, clearError: true));
     try {
       await _auth.signInWithGoogle();
-    } on Object catch (_) {
-      emit(state.copyWith(loading: false, error: 'Não foi possível entrar.'));
+    } on Object catch (e, st) {
+      emit(state.copyWith(loading: false, error: await _messageFor(e, st)));
     }
+  }
+
+  /// Mensagem acionável para a falha de login (e registro no log).
+  static Future<String> _messageFor(Object error, StackTrace stack) async {
+    if (error is AuthException) return error.message;
+    if (error is OidcException && error.isNetwork) {
+      AppLogger.warning('Login sem conexão', category: 'auth', error: error);
+      return 'Sem conexão com o servidor de login. Verifique a internet, a '
+          'VPN ou o DNS e tente de novo.';
+    }
+    await AppLogger.error(error, stack, reason: 'login', category: 'auth');
+    return 'Não foi possível entrar.';
   }
 }

@@ -73,10 +73,43 @@ class KeycloakAuthService implements AuthService {
       if (e.isAccessDenied || e.isUnauthorized) {
         await _tokens.clear();
         _set(null);
+        return;
       }
-      // Rede fora: mantém o usuário deslogado sem apagar os tokens.
+      // Rede fora (DNS, servidor, offline): o app é local-first — entra com a
+      // identidade do id_token salvo e o sync volta sozinho com a rede.
+      _restoreOffline(stored.idToken, e);
     } on Object catch (e, st) {
       await AppLogger.error(e, st, reason: 'auth_restore', category: 'auth');
+      _restoreOffline(stored.idToken, e);
+    }
+  }
+
+  void _restoreOffline(String? idToken, Object error) {
+    final user = _userFromIdToken(idToken);
+    if (user == null) return;
+    AppLogger.warning(
+      'Sem conexão no boot; entrando com a sessão salva',
+      category: 'auth',
+      error: error,
+    );
+    _set(user);
+  }
+
+  static AuthUser? _userFromIdToken(String? idToken) {
+    if (idToken == null) return null;
+    try {
+      final claims = decodeJwtClaims(idToken);
+      final sub = claims['sub'] as String?;
+      if (sub == null || sub.isEmpty) return null;
+      final email = claims['email'] as String?;
+      final name = claims['name'] as String?;
+      return AuthUser(
+        id: sub,
+        name: (name == null || name.isEmpty) ? _nameFromEmail(email) : name,
+        email: email ?? '',
+      );
+    } on Object {
+      return null;
     }
   }
 
