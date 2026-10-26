@@ -25,6 +25,8 @@ jobs:
       - name: Install fvm
         run: |
           curl -fsSL https://fvm.app/install.sh | bash
+          # O instalador não altera o PATH dos próximos steps.
+          echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
       - name: Install pinned Flutter (from .fvmrc)
         run: fvm install
       # A API de windowing (multi-janela nativa) só existe no master e atrás
@@ -60,6 +62,8 @@ jobs:
       - name: Install fvm
         run: |
           curl -fsSL https://fvm.app/install.sh | bash
+          # O instalador não altera o PATH dos próximos steps.
+          echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
       - name: Install pinned Flutter (from .fvmrc)
         run: fvm install
       - name: Authenticate private pub
