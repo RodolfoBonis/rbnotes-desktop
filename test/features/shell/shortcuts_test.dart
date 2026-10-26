@@ -14,6 +14,9 @@ import 'package:rbnotes/core/di/injector.dart';
 import 'package:rbnotes/core/observability/diagnostics_monitor.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/core/theme/rbnotes_theme.dart';
+import 'package:rbnotes/core/windowing/fake_settings_window.dart';
+import 'package:rbnotes/core/windowing/main_window.dart';
+import 'package:rbnotes/core/windowing/settings_window_manager.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
 import 'package:rbnotes/features/ai/data/ai_usage_client.dart';
@@ -38,7 +41,6 @@ import 'package:rbnotes/features/security/data/note_key_store.dart';
 import 'package:rbnotes/features/security/presentation/app_lock_cubit.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
 import 'package:rbnotes/features/settings/data/vocabulary_repository.dart';
-import 'package:rbnotes/features/settings/presentation/settings_modal.dart';
 import 'package:rbnotes/features/transcription/data/transcription_queue.dart';
 import 'package:rbnotes/native/fake_rb_native.dart';
 import 'package:rbnotes/native/rb_native.dart';
@@ -99,7 +101,9 @@ void main() {
       ..registerSingleton<RecordNoteHotkeyService>(
         RecordNoteHotkeyService(native: native, settings: settings),
       )
-      ..registerFactory<AudioPlayerController>(FakeAudioPlayer.new);
+      ..registerFactory<AudioPlayerController>(FakeAudioPlayer.new)
+      ..registerSingleton<SettingsWindowManager>(fakeSettingsWindowManager())
+      ..registerSingleton<MainWindowHandle>(FakeMainWindowHandle());
     await DemoSeeder(
       notes: notes,
       noteAi: noteAi,
@@ -196,15 +200,15 @@ void main() {
     await tester.pump();
     expect(find.byType(AskOverlay), findsNothing);
 
-    // ⌘, abre as Configurações.
+    // ⌘, abre as Configurações como janela nativa separada (single instance).
+    expect(di<SettingsWindowManager>().isOpen, isFalse);
     await _meta(tester, LogicalKeyboardKey.comma);
     await tester.pump();
-    expect(find.byType(SettingsModal), findsOneWidget);
-
-    // Esc fecha.
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    expect(di<SettingsWindowManager>().isOpen, isTrue);
+    // Reabrir apenas foca a mesma janela (não cria outra).
+    await _meta(tester, LogicalKeyboardKey.comma);
     await tester.pump();
-    expect(find.byType(SettingsModal), findsNothing);
+    expect(di<SettingsWindowManager>().isOpen, isTrue);
 
     await tester.runAsync(() async {
       await native.dispose();

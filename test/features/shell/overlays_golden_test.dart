@@ -6,7 +6,6 @@ import 'package:mocktail/mocktail.dart';
 import 'package:rbnotes/app/shell/app_shell.dart';
 import 'package:rbnotes/app/shell/shell_overlay_cubit.dart';
 import 'package:rbnotes/features/recording/presentation/recording_cubit.dart';
-import 'package:rbnotes/features/settings/presentation/settings_modal.dart';
 
 import '../../helpers/shell_harness.dart';
 
@@ -66,31 +65,6 @@ void main() {
     await shot(tester, 'fix_word');
     await down(tester);
   });
-
-  for (final (label, name) in const <(String, String)>[
-    ('Gravação', 'settings_recording'),
-    ('Transcrição', 'settings_transcription'),
-    ('Inteligência', 'settings_intelligence'),
-    ('Conta', 'settings_account'),
-    ('Uso', 'settings_usage'),
-    ('Atalhos', 'settings_shortcuts'),
-    ('Privacidade', 'settings_privacy'),
-  ]) {
-    testWidgets('configurações — $label', (tester) async {
-      await boot(tester);
-      overlay(tester).openSettings();
-      await harness.settle(tester);
-      await tester.tap(
-        find.descendant(
-          of: find.byType(SettingsModal),
-          matching: find.text(label),
-        ),
-      );
-      await harness.settle(tester);
-      await shot(tester, name);
-      await down(tester);
-    });
-  }
 
   testWidgets('HUD de gravação', (tester) async {
     final rec = _MockRecordingCubit();

@@ -7,23 +7,24 @@ void main() {
   test('abre e fecha overlays mutuamente exclusivos', () {
     final cubit = ShellOverlayCubit()..openAsk();
     expect(cubit.state.askOpen, isTrue);
-    cubit.openSettings();
-    expect(cubit.state.settingsOpen, isTrue);
+    cubit.closeAsk();
     expect(cubit.state.askOpen, isFalse);
+    cubit.toggleAsk();
+    expect(cubit.state.askOpen, isTrue);
     unawaited(cubit.close());
   });
 
   test('closeTop fecha o overlay de topo na ordem de prioridade', () {
     final cubit = ShellOverlayCubit()
-      ..openSettings()
+      ..openAsk()
       ..openNewCollection()
       ..openFix('Taís');
     expect(cubit.closeTop(), isTrue); // fecha fix
     expect(cubit.state.fixOpen, isFalse);
     expect(cubit.closeTop(), isTrue); // fecha nova coleção
     expect(cubit.state.newCollectionOpen, isFalse);
-    expect(cubit.closeTop(), isTrue); // fecha settings
-    expect(cubit.state.settingsOpen, isFalse);
+    expect(cubit.closeTop(), isTrue); // fecha ask
+    expect(cubit.state.askOpen, isFalse);
     expect(cubit.closeTop(), isFalse); // nada aberto
     unawaited(cubit.close());
   });

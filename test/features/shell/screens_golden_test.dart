@@ -76,15 +76,4 @@ void main() {
     await shot(tester, 'ask');
     await down(tester);
   });
-
-  testWidgets('configurações', (tester) async {
-    await boot(tester);
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.comma);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.comma);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
-    await harness.settle(tester);
-    await shot(tester, 'settings_general');
-    await down(tester);
-  });
 }

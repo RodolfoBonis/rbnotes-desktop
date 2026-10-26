@@ -12,6 +12,9 @@ import 'package:rbnotes/core/di/injector.dart';
 import 'package:rbnotes/core/observability/diagnostics_monitor.dart';
 import 'package:rbnotes/core/paths/app_paths.dart';
 import 'package:rbnotes/core/theme/rbnotes_theme.dart';
+import 'package:rbnotes/core/windowing/fake_settings_window.dart';
+import 'package:rbnotes/core/windowing/main_window.dart';
+import 'package:rbnotes/core/windowing/settings_window_manager.dart';
 import 'package:rbnotes/data/database/database.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
 import 'package:rbnotes/features/ai/data/ai_usage_client.dart';
@@ -103,7 +106,9 @@ class ShellHarness {
       ..registerSingleton<MeetingDetectionService>(
         MeetingDetectionService(native: native, settings: settings),
       )
-      ..registerFactory<AudioPlayerController>(FakeAudioPlayer.new);
+      ..registerFactory<AudioPlayerController>(FakeAudioPlayer.new)
+      ..registerSingleton<SettingsWindowManager>(fakeSettingsWindowManager())
+      ..registerSingleton<MainWindowHandle>(FakeMainWindowHandle());
     await DemoSeeder(
       notes: notes,
       noteAi: noteAi,
