@@ -39,6 +39,10 @@ class SettingsStore {
   static const _kWeeklySummaryHour = 'settings.notif.weekly_hour';
   static const _kLastWeeklyAt = 'settings.notif.last_weekly_at';
   static const _kScheduledTaskKeys = 'settings.notif.task_keys';
+  // Cache da pergunta do diário: 1 chamada de IA por data (ver coordinator).
+  static const _kDiaryPromptDate = 'settings.notif.diary_prompt.date';
+  static const _kDiaryPromptText = 'settings.notif.diary_prompt.text';
+  static const _kDiaryPromptRetryAt = 'settings.notif.diary_prompt.retry_at';
   // Gravação
   static const _kMicDeviceId = 'settings.mic_device_id';
   static const _kMicName = 'settings.mic_name';
@@ -226,6 +230,33 @@ class SettingsStore {
       _prefs.getStringList(_kScheduledTaskKeys) ?? const [];
   Future<void> setScheduledTaskKeys(List<String> keys) =>
       _prefs.setStringList(_kScheduledTaskKeys, keys);
+
+  /// Pergunta do diário já gerada pela IA para a data [ymd] (`yyyy-MM-dd`), ou
+  /// null se não há cache para essa data. Guarda uma única entrada: como só há
+  /// uma pergunta futura agendada por vez, a data anterior é descartada ao
+  /// gravar a nova (poda implícita).
+  String? cachedDiaryPrompt(String ymd) =>
+      _prefs.getString(_kDiaryPromptDate) == ymd
+      ? _prefs.getString(_kDiaryPromptText)
+      : null;
+
+  /// Persiste a pergunta do diário de [ymd], substituindo qualquer data antiga.
+  Future<void> setCachedDiaryPrompt(String ymd, String prompt) async {
+    await _prefs.setString(_kDiaryPromptDate, ymd);
+    await _prefs.setString(_kDiaryPromptText, prompt);
+  }
+
+  /// Instante até o qual não se deve tentar gerar a pergunta do diário de novo
+  /// (backoff após limite diário/rede), ou null se não há backoff ativo.
+  DateTime? get diaryPromptRetryAt {
+    final raw = _prefs.getString(_kDiaryPromptRetryAt);
+    return raw == null ? null : DateTime.tryParse(raw);
+  }
+
+  Future<void> setDiaryPromptRetryAt(DateTime at) =>
+      _prefs.setString(_kDiaryPromptRetryAt, at.toUtc().toIso8601String());
+
+  Future<void> clearDiaryPromptRetryAt() => _prefs.remove(_kDiaryPromptRetryAt);
 
   // ---- Gravação ----
 

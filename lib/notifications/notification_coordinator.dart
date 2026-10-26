@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:rbnotes/core/observability/app_logger.dart';
 import 'package:rbnotes/features/ai/data/ai_client.dart';
+import 'package:rbnotes/features/ai/data/ai_exceptions.dart';
 import 'package:rbnotes/features/notes/data/note_ai_repository.dart';
 import 'package:rbnotes/features/notes/data/note_repository.dart';
 import 'package:rbnotes/features/settings/data/settings_store.dart';
@@ -61,6 +62,11 @@ class NotificationCoordinator {
   }
 
   /// Reagenda os três agendamentos (idempotente). Chamar no boot e após o sync.
+  ///
+  /// Nenhuma chamada de IA é feita aqui além da pergunta do diário, que é
+  /// cacheada por data (ver [_rescheduleDiaryPrompt]). O resumo semanal só
+  /// agenda a *notificação*; a IA (`weeklySummary`) roda na primeira abertura e
+  /// é idempotente por semana via `SettingsStore.lastWeeklySummaryAt`.
   Future<void> rescheduleAll() async {
     await _rescheduleTasks();
     await _rescheduleDiaryPrompt();
@@ -97,16 +103,46 @@ class NotificationCoordinator {
     }
   }
 
+  /// Reagenda a pergunta do diário **gerando-a no máximo uma vez por data**.
+  ///
+  /// Como `rescheduleAll()` roda a cada sync (a cada ~2 min), chamar a IA aqui
+  /// sem cache criava 100+ jobs `daily_prompt` por dia e estourava a cota
+  /// (bug de produção). A pergunta de cada data é persistida em
+  /// [SettingsStore.cachedDiaryPrompt]; o sync só reagenda a partir do cache.
+  /// Em erro (limite diário, rede) aplicamos backoff — até o próximo dia no
+  /// limite diário, algumas horas nos demais — para não repetir a cada sync.
   Future<void> _rescheduleDiaryPrompt() async {
     if (!_settings.diaryPromptNotif) {
       await _scheduler.scheduleDiaryPrompt(prompt: '', now: _now());
       return;
     }
+
+    final now = _now();
+    final tomorrow = now.add(const Duration(days: 1));
+    final ymd = _ymd(tomorrow);
+
+    // 1. Cache: reagenda a partir do que já foi gerado para a data, sem IA.
+    final cached = _settings.cachedDiaryPrompt(ymd);
+    if (cached != null) {
+      await _scheduler.scheduleDiaryPrompt(prompt: cached, now: now);
+      return;
+    }
+
+    // 2. Backoff ativo após um erro recente: não tenta de novo a cada sync.
+    final retryAt = _settings.diaryPromptRetryAt;
+    if (retryAt != null && now.isBefore(retryAt)) return;
+
+    // 3. Sem cache e fora do backoff: gera uma vez, persiste e reagenda.
     try {
-      final tomorrow = _now().add(const Duration(days: 1));
       final prompt = await _ai.dailyPrompt(tomorrow);
-      await _scheduler.scheduleDiaryPrompt(prompt: prompt, now: _now());
+      await _settings.setCachedDiaryPrompt(ymd, prompt);
+      await _settings.clearDiaryPromptRetryAt();
+      await _scheduler.scheduleDiaryPrompt(prompt: prompt, now: now);
     } on Object catch (e, st) {
+      final backoffUntil = e is AiDailyLimitException
+          ? _startOfNextDay(now)
+          : now.add(const Duration(hours: 4));
+      await _settings.setDiaryPromptRetryAt(backoffUntil);
       await AppLogger.error(
         e,
         st,
@@ -115,6 +151,14 @@ class NotificationCoordinator {
       );
     }
   }
+
+  static DateTime _startOfNextDay(DateTime now) =>
+      DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+
+  static String _ymd(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
 
   void _onTap(AppNotification n) {
     switch (n.kind) {
