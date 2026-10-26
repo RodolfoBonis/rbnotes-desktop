@@ -2,6 +2,19 @@ include:
   - package:very_good_analysis/analysis_options.yaml
   - package:bloc_lint/recommended.yaml
 analyzer:
+  errors:
+    # This project is pinned to a Flutter *master* build (for the native
+    # multi-window / windowing API). On master, `package:flutter/material.dart`
+    # and `package:flutter/cupertino.dart` are themselves deprecated in favour
+    # of the new `material_ui` / `cupertino_ui` packages (the "Material UI /
+    # Cupertino UI" split, deprecated after v3.47.0). Migrating to them is an
+    # ecosystem-wide effort — the private `forma_ui` design system and every
+    # plugin still ship `flutter/material`, and `material_ui` defines its own
+    # copies of the Material types, so a piecemeal migration would break
+    # interop. We intentionally stay on `flutter/material` and silence only this
+    # transitional library-rename deprecation. Revisit once the ecosystem
+    # (and `forma_ui`) move to `material_ui`.
+    deprecated_member_use: ignore
   exclude:
     - "**/*.g.dart"
     - "**/*.drift.dart"

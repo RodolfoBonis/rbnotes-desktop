@@ -30,6 +30,35 @@ Construído em Flutter (bloc + get_it + forma_ui + sentry), com o plugin nativo
 
 > **Build macOS:** o plugin `rbnotes_native` vendoriza o `whisper.xcframework` e só funciona via CocoaPods. Desligue o Swift Package Manager do Flutter antes do primeiro build: `fvm flutter config --no-enable-swift-package-manager` (o CI faz o mesmo).
 
+## Flutter toolchain (pinned master + windowing)
+
+O app usa a **API de windowing** (multi-janela nativa) do Flutter para abrir a
+tela de **Configurações** como uma janela macOS de verdade e mostrar os
+*traffic lights* nativos na janela principal. Essa API só existe no canal
+**master** e atrás de uma *feature flag*, então o projeto fica **fixado num
+commit específico do master** (não no master "flutuante"), via fvm.
+
+- Pin atual (`.fvmrc`): Flutter master **`66b3ad90177ccbd2963836a5556076b370622fe4`**
+  (`3.50.0-1.0.pre-232`, Dart 3.15.0). Escolhido por ser um master recente em
+  que a API de windowing no macOS (`RegularWindowController` etc.) está estável
+  o bastante — ver flutter/flutter#30701 e `examples/multiple_windows`.
+- Instalar/usar o pin: `fvm install` (lê o `.fvmrc`) e depois `fvm flutter …`.
+- **Habilitar windowing** (uma vez, por máquina):
+  `fvm flutter config --enable-windowing --no-enable-swift-package-manager`.
+  A flag é injetada automaticamente em **todo** build como
+  `--dart-define=FLUTTER_ENABLED_FEATURE_FLAGS=windowing` — inclusive em
+  `flutter build macos --release` —, então o release sai com windowing ligado
+  sem nenhum passo extra. O CI faz exatamente isto.
+- **Como subir o pin:** escolha um novo commit do master com a API de windowing
+  saudável, rode `fvm install <commit>`, atualize o campo `flutter` do `.fvmrc`
+  para esse commit, rode `fvm flutter pub get` + `fvm flutter analyze` +
+  `fvm flutter test` e regenere os goldens se o engine mudar o render
+  (`fvm flutter test --update-goldens`). Atualize também este README e o hash no
+  `.github/workflows/ci.yml` (comentário).
+- A seam da API interna de windowing (marcada `@internal` e sujeita a quebras
+  mesmo em patches) fica isolada em `lib/core/windowing/` — se a API mudar, é o
+  único lugar a tocar.
+
 ## IA, sync e privacidade
 
 Auth, sync e IA são **interfaces** (`AuthService`, `SyncClient`, `AiClient`) com
