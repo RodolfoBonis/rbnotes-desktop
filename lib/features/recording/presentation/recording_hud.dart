@@ -159,7 +159,7 @@ class _RecordingCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          if (state.micNoSignal || state.systemNoSignal || state.screenDenied)
+          if (state.micNoSignal || state.screenDenied)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: _SignalWarning(state: state),
@@ -332,11 +332,6 @@ class _SignalWarning extends StatelessWidget {
         'Sem sinal do microfone: verifique a permissão ou o dispositivo de '
             'entrada',
         cubit.openMicrophoneSettings,
-      ),
-      _ when state.systemNoSignal => (
-        'Sem sinal do áudio do sistema: verifique a permissão de Gravação de '
-            'Tela',
-        cubit.openScreenRecordingSettings,
       ),
       _ => (
         'Sem acesso à Gravação de Tela: gravando só o microfone',

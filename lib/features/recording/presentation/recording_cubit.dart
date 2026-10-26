@@ -68,7 +68,6 @@ class RecordingState extends Equatable {
     this.background = false,
     this.alert,
     this.micNoSignal = false,
-    this.systemNoSignal = false,
     this.screenDenied = false,
     this.audioSignalFailure = false,
   });
@@ -113,9 +112,6 @@ class RecordingState extends Equatable {
   /// Silêncio digital ao vivo no microfone (níveis exatamente 0 nos primeiros
   /// ~2 s): sem sinal, provável permissão/dispositivo. Mostrado no HUD/overlay.
   final bool micNoSignal;
-
-  /// Idem [micNoSignal] para o canal de áudio do sistema.
-  final bool systemNoSignal;
 
   /// Gravando só o microfone porque a Gravação de Tela está negada (o usuário
   /// pediu áudio do sistema). A UI avisa e oferece "Abrir Ajustes".
@@ -162,7 +158,6 @@ class RecordingState extends Equatable {
     RecordingAlert? alert,
     bool clearAlert = false,
     bool? micNoSignal,
-    bool? systemNoSignal,
     bool? screenDenied,
     bool? audioSignalFailure,
   }) => RecordingState(
@@ -186,7 +181,6 @@ class RecordingState extends Equatable {
     background: background ?? this.background,
     alert: clearAlert ? null : (alert ?? this.alert),
     micNoSignal: micNoSignal ?? this.micNoSignal,
-    systemNoSignal: systemNoSignal ?? this.systemNoSignal,
     screenDenied: screenDenied ?? this.screenDenied,
     audioSignalFailure: audioSignalFailure ?? this.audioSignalFailure,
   );
@@ -211,7 +205,6 @@ class RecordingState extends Equatable {
     background,
     alert,
     micNoSignal,
-    systemNoSignal,
     screenDenied,
     audioSignalFailure,
   ];
@@ -320,7 +313,6 @@ class RecordingCubit extends Cubit<RecordingState> {
         kind: kind,
         background: bg,
         micNoSignal: false,
-        systemNoSignal: false,
         screenDenied: false,
         audioSignalFailure: false,
       ),
@@ -804,10 +796,7 @@ class RecordingCubit extends Cubit<RecordingState> {
         final noSignal = s.micNoSignal
             ? 'Sem sinal do microfone: verifique a permissão ou o dispositivo '
                   'de entrada'
-            : (s.systemNoSignal
-                  ? 'Sem sinal do áudio do sistema: verifique a permissão de '
-                        'Gravação de Tela'
-                  : null);
+            : null;
         _overlay(
           _native.updateActivityOverlay(
             micLevel: s.micLevel,
@@ -886,23 +875,21 @@ class RecordingCubit extends Cubit<RecordingState> {
   void _checkLiveSignal(String recId) {
     if (isClosed || state.noteId != recId || !state.isRecording) return;
     final micNoSignal = !_micSawSignal;
-    final systemNoSignal = _systemSawAny && !_systemSawSignal;
-    if (!micNoSignal && !systemNoSignal) return;
-    if (micNoSignal) {
-      AppLogger.warning(
-        'microfone sem sinal ao vivo (silêncio digital)',
+    // Sistema em zero exato é o normal quando nada está tocando (o
+    // ScreenCaptureKit entrega silêncio digital), e a permissão de tela já é
+    // checada antes de gravar: só registra, sem aviso na tela.
+    if (_systemSawAny && !_systemSawSignal) {
+      AppLogger.info(
+        'áudio do sistema em silêncio ao vivo (nada tocando?)',
         category: 'recording',
       );
     }
-    if (systemNoSignal) {
-      AppLogger.warning(
-        'áudio do sistema sem sinal ao vivo (silêncio digital)',
-        category: 'recording',
-      );
-    }
-    emit(
-      state.copyWith(micNoSignal: micNoSignal, systemNoSignal: systemNoSignal),
+    if (!micNoSignal) return;
+    AppLogger.warning(
+      'microfone sem sinal ao vivo (silêncio digital)',
+      category: 'recording',
     );
+    emit(state.copyWith(micNoSignal: true));
   }
 
   /// Abre o painel de Ajustes → Privacidade → Microfone.

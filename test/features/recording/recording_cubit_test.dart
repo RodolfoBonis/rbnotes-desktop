@@ -313,14 +313,13 @@ void main() {
     await cubit.start();
     await cubit.stream.firstWhere((s) => s.micNoSignal);
     expect(cubit.state.micNoSignal, isTrue);
-    expect(cubit.state.systemNoSignal, isFalse);
     await cubit.discard();
     await cubit.close();
     await q.dispose();
     await native.dispose();
   });
 
-  test('silêncio digital ao vivo no sistema marca systemNoSignal', () async {
+  test('sistema em silêncio ao vivo não gera aviso (nada tocando)', () async {
     await settings.setCaptureSystemAudio(value: true);
     final native = FakeRbNative(silentSystem: true);
     final q = TranscriptionQueue(
@@ -339,8 +338,9 @@ void main() {
       signalCheckDelay: const Duration(milliseconds: 80),
     );
     await cubit.start();
-    await cubit.stream.firstWhere((s) => s.systemNoSignal);
-    expect(cubit.state.systemNoSignal, isTrue);
+    // Passa da janela da checagem ao vivo: sistema zerado não é alarme.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(cubit.state.isRecording, isTrue);
     expect(cubit.state.micNoSignal, isFalse);
     await cubit.discard();
     await cubit.close();
