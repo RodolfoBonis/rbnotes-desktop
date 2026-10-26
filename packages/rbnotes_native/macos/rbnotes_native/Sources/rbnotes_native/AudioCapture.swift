@@ -126,6 +126,7 @@ final class AudioCapture {
     do {
       try input.setVoiceProcessingEnabled(true)
       RbLog.recording.info("voice processing (noise reduction) enabled")
+      disableOtherAudioDucking(input)
     } catch {
       RbLog.recording.error(
         "voice processing could not be enabled: \(error.localizedDescription)")
@@ -133,6 +134,19 @@ final class AudioCapture {
         NativeDiagnostic(
           DiagnosticCode.noiseReductionUnavailable,
           "redução de ruído indisponível; gravando sem ela: \(error.localizedDescription)"))
+    }
+  }
+
+  /// Voice processing is built for calls: by default it ducks every other
+  /// app's audio by roughly 30 dB. ScreenCaptureKit captures the ducked mix, so
+  /// meeting audio (Meet, Zoom, …) reached `system.wav` almost silent. Keep the
+  /// noise/echo cancellation on the mic but leave other audio untouched.
+  private func disableOtherAudioDucking(_ input: AVAudioInputNode) {
+    if #available(macOS 14.0, *) {
+      input.voiceProcessingOtherAudioDuckingConfiguration =
+        AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
+          enableAdvancedDucking: false, duckingLevel: .min)
+      RbLog.recording.info("voice processing: other-audio ducking set to minimum")
     }
   }
 
